@@ -131,7 +131,79 @@ const INIT={
     {id:"d2",title:"GoTab shifts",tags:["work"],content:"Support shifts: Thu 8 May 5-10pm, Fri 9 May 5-10pm, Wed 13 May 5-10pm, Thu 14 May 5-10pm."},
   ],
   reflections:[],
-  finance:{sources:[{id:1,name:"GoTab Shifts",amount:0},{id:2,name:"",amount:0},{id:3,name:"",amount:0}],monthlyIncome:{},expenses:[]},
+  finance:{
+    sources:[{id:1,name:"GoTab (Rippling)",amount:0},{id:2,name:"Jobseeker",amount:802.40},{id:3,name:"",amount:0}],
+    monthlyBudget:0,
+    monthlyIncome:{
+      "2026-02":{"2":802.40},
+      "2026-03":{"2":1604.80},
+      "2026-04":{"1":4750.86,"2":1067.50},
+      "2026-05":{"1":150}
+    },
+    recurringTemplates:[
+      {id:"r1",name:"TPG Internet",amount:84.99,cat:"Bills"},
+      {id:"r2",name:"Spotify",amount:15.99,cat:"Addiction"},
+      {id:"r3",name:"Apple iCloud",amount:1.49,cat:"Bills"},
+      {id:"r4",name:"Felix Mobile (Phone Plan)",amount:25.00,cat:"Bills"},
+      {id:"r5",name:"Hungry Jack's (daily habit)",amount:90.00,cat:"Addiction"},
+      {id:"r6",name:"Replenish Vending",amount:24.00,cat:"Addiction"},
+      {id:"r7",name:"7-Eleven runs",amount:10.00,cat:"Addiction"},
+      {id:"r8",name:"Blue Hippo Laundry",amount:19.05,cat:"Bills"},
+      {id:"r9",name:"United Petroleum (fuel)",amount:42.00,cat:"Other"},
+      {id:"r10",name:"JT Business (grooming)",amount:40.00,cat:"Other"}
+    ],
+    monthlyRecurringOverrides:{"2026-02":{"r1":{amount:79.99}}},
+    expenses:[
+      {id:5001,name:"Coles groceries",amount:47.55,cat:"Other",month:"2026-05"},
+      {id:5002,name:"KFC",amount:11.60,cat:"Addiction",month:"2026-05"},
+      {id:5003,name:"KIS Hair",amount:55.83,cat:"Other",month:"2026-05"},
+      {id:5004,name:"M Fittipaldi",amount:40.00,cat:"Other",month:"2026-05"},
+      {id:5005,name:"Melbourne Spiegaltent (event)",amount:104.32,cat:"Other",month:"2026-05"},
+      {id:5006,name:"Kwafood Fried Chicken",amount:23.66,cat:"Addiction",month:"2026-05"},
+      {id:5007,name:"Siddeley St",amount:15.30,cat:"Other",month:"2026-05"},
+      {id:5008,name:"Tamar Drive Convenience",amount:12.13,cat:"Other",month:"2026-05"},
+      {id:5009,name:"ATM fees",amount:6.25,cat:"Other",month:"2026-05"},
+      {id:4001,name:"Vicroads (car registration)",amount:94.45,cat:"Bills",month:"2026-04"},
+      {id:4002,name:"Groceries (Coles/Woolworths/ALDI)",amount:168.00,cat:"Other",month:"2026-04"},
+      {id:4003,name:"KFC (multiple visits)",amount:92.75,cat:"Addiction",month:"2026-04"},
+      {id:4004,name:"Bean Project coffee",amount:25.80,cat:"Addiction",month:"2026-04"},
+      {id:4005,name:"Altavend vending machine",amount:9.60,cat:"Addiction",month:"2026-04"},
+      {id:4006,name:"St Burgs Caroline (dining)",amount:42.63,cat:"Other",month:"2026-04"},
+      {id:4007,name:"Myki (transport)",amount:15.00,cat:"Other",month:"2026-04"},
+      {id:4008,name:"M Fittipaldi",amount:43.00,cat:"Other",month:"2026-04"},
+      {id:4009,name:"Pline PH (phone accessories)",amount:13.49,cat:"Other",month:"2026-04"},
+      {id:4010,name:"Target + Priceline",amount:11.50,cat:"Other",month:"2026-04"},
+      {id:4011,name:"Jazzy Mobiles",amount:20.25,cat:"Other",month:"2026-04"},
+      {id:4012,name:"ATM fees",amount:6.70,cat:"Other",month:"2026-04"},
+      {id:4013,name:"South East Leisure",amount:4.02,cat:"Other",month:"2026-04"},
+      {id:3001,name:"ASIC annual fee",amount:45.00,cat:"Bills",month:"2026-03"},
+      {id:3002,name:"Whinner Autocare (car service)",amount:170.00,cat:"Bills",month:"2026-03"},
+      {id:3003,name:"Groceries (Coles/Woolworths)",amount:178.35,cat:"Other",month:"2026-03"},
+      {id:3004,name:"Fuel extra (BP/Caltex/Ampol)",amount:101.80,cat:"Other",month:"2026-03"},
+      {id:3005,name:"KFC (multiple visits)",amount:29.45,cat:"Addiction",month:"2026-03"},
+      {id:3006,name:"McDonalds",amount:42.75,cat:"Addiction",month:"2026-03"},
+      {id:3007,name:"Water Lantern Festival ticket",amount:114.98,cat:"Other",month:"2026-03"},
+      {id:3008,name:"Festival food & drinks",amount:60.84,cat:"Other",month:"2026-03"},
+      {id:3009,name:"Myki (transport)",amount:55.00,cat:"Other",month:"2026-03"},
+      {id:3010,name:"M Fittipaldi",amount:25.00,cat:"Other",month:"2026-03"},
+      {id:3011,name:"Brimbank Aquatic Centre",amount:11.80,cat:"Other",month:"2026-03"},
+      {id:3012,name:"JB HiFi",amount:9.50,cat:"Other",month:"2026-03"},
+      {id:3013,name:"ATM fees",amount:9.00,cat:"Other",month:"2026-03"},
+      {id:3014,name:"Pline PH",amount:19.99,cat:"Other",month:"2026-03"},
+      {id:3015,name:"Dining out (Greek, Banh Mi, Delite)",amount:50.24,cat:"Other",month:"2026-03"},
+      {id:2001,name:"Specsavers (glasses)",amount:39.00,cat:"Bills",month:"2026-02"},
+      {id:2002,name:"Beverly Rooftop (night out)",amount:393.52,cat:"Addiction",month:"2026-02"},
+      {id:2003,name:"Groceries (Coles/ALDI/IGA)",amount:55.00,cat:"Other",month:"2026-02"},
+      {id:2004,name:"Fuel extra (Reddy/Ampol)",amount:96.00,cat:"Other",month:"2026-02"},
+      {id:2005,name:"KFC",amount:15.95,cat:"Addiction",month:"2026-02"},
+      {id:2006,name:"McDonalds",amount:26.50,cat:"Addiction",month:"2026-02"},
+      {id:2007,name:"Tobacco Station",amount:1.70,cat:"Addiction",month:"2026-02"},
+      {id:2008,name:"Dining out (Lucky Corner, Subway, etc.)",amount:100.00,cat:"Other",month:"2026-02"},
+      {id:2009,name:"Myki (transport)",amount:58.00,cat:"Other",month:"2026-02"},
+      {id:2010,name:"ATM fees",amount:9.00,cat:"Other",month:"2026-02"},
+      {id:2011,name:"iBuy Bargains",amount:15.69,cat:"Other",month:"2026-02"}
+    ]
+  },
 };
 
 function todayStr(){return new Date().toISOString().split("T")[0];}
@@ -318,32 +390,51 @@ function GymSection(props){
 
 function FinanceSection({data,onUpdate}){
   const [month,setMonth]=useState(todayStr().slice(0,7));
-  const [expForm,setExpForm]=useState({name:"",amount:"",cat:"Bills"});
+  const [expForm,setExpForm]=useState({name:"",amount:"",cat:"Bills",recurring:false});
   const [editSrc,setEditSrc]=useState(false);
+  const [showRecMgr,setShowRecMgr]=useState(false);
+  const [recForm,setRecForm]=useState({name:"",amount:"",cat:"Bills"});
   const fBtn={padding:"5px 11px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text2,cursor:"pointer",fontSize:12};
   const fBtnP={padding:"6px 13px",borderRadius:8,border:"1px solid rgba(199,125,255,0.45)",background:"rgba(199,125,255,0.15)",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,boxShadow:"0 0 10px rgba(199,125,255,0.2)"};
   const fInp={width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"};
   function fCard(ex){return{background:T.bg2,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",border:"0.5px solid "+T.border2,borderRadius:12,padding:"14px 16px",marginBottom:10,boxShadow:"0 4px 24px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.08)",...(ex||{})};}
   const CATS=["Bills","Addiction","Other"];
   const CAT_COL={Bills:T.accent,Addiction:T.danger,Other:T.warn};
-  const sources=data.sources||[{id:1,name:"GoTab Shifts",amount:0},{id:2,name:"",amount:0},{id:3,name:"",amount:0}];
+  const sources=data.sources||[{id:1,name:"GoTab (Rippling)",amount:0},{id:2,name:"Jobseeker",amount:802.40},{id:3,name:"",amount:0}];
   const monthlyIncome=data.monthlyIncome||{};
   const allExpenses=data.expenses||[];
-  const expenses=allExpenses.filter(function(e){return e.month===month;});
+  const recurringTemplates=data.recurringTemplates||[];
+  const monthlyRecurringOverrides=data.monthlyRecurringOverrides||{};
+  const monthBudget=Number(data.monthlyBudget||0);
+  const monthOverrides=monthlyRecurringOverrides[month]||{};
+  const recurringThisMonth=recurringTemplates.filter(function(t){return !(monthOverrides[t.id]&&monthOverrides[t.id].excluded);}).map(function(t){const ov=monthOverrides[t.id];return{...t,amount:ov&&ov.amount!==undefined?ov.amount:t.amount,isRecurring:true};});
+  const skippedThisMonth=recurringTemplates.filter(function(t){return monthOverrides[t.id]&&monthOverrides[t.id].excluded;});
+  const oneOffThisMonth=allExpenses.filter(function(e){return e.month===month;});
+  const allThisMonth=recurringThisMonth.concat(oneOffThisMonth);
   const srcAmounts=monthlyIncome[month]||{};
   const totalIncome=sources.reduce(function(a,s){return a+(srcAmounts[s.id]!==undefined?Number(srcAmounts[s.id]):Number(s.amount)||0);},0);
-  const totalExpenses=expenses.reduce(function(a,e){return a+Number(e.amount);},0);
+  const totalExpenses=allThisMonth.reduce(function(a,e){return a+Number(e.amount);},0);
   const net=totalIncome-totalExpenses;
+  const budgetLeft=monthBudget>0?monthBudget-totalExpenses:null;
   function shiftMonth(n){const d=new Date(month+"-15");d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,7);}
   function fmtM(m){return new Date(m+"-15").toLocaleDateString("en-AU",{month:"long",year:"numeric"});}
   function fmtShortM(m){return new Date(m+"-15").toLocaleDateString("en-AU",{month:"short",year:"2-digit"});}
-  function addExpense(){if(!expForm.name||!expForm.amount)return;onUpdate({...data,expenses:allExpenses.concat([{id:Date.now(),name:expForm.name,amount:Number(expForm.amount),cat:expForm.cat,month:month}])});setExpForm({name:"",amount:"",cat:"Bills"});}
-  function removeExpense(id){onUpdate({...data,expenses:allExpenses.filter(function(e){return e.id!==id;})});}
+  function totalForMonth(m){const mo=monthlyRecurringOverrides[m]||{};const rec=recurringTemplates.filter(function(t){return !(mo[t.id]&&mo[t.id].excluded);}).reduce(function(a,t){return a+Number(mo[t.id]&&mo[t.id].amount!==undefined?mo[t.id].amount:t.amount);},0);const oo=allExpenses.filter(function(e){return e.month===m;}).reduce(function(a,e){return a+Number(e.amount);},0);return rec+oo;}
+  function avgExp(){const past=[-3,-2,-1].map(function(o){return totalForMonth(shiftMonth(o));});const nz=past.filter(function(v){return v>0;});return nz.length>0?nz.reduce(function(a,b){return a+b;},0)/nz.length:totalExpenses;}
+  const avgE=avgExp();
+  const forecast=[1,2,3,4,5,6].map(function(i){const m=shiftMonth(i);return{month:m,income:totalIncome,expenses:avgE,net:totalIncome-avgE};});
+  const curDate=new Date(month+"-15");
+  const futureMonthsInYear=11-curDate.getMonth();
+  const eoyNet=net+futureMonthsInYear*(totalIncome-avgE);
+  function addExpense(){if(!expForm.name||!expForm.amount)return;if(expForm.recurring){onUpdate({...data,recurringTemplates:recurringTemplates.concat([{id:"r"+Date.now(),name:expForm.name,amount:Number(expForm.amount),cat:expForm.cat}])});}else{onUpdate({...data,expenses:allExpenses.concat([{id:Date.now(),name:expForm.name,amount:Number(expForm.amount),cat:expForm.cat,month:month}])});}setExpForm({name:"",amount:"",cat:"Bills",recurring:false});}
+  function removeOneOff(id){onUpdate({...data,expenses:allExpenses.filter(function(e){return e.id!==id;})});}
+  function skipRecurring(tId){const mo={...monthOverrides,[tId]:{...(monthOverrides[tId]||{}),excluded:true}};onUpdate({...data,monthlyRecurringOverrides:{...monthlyRecurringOverrides,[month]:mo}});}
+  function restoreRecurring(tId){const mo={...monthOverrides};if(mo[tId]){const n={...mo[tId]};delete n.excluded;mo[tId]=n;}onUpdate({...data,monthlyRecurringOverrides:{...monthlyRecurringOverrides,[month]:mo}});}
+  function deleteTemplate(tId){onUpdate({...data,recurringTemplates:recurringTemplates.filter(function(t){return t.id!==tId;})});}
+  function addRecurring(){if(!recForm.name||!recForm.amount)return;onUpdate({...data,recurringTemplates:recurringTemplates.concat([{id:"r"+Date.now(),name:recForm.name,amount:Number(recForm.amount),cat:recForm.cat}])});setRecForm({name:"",amount:"",cat:"Bills"});}
   function updateSourceIncome(srcId,val){const mi={...monthlyIncome,[month]:{...(monthlyIncome[month]||{}),[srcId]:Number(val)}};onUpdate({...data,monthlyIncome:mi});}
-  function updateSourceName(id,val){const src=sources.map(function(s){return s.id===id?{...s,name:val}:s;});onUpdate({...data,sources:src});}
-  function avgExpenses(){const past=[-3,-2,-1].map(function(o){const m=shiftMonth(o);return allExpenses.filter(function(e){return e.month===m;}).reduce(function(a,e){return a+Number(e.amount);},0);});const nz=past.filter(function(v){return v>0;});return nz.length>0?nz.reduce(function(a,b){return a+b;},0)/nz.length:totalExpenses;}
-  const avgExp=avgExpenses();
-  const forecast=[1,2,3,4,5,6].map(function(i){const m=shiftMonth(i);return{month:m,income:totalIncome,expenses:avgExp,net:totalIncome-avgExp};});
+  function updateSourceName(id,val){onUpdate({...data,sources:sources.map(function(s){return s.id===id?{...s,name:val}:s;})});}
+  function updateBudget(val){onUpdate({...data,monthlyBudget:Number(val)});}
   return(
     <div>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
@@ -351,39 +442,63 @@ function FinanceSection({data,onUpdate}){
         <div style={{fontSize:15,fontWeight:700,color:T.text}}>{fmtM(month)}</div>
         <button style={fBtn} onClick={function(){setMonth(shiftMonth(1));}}>next →</button>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:12}}>
-        {[{label:"Income",value:"$"+totalIncome.toFixed(2),color:T.success},{label:"Expenses",value:"$"+totalExpenses.toFixed(2),color:T.danger},{label:"Net",value:(net>=0?"+":"")+net.toFixed(2),color:net>=0?T.success:T.danger}].map(function(s){return(<div key={s.label} style={{...fCard(),marginBottom:0,textAlign:"center"}}><div style={{fontSize:10,color:T.text3,marginBottom:4}}>{s.label}</div><div style={{fontSize:22,fontWeight:700,color:s.color}}>{s.value}</div></div>);})}
+      <div style={{display:"grid",gridTemplateColumns:budgetLeft!==null?"repeat(4,1fr)":"repeat(3,1fr)",gap:10,marginBottom:12}}>
+        {[{label:"Income",value:"$"+totalIncome.toFixed(2),color:T.success},{label:"Expenses",value:"$"+totalExpenses.toFixed(2),color:T.danger},{label:"Net",value:(net>=0?"+":"")+net.toFixed(2),color:net>=0?T.success:T.danger}].concat(budgetLeft!==null?[{label:"Budget left",value:(budgetLeft>=0?"$":"−$")+Math.abs(budgetLeft).toFixed(2),color:budgetLeft>=0?T.warn:T.danger}]:[]).map(function(s){return(<div key={s.label} style={{...fCard(),marginBottom:0,textAlign:"center"}}><div style={{fontSize:10,color:T.text3,marginBottom:4}}>{s.label}</div><div style={{fontSize:budgetLeft!==null?18:22,fontWeight:700,color:s.color}}>{s.value}</div></div>);})}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
         <div style={fCard()}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>Income Sources</div><button style={fBtn} onClick={function(){setEditSrc(function(s){return !s;});}}>{editSrc?"Done":"Edit names"}</button></div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>Income Sources</div><button style={fBtn} onClick={function(){setEditSrc(function(s){return !s;});}}>{editSrc?"Done":"Edit"}</button></div>
           {sources.map(function(s){const val=srcAmounts[s.id]!==undefined?srcAmounts[s.id]:(s.amount||"");return(<div key={s.id} style={{marginBottom:10}}>{editSrc&&<input style={{...fInp,marginBottom:4}} placeholder={"Source "+s.id} value={s.name} onChange={function(ev){updateSourceName(s.id,ev.target.value);}}/>}{!editSrc&&<div style={{fontSize:11,color:T.text2,marginBottom:4}}>{s.name||"Source "+s.id}</div>}<input style={fInp} type="number" step="0.01" placeholder="0.00" value={val} onChange={function(ev){updateSourceIncome(s.id,ev.target.value);}}/></div>);})}
           <div style={{borderTop:"0.5px solid "+T.border,paddingTop:8,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:T.text2}}>Total income</span><span style={{fontSize:13,fontWeight:700,color:T.success}}>${totalIncome.toFixed(2)}</span></div>
         </div>
         <div style={fCard()}>
           <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:12}}>By Category</div>
-          {CATS.map(function(cat){const catExps=expenses.filter(function(e){return e.cat===cat;});const catTotal=catExps.reduce(function(a,e){return a+Number(e.amount);},0);const pct=totalExpenses>0?Math.round(catTotal/totalExpenses*100):0;return(<div key={cat} style={{marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:11,fontWeight:600,color:CAT_COL[cat]}}>{cat}</span><span style={{fontSize:11,color:T.text2}}>${catTotal.toFixed(2)}<span style={{fontSize:9,color:T.text3}}> {pct}%</span></span></div><div style={{height:4,borderRadius:2,background:"rgba(255,255,255,0.06)"}}><div style={{width:pct+"%",height:"100%",borderRadius:2,background:CAT_COL[cat],transition:"width 0.4s"}}/></div></div>);})}
+          {CATS.map(function(cat){const catExps=allThisMonth.filter(function(e){return e.cat===cat;});const catTotal=catExps.reduce(function(a,e){return a+Number(e.amount);},0);const pct=totalExpenses>0?Math.round(catTotal/totalExpenses*100):0;return(<div key={cat} style={{marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:11,fontWeight:600,color:CAT_COL[cat]}}>{cat}</span><span style={{fontSize:11,color:T.text2}}>${catTotal.toFixed(2)}<span style={{fontSize:9,color:T.text3}}> {pct}%</span></span></div><div style={{height:4,borderRadius:2,background:"rgba(255,255,255,0.06)"}}><div style={{width:pct+"%",height:"100%",borderRadius:2,background:CAT_COL[cat],transition:"width 0.4s"}}/></div></div>);})}
           <div style={{borderTop:"0.5px solid "+T.border,paddingTop:8,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:T.text2}}>Total expenses</span><span style={{fontSize:13,fontWeight:700,color:T.danger}}>${totalExpenses.toFixed(2)}</span></div>
         </div>
       </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+        <div style={fCard()}>
+          <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:6}}>Monthly Budget</div>
+          <div style={{fontSize:10,color:T.text3,marginBottom:8}}>Set a spending limit to see how much you have left</div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:11,color:T.text3}}>$</span><input style={{...fInp,flex:1}} type="number" step="10" placeholder="e.g. 1500" value={monthBudget||""} onChange={function(ev){updateBudget(ev.target.value);}}/></div>
+          {monthBudget>0&&<div style={{marginTop:10,padding:"8px 10px",borderRadius:8,background:budgetLeft>=0?"rgba(255,209,102,0.1)":"rgba(255,107,107,0.1)",border:"0.5px solid "+(budgetLeft>=0?T.warn:T.danger)+"40"}}><div style={{fontSize:10,color:T.text2,marginBottom:2}}>{budgetLeft>=0?"Spending money left this month":"Over budget by"}</div><div style={{fontSize:20,fontWeight:700,color:budgetLeft>=0?T.warn:T.danger}}>{budgetLeft>=0?"$"+budgetLeft.toFixed(2):"$"+Math.abs(budgetLeft).toFixed(2)}</div></div>}
+        </div>
+        <div style={fCard()}>
+          <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>End of Year Projection</div>
+          <div style={{fontSize:10,color:T.text3,marginBottom:10}}>Current income vs average spending to 31 Dec {curDate.getFullYear()}</div>
+          <div style={{fontSize:30,fontWeight:700,color:eoyNet>=0?T.success:T.danger,marginBottom:4}}>{eoyNet>=0?"+":"-"}<span style={{fontSize:16}}>$</span>{Math.abs(eoyNet).toFixed(0)}</div>
+          <div style={{fontSize:10,color:T.text2}}>{futureMonthsInYear} month{futureMonthsInYear!==1?"s":""} remaining · avg expenses ${avgE.toFixed(0)}/mo</div>
+        </div>
+      </div>
       <div style={fCard()}>
-        <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:10}}>Expenses — {fmtM(month)}</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 100px 110px 44px",gap:6,marginBottom:12,alignItems:"center"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontSize:13,fontWeight:600,color:T.text}}>Expenses — {fmtM(month)}</div>
+          <button style={{...fBtn,color:T.accent,borderColor:"rgba(199,125,255,0.3)"}} onClick={function(){setShowRecMgr(function(s){return !s;});}}>🔄 Manage recurring</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 90px 105px 44px",gap:6,marginBottom:6,alignItems:"center"}}>
           <input style={fInp} placeholder="Expense name" value={expForm.name} onChange={function(ev){setExpForm(function(f){return{...f,name:ev.target.value};});}}/>
           <input style={fInp} type="number" step="0.01" placeholder="Amount $" value={expForm.amount} onChange={function(ev){setExpForm(function(f){return{...f,amount:ev.target.value};});}}/>
           <select style={fInp} value={expForm.cat} onChange={function(ev){setExpForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select>
           <button style={fBtnP} onClick={addExpense}>+</button>
         </div>
-        {expenses.length===0&&<div style={{fontSize:12,color:T.text3,textAlign:"center",padding:"16px 0"}}>No expenses logged for {fmtM(month)} — add one above</div>}
-        {CATS.map(function(cat){const catExps=expenses.filter(function(e){return e.cat===cat;});if(catExps.length===0)return null;return(<div key={cat} style={{marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:CAT_COL[cat],textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{cat}</div>{catExps.map(function(e){return(<div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",borderRadius:8,background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.07)",marginBottom:4}}><span style={{fontSize:12,color:T.text}}>{e.name}</span><div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:12,fontWeight:600,color:CAT_COL[cat]}}>-${Number(e.amount).toFixed(2)}</span><button onClick={function(){removeExpense(e.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,lineHeight:1}}>×</button></div></div>);})}</div>);})}
+        <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:T.text2,marginBottom:14,cursor:"pointer"}}><input type="checkbox" checked={expForm.recurring} onChange={function(ev){setExpForm(function(f){return{...f,recurring:ev.target.checked};});}} style={{accentColor:T.accent}}/>Make this recurring (auto-applies every month)</label>
+        {skippedThisMonth.length>0&&<div style={{marginBottom:10,padding:"6px 10px",borderRadius:8,background:"rgba(255,255,255,0.03)",border:"0.5px solid rgba(255,255,255,0.07)"}}><div style={{fontSize:9,color:T.text3,marginBottom:6}}>SKIPPED THIS MONTH — click to restore</div>{skippedThisMonth.map(function(t){return(<button key={t.id} onClick={function(){restoreRecurring(t.id);}} style={{...fBtn,marginRight:4,marginBottom:4,fontSize:10,textDecoration:"line-through",color:T.text3}}>{t.name}</button>);})}</div>}
+        {allThisMonth.length===0&&<div style={{fontSize:12,color:T.text3,textAlign:"center",padding:"16px 0"}}>No expenses for {fmtM(month)}</div>}
+        {CATS.map(function(cat){const catExps=allThisMonth.filter(function(e){return e.cat===cat;});if(catExps.length===0)return null;return(<div key={cat} style={{marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:CAT_COL[cat],textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{cat}</div>{catExps.map(function(e){const ekey=e.isRecurring?(e.id||e.name):e.id;return(<div key={ekey} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",borderRadius:8,background:e.isRecurring?"rgba(199,125,255,0.05)":"rgba(255,255,255,0.04)",border:"0.5px solid "+(e.isRecurring?"rgba(199,125,255,0.18)":"rgba(255,255,255,0.07)"),marginBottom:4}}><div style={{display:"flex",alignItems:"center",gap:6}}>{e.isRecurring&&<span style={{fontSize:9,color:T.accent}}>🔄</span>}<span style={{fontSize:12,color:T.text}}>{e.name}</span></div><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:12,fontWeight:600,color:CAT_COL[cat]}}>-${Number(e.amount).toFixed(2)}</span>{e.isRecurring?<button onClick={function(){skipRecurring(e.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:10}} title="Skip this month">skip</button>:<button onClick={function(){removeOneOff(e.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,lineHeight:1}}>×</button>}</div></div>);})}</div>);})}
       </div>
+      {showRecMgr&&<div style={fCard()}>
+        <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>Recurring Expenses</div>
+        <div style={{fontSize:10,color:T.text3,marginBottom:12}}>These apply every month automatically. Use "skip" in the expense list to exclude one for a specific month.</div>
+        {recurringTemplates.map(function(t){return(<div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 10px",borderRadius:8,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.18)",marginBottom:6}}><div><span style={{fontSize:12,color:T.text}}>{t.name}</span><span style={{fontSize:10,color:CAT_COL[t.cat]||T.text2,marginLeft:8}}>{t.cat}</span></div><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:12,fontWeight:600,color:T.accent}}>${Number(t.amount).toFixed(2)}/mo</span><button onClick={function(){deleteTemplate(t.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,lineHeight:1}}>×</button></div></div>);})}
+        <div style={{marginTop:12,paddingTop:10,borderTop:"0.5px solid "+T.border}}><div style={{fontSize:11,color:T.text2,marginBottom:8}}>Add recurring expense</div><div style={{display:"grid",gridTemplateColumns:"1fr 90px 105px 44px",gap:6,alignItems:"center"}}><input style={fInp} placeholder="Name" value={recForm.name} onChange={function(ev){setRecForm(function(f){return{...f,name:ev.target.value};});}}/><input style={fInp} type="number" step="0.01" placeholder="$/mo" value={recForm.amount} onChange={function(ev){setRecForm(function(f){return{...f,amount:ev.target.value};});}}/><select style={fInp} value={recForm.cat} onChange={function(ev){setRecForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select><button style={fBtnP} onClick={addRecurring}>+</button></div></div>
+      </div>}
       <div style={fCard()}>
         <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>6-Month Forecast</div>
-        <div style={{fontSize:10,color:T.text3,marginBottom:12}}>Uses current income + average of past months' spending</div>
+        <div style={{fontSize:10,color:T.text3,marginBottom:12}}>Based on current income & average of past 3 months' spending</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
           {forecast.map(function(f,i){return(<div key={i} style={{textAlign:"center",padding:"10px 6px",borderRadius:10,background:f.net>=0?"rgba(105,240,174,0.08)":"rgba(255,107,107,0.08)",border:"0.5px solid "+(f.net>=0?"rgba(105,240,174,0.2)":"rgba(255,107,107,0.2)")}}><div style={{fontSize:9,color:T.text3,marginBottom:4}}>{fmtShortM(f.month)}</div><div style={{fontSize:10,color:T.success,marginBottom:1}}>+${f.income.toFixed(0)}</div><div style={{fontSize:10,color:T.danger,marginBottom:4}}>-${f.expenses.toFixed(0)}</div><div style={{fontSize:12,fontWeight:700,color:f.net>=0?T.success:T.danger}}>{f.net>=0?"+":""}{f.net.toFixed(0)}</div></div>);})}
         </div>
-        {totalExpenses===0&&avgExp===0&&<div style={{fontSize:11,color:T.text3,textAlign:"center",marginTop:8}}>Log at least one month of expenses to activate forecasting</div>}
       </div>
     </div>
   );
