@@ -525,7 +525,7 @@ function FinanceSection({data,onUpdate}){
 
 function App(){
   const [page,setPage]=useState("Dashboard");
-  const [data,setData]=useState(function(){try{const s=localStorage.getItem("dash_v1");return s?JSON.parse(s):INIT;}catch(_){return INIT;}});
+  const [data,setData]=useState(function(){try{const s=localStorage.getItem("dash_v1");if(!s)return INIT;const saved=JSON.parse(s);const fin=saved.finance||{};if(!fin.recurringTemplates||fin.recurringTemplates.length===0){return{...saved,finance:INIT.finance};}return saved;}catch(_){return INIT;}});
   const [wkOff,setWkOff]=useState(0);
   const [activeDay,setActiveDay]=useState(todayStr());
   const [checkinBlocks,setCheckinBlocks]=useState([]);
