@@ -406,7 +406,9 @@ function GymSection(props){
 
 function FinanceSection({data,onUpdate}){
   const [month,setMonth]=useState(todayStr().slice(0,7));
-  const [expForm,setExpForm]=useState({name:"",amount:"",cat:"Bills",recurring:false});
+  const [expForm,setExpForm]=useState({name:"",amount:"",cat:"Other"});
+  const [editExpId,setEditExpId]=useState(null);
+  const [editExpForm,setEditExpForm]=useState({name:"",amount:"",cat:"Other"});
   const [editSrc,setEditSrc]=useState(false);
   const [showRecMgr,setShowRecMgr]=useState(false);
   const [recForm,setRecForm]=useState({name:"",amount:"",cat:"Bills"});
@@ -432,6 +434,12 @@ function FinanceSection({data,onUpdate}){
   const totalExpenses=allThisMonth.reduce(function(a,e){return a+Number(e.amount);},0);
   const net=totalIncome-totalExpenses;
   const budgetLeft=monthBudget>0?monthBudget-totalExpenses:null;
+  const goTabIncome=Number(srcAmounts[1]!==undefined?srcAmounts[1]:0);
+  const weeklyGoTab=goTabIncome/4;
+  const billsRecurring=recurringThisMonth.filter(function(e){return e.cat==="Bills";});
+  const billsMonthlyTotal=billsRecurring.reduce(function(a,e){return a+Number(e.amount);},0);
+  const weeklyBills=billsMonthlyTotal*12/52;
+  const weeklyFree=weeklyGoTab-weeklyBills;
   function shiftMonth(n){const d=new Date(month+"-15");d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,7);}
   function fmtM(m){return new Date(m+"-15").toLocaleDateString("en-AU",{month:"long",year:"numeric"});}
   function fmtShortM(m){return new Date(m+"-15").toLocaleDateString("en-AU",{month:"short",year:"2-digit"});}
@@ -442,8 +450,9 @@ function FinanceSection({data,onUpdate}){
   const curDate=new Date(month+"-15");
   const futureMonthsInYear=11-curDate.getMonth();
   const eoyNet=net+futureMonthsInYear*(totalIncome-avgE);
-  function addExpense(){if(!expForm.name||!expForm.amount)return;if(expForm.recurring){onUpdate({...data,recurringTemplates:recurringTemplates.concat([{id:"r"+Date.now(),name:expForm.name,amount:Number(expForm.amount),cat:expForm.cat}])});}else{onUpdate({...data,expenses:allExpenses.concat([{id:Date.now(),name:expForm.name,amount:Number(expForm.amount),cat:expForm.cat,month:month}])});}setExpForm({name:"",amount:"",cat:"Bills",recurring:false});}
+  function addExpense(){if(!expForm.name||!expForm.amount)return;onUpdate({...data,expenses:allExpenses.concat([{id:Date.now(),name:expForm.name,amount:Number(expForm.amount),cat:expForm.cat,month:month}])});setExpForm({name:"",amount:"",cat:"Other"});}
   function removeOneOff(id){onUpdate({...data,expenses:allExpenses.filter(function(e){return e.id!==id;})});}
+  function saveEditExp(){if(!editExpForm.name||!editExpForm.amount)return;onUpdate({...data,expenses:allExpenses.map(function(e){return e.id===editExpId?{...e,name:editExpForm.name,amount:Number(editExpForm.amount),cat:editExpForm.cat}:e;})});setEditExpId(null);}
   function skipRecurring(tId){const mo={...monthOverrides,[tId]:{...(monthOverrides[tId]||{}),excluded:true}};onUpdate({...data,monthlyRecurringOverrides:{...monthlyRecurringOverrides,[month]:mo}});}
   function restoreRecurring(tId){const mo={...monthOverrides};if(mo[tId]){const n={...mo[tId]};delete n.excluded;mo[tId]=n;}onUpdate({...data,monthlyRecurringOverrides:{...monthlyRecurringOverrides,[month]:mo}});}
   function deleteTemplate(tId){onUpdate({...data,recurringTemplates:recurringTemplates.filter(function(t){return t.id!==tId;})});}
@@ -473,24 +482,45 @@ function FinanceSection({data,onUpdate}){
           <div style={{borderTop:"0.5px solid "+T.border,paddingTop:8,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:T.text2}}>Total expenses</span><span style={{fontSize:13,fontWeight:700,color:T.danger}}>${totalExpenses.toFixed(2)}</span></div>
         </div>
       </div>
-      <div style={fCard()}>
-        <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>Recurring — Weekly & Monthly Cost</div>
-        <div style={{fontSize:10,color:T.text3,marginBottom:12}}>What your fixed habits cost you every week and every month</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 80px",gap:0,marginBottom:6}}>
-          {["Expense","Cat","/ month","/ week"].map(function(h){return<div key={h} style={{fontSize:9,color:T.text3,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,paddingBottom:6,borderBottom:"0.5px solid "+T.border}}>{h}</div>;})}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+        <div style={fCard()}>
+          <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:2}}>Weekly Budget</div>
+          <div style={{fontSize:10,color:T.text3,marginBottom:12}}>GoTab income this month ÷ 4 weeks</div>
+          {goTabIncome===0&&<div style={{fontSize:11,color:T.warn,marginBottom:10,padding:"6px 8px",borderRadius:6,background:"rgba(255,209,102,0.08)"}}>No GoTab income entered for {fmtM(month)} yet — update Income Sources above</div>}
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",borderRadius:8,background:"rgba(105,240,174,0.08)",border:"0.5px solid rgba(105,240,174,0.2)"}}>
+              <span style={{fontSize:11,color:T.text2}}>GoTab weekly</span>
+              <span style={{fontSize:14,fontWeight:700,color:T.success}}>${weeklyGoTab.toFixed(2)}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",borderRadius:8,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.15)"}}>
+              <span style={{fontSize:11,color:T.text2}}>Weekly bills share</span>
+              <span style={{fontSize:13,fontWeight:600,color:T.accent}}>−${weeklyBills.toFixed(2)}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderRadius:8,background:weeklyFree>=0?"rgba(105,240,174,0.12)":"rgba(255,107,107,0.12)",border:"0.5px solid "+(weeklyFree>=0?"rgba(105,240,174,0.35)":"rgba(255,107,107,0.35)")}}>
+              <span style={{fontSize:12,fontWeight:600,color:T.text}}>Free per week</span>
+              <span style={{fontSize:18,fontWeight:700,color:weeklyFree>=0?T.success:T.danger}}>{weeklyFree>=0?"$":"−$"}{Math.abs(weeklyFree).toFixed(2)}</span>
+            </div>
+          </div>
         </div>
-        {recurringThisMonth.map(function(e){const weekly=Number(e.amount)*12/52;return(<div key={e.id||e.name} style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 80px",gap:0,padding:"6px 0",borderBottom:"0.5px solid rgba(255,255,255,0.05)",alignItems:"center"}}>
-          <div style={{fontSize:12,color:T.text}}>{e.name}</div>
-          <div style={{fontSize:10,color:CAT_COL[e.cat]||T.text2}}>{e.cat}</div>
-          <div style={{fontSize:12,fontWeight:600,color:T.danger}}>-${Number(e.amount).toFixed(2)}</div>
-          <div style={{fontSize:11,color:T.text2}}>-${weekly.toFixed(2)}</div>
-        </div>);})}
-        {(function(){const totalMonthly=recurringThisMonth.reduce(function(a,e){return a+Number(e.amount);},0);const totalWeekly=totalMonthly*12/52;const pctIncome=totalIncome>0?Math.round(totalMonthly/totalIncome*100):0;return(<div style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 80px",gap:0,padding:"8px 0 0",alignItems:"center"}}>
-          <div style={{fontSize:11,fontWeight:700,color:T.text}}>Total recurring</div>
-          <div style={{fontSize:10,color:pctIncome>60?T.danger:pctIncome>40?T.warn:T.success}}>{pctIncome}% of income</div>
-          <div style={{fontSize:13,fontWeight:700,color:T.danger}}>-${totalMonthly.toFixed(2)}</div>
-          <div style={{fontSize:12,fontWeight:600,color:T.text2}}>-${totalWeekly.toFixed(2)}</div>
-        </div>);}())}
+        <div style={fCard()}>
+          <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:2}}>Upcoming Bills</div>
+          <div style={{fontSize:10,color:T.text3,marginBottom:12}}>Fixed bills that hit each month</div>
+          {billsRecurring.length===0&&<div style={{fontSize:11,color:T.text3}}>No recurring bills this month</div>}
+          {billsRecurring.map(function(b){return(<div key={b.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"0.5px solid rgba(255,255,255,0.05)"}}>
+            <span style={{fontSize:11,color:T.text}}>{b.name}</span>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:11,fontWeight:600,color:T.accent}}>${Number(b.amount).toFixed(2)}/mo</div>
+              <div style={{fontSize:9,color:T.text3}}>${(Number(b.amount)*12/52).toFixed(2)}/wk</div>
+            </div>
+          </div>);})}
+          {billsRecurring.length>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:8,marginTop:4,borderTop:"0.5px solid "+T.border}}>
+            <span style={{fontSize:11,fontWeight:700,color:T.text}}>Total bills</span>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:12,fontWeight:700,color:T.accent}}>${billsMonthlyTotal.toFixed(2)}/mo</div>
+              <div style={{fontSize:10,color:T.text3}}>${weeklyBills.toFixed(2)}/wk</div>
+            </div>
+          </div>}
+        </div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
         <div style={fCard()}>
@@ -507,20 +537,57 @@ function FinanceSection({data,onUpdate}){
         </div>
       </div>
       <div style={fCard()}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <div style={{fontSize:13,fontWeight:600,color:T.text}}>Expenses — {fmtM(month)}</div>
-          <button style={{...fBtn,color:T.accent,borderColor:"rgba(199,125,255,0.3)"}} onClick={function(){setShowRecMgr(function(s){return !s;});}}>🔄 Manage recurring</button>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:T.text}}>Expenses — {fmtM(month)}</div>
+            <div style={{fontSize:10,color:T.text3,marginTop:2}}>What you've actually spent so far this month</div>
+          </div>
+          <button style={{...fBtn,color:T.accent,borderColor:"rgba(199,125,255,0.3)"}} onClick={function(){setShowRecMgr(function(s){return !s;});}}>⚙ Recurring</button>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 90px 105px 44px",gap:6,marginBottom:6,alignItems:"center"}}>
-          <input style={fInp} placeholder="Expense name" value={expForm.name} onChange={function(ev){setExpForm(function(f){return{...f,name:ev.target.value};});}}/>
-          <input style={fInp} type="number" step="0.01" placeholder="Amount $" value={expForm.amount} onChange={function(ev){setExpForm(function(f){return{...f,amount:ev.target.value};});}}/>
-          <select style={fInp} value={expForm.cat} onChange={function(ev){setExpForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select>
-          <button style={fBtnP} onClick={addExpense}>+</button>
+        <div style={{marginTop:12,marginBottom:14,padding:"10px 12px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"0.5px solid rgba(255,255,255,0.07)"}}>
+          <div style={{fontSize:10,color:T.text3,marginBottom:8,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4}}>Add one-off expense</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 90px 105px 44px",gap:6,alignItems:"center"}}>
+            <input style={fInp} placeholder="e.g. KFC Brimbank" value={expForm.name} onChange={function(ev){setExpForm(function(f){return{...f,name:ev.target.value};});}}/>
+            <input style={fInp} type="number" step="0.01" placeholder="Amount" value={expForm.amount} onChange={function(ev){setExpForm(function(f){return{...f,amount:ev.target.value};});}}/>
+            <select style={fInp} value={expForm.cat} onChange={function(ev){setExpForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select>
+            <button style={fBtnP} onClick={addExpense}>+</button>
+          </div>
         </div>
-        <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:T.text2,marginBottom:14,cursor:"pointer"}}><input type="checkbox" checked={expForm.recurring} onChange={function(ev){setExpForm(function(f){return{...f,recurring:ev.target.checked};});}} style={{accentColor:T.accent}}/>Make this recurring (auto-applies every month)</label>
         {skippedThisMonth.length>0&&<div style={{marginBottom:10,padding:"6px 10px",borderRadius:8,background:"rgba(255,255,255,0.03)",border:"0.5px solid rgba(255,255,255,0.07)"}}><div style={{fontSize:9,color:T.text3,marginBottom:6}}>SKIPPED THIS MONTH — click to restore</div>{skippedThisMonth.map(function(t){return(<button key={t.id} onClick={function(){restoreRecurring(t.id);}} style={{...fBtn,marginRight:4,marginBottom:4,fontSize:10,textDecoration:"line-through",color:T.text3}}>{t.name}</button>);})}</div>}
-        {allThisMonth.length===0&&<div style={{fontSize:12,color:T.text3,textAlign:"center",padding:"16px 0"}}>No expenses for {fmtM(month)}</div>}
-        {CATS.map(function(cat){const catExps=allThisMonth.filter(function(e){return e.cat===cat;});if(catExps.length===0)return null;return(<div key={cat} style={{marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:CAT_COL[cat],textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{cat}</div>{catExps.map(function(e){const ekey=e.isRecurring?(e.id||e.name):e.id;return(<div key={ekey} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",borderRadius:8,background:e.isRecurring?"rgba(199,125,255,0.05)":"rgba(255,255,255,0.04)",border:"0.5px solid "+(e.isRecurring?"rgba(199,125,255,0.18)":"rgba(255,255,255,0.07)"),marginBottom:4}}><div style={{display:"flex",alignItems:"center",gap:6}}>{e.isRecurring&&<span style={{fontSize:9,color:T.accent}}>🔄</span>}<span style={{fontSize:12,color:T.text}}>{e.name}</span></div><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:12,fontWeight:600,color:CAT_COL[cat]}}>-${Number(e.amount).toFixed(2)}</span>{e.isRecurring?<button onClick={function(){skipRecurring(e.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:10}} title="Skip this month">skip</button>:<button onClick={function(){removeOneOff(e.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,lineHeight:1}}>×</button>}</div></div>);})}</div>);})}
+        {recurringThisMonth.length>0&&<div style={{marginBottom:14}}>
+          <div style={{fontSize:10,fontWeight:700,color:T.accent,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Fixed Recurring</div>
+          {recurringThisMonth.map(function(e){return(<div key={e.id||e.name} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",borderRadius:8,background:"rgba(199,125,255,0.05)",border:"0.5px solid rgba(199,125,255,0.18)",marginBottom:4}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:9,color:T.accent}}>🔄</span>
+              <div><div style={{fontSize:12,color:T.text}}>{e.name}</div><div style={{fontSize:9,color:CAT_COL[e.cat]}}>{e.cat}</div></div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:12,fontWeight:600,color:T.accent}}>−${Number(e.amount).toFixed(2)}</span>
+              <button onClick={function(){skipRecurring(e.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:10}} title="Skip this month">skip</button>
+            </div>
+          </div>);})}
+        </div>}
+        <div>
+          <div style={{fontSize:10,fontWeight:700,color:T.warn,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>One-off Spending</div>
+          {oneOffThisMonth.length===0&&<div style={{fontSize:11,color:T.text3,padding:"8px 0"}}>No one-off expenses added yet — use the form above</div>}
+          {oneOffThisMonth.map(function(e){
+            if(editExpId===e.id){return(<div key={e.id} style={{display:"grid",gridTemplateColumns:"1fr 90px 105px 44px 36px",gap:5,marginBottom:6,alignItems:"center"}}>
+              <input style={fInp} value={editExpForm.name} onChange={function(ev){setEditExpForm(function(f){return{...f,name:ev.target.value};});}}/>
+              <input style={fInp} type="number" step="0.01" value={editExpForm.amount} onChange={function(ev){setEditExpForm(function(f){return{...f,amount:ev.target.value};});}}/>
+              <select style={fInp} value={editExpForm.cat} onChange={function(ev){setEditExpForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select>
+              <button style={fBtnP} onClick={saveEditExp}>✓</button>
+              <button style={fBtn} onClick={function(){setEditExpId(null);}}>✕</button>
+            </div>);}
+            return(<div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",borderRadius:8,background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.07)",marginBottom:4}}>
+              <div><div style={{fontSize:12,color:T.text}}>{e.name}</div><div style={{fontSize:9,color:CAT_COL[e.cat]}}>{e.cat}</div></div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:12,fontWeight:600,color:CAT_COL[e.cat]}}>−${Number(e.amount).toFixed(2)}</span>
+                <button onClick={function(){setEditExpId(e.id);setEditExpForm({name:e.name,amount:e.amount,cat:e.cat});}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:13}} title="Edit">✏</button>
+                <button onClick={function(){removeOneOff(e.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,lineHeight:1}} title="Delete">×</button>
+              </div>
+            </div>);
+          })}
+        </div>
       </div>
       {showRecMgr&&<div style={fCard()}>
         <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>Recurring Expenses</div>
