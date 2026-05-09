@@ -457,6 +457,25 @@ function FinanceSection({data,onUpdate}){
           <div style={{borderTop:"0.5px solid "+T.border,paddingTop:8,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:T.text2}}>Total expenses</span><span style={{fontSize:13,fontWeight:700,color:T.danger}}>${totalExpenses.toFixed(2)}</span></div>
         </div>
       </div>
+      <div style={fCard()}>
+        <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>Recurring — Weekly & Monthly Cost</div>
+        <div style={{fontSize:10,color:T.text3,marginBottom:12}}>What your fixed habits cost you every week and every month</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 80px",gap:0,marginBottom:6}}>
+          {["Expense","Cat","/ month","/ week"].map(function(h){return<div key={h} style={{fontSize:9,color:T.text3,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,paddingBottom:6,borderBottom:"0.5px solid "+T.border}}>{h}</div>;})}
+        </div>
+        {recurringThisMonth.map(function(e){const weekly=Number(e.amount)*12/52;return(<div key={e.id||e.name} style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 80px",gap:0,padding:"6px 0",borderBottom:"0.5px solid rgba(255,255,255,0.05)",alignItems:"center"}}>
+          <div style={{fontSize:12,color:T.text}}>{e.name}</div>
+          <div style={{fontSize:10,color:CAT_COL[e.cat]||T.text2}}>{e.cat}</div>
+          <div style={{fontSize:12,fontWeight:600,color:T.danger}}>-${Number(e.amount).toFixed(2)}</div>
+          <div style={{fontSize:11,color:T.text2}}>-${weekly.toFixed(2)}</div>
+        </div>);})}
+        {(function(){const totalMonthly=recurringThisMonth.reduce(function(a,e){return a+Number(e.amount);},0);const totalWeekly=totalMonthly*12/52;const pctIncome=totalIncome>0?Math.round(totalMonthly/totalIncome*100):0;return(<div style={{display:"grid",gridTemplateColumns:"1fr 80px 90px 80px",gap:0,padding:"8px 0 0",alignItems:"center"}}>
+          <div style={{fontSize:11,fontWeight:700,color:T.text}}>Total recurring</div>
+          <div style={{fontSize:10,color:pctIncome>60?T.danger:pctIncome>40?T.warn:T.success}}>{pctIncome}% of income</div>
+          <div style={{fontSize:13,fontWeight:700,color:T.danger}}>-${totalMonthly.toFixed(2)}</div>
+          <div style={{fontSize:12,fontWeight:600,color:T.text2}}>-${totalWeekly.toFixed(2)}</div>
+        </div>);}())}
+      </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
         <div style={fCard()}>
           <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:6}}>Monthly Budget</div>
