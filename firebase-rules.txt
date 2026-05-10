@@ -1,0 +1,272 @@
+// ════════════════════════════════════════════════════════════════════════════
+// FIREBASE FIRESTORE SECURITY RULES — Jayden's Dashboard
+//
+// WHERE TO PASTE THIS:
+//   Firebase Console → your project → Firestore Database → Rules tab
+//   Replace everything in the editor → Publish
+//
+// WHAT THESE DO:
+//   - Only YOU (logged in) can read or write your data
+//   - Nobody else can see or touch any document in the database
+//   - Each section also validates fields before they hit the database
+//     (second line of defence after data-validator.js)
+//
+// DATA STRUCTURE ASSUMED:
+//   users/{uid}/tasks/{taskId}
+//   users/{uid}/reflections/{reflectionId}
+//   users/{uid}/gym/{docId}
+//   users/{uid}/finance/{docId}
+//   users/{uid}/personal/{docId}
+// ════════════════════════════════════════════════════════════════════════════
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ────────────────────────────────────────────────────
+
+    // Is the requesting user logged in AND is it the right user?
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Is a field present and a non-empty string?
+    function nonEmpty(field) {
+      return field in request.resource.data
+          && request.resource.data[field] is string
+          && request.resource.data[field].size() > 0;
+    }
+
+    // Is a field a positive number (or absent)?
+    function positiveIfPresent(field) {
+      return !(field in request.resource.data)
+          || (request.resource.data[field] is number
+              && request.resource.data[field] > 0);
+    }
+
+
+    // ── Catch-all: block everything by default ──────────────────────────────
+    // This runs LAST — anything not matched above is blocked.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+
+    // ── User data — top-level namespace ────────────────────────────────────
+    match /users/{uid} {
+
+      // The user document itself (profile info, settings)
+      allow read, write: if isOwner(uid);
+
+
+      // ── Tasks ─────────────────────────────────────────────────────────────
+      match /tasks/{taskId} {
+        allow read,   delete: if isOwner(uid);
+
+        allow create, update: if isOwner(uid)
+          // name is required and must be a non-empty string
+          && nonEmpty('name')
+          // priority must be one of the two accepted values
+          && request.resource.data.priority in ['urgent', 'normal']
+          // done must be a boolean
+          && request.resource.data.done is bool;
+      }
+
+
+      // ── Reflections ───────────────────────────────────────────────────────
+      match /reflections/{reflectionId} {
+        allow read,   delete: if isOwner(uid);
+
+        allow create, update: if isOwner(uid)
+          // date is required
+          && nonEmpty('date')
+          // answers must be a list
+          && request.resource.data.answers is list
+          && request.resource.data.answers.size() > 0;
+      }
+
+
+      // ── Gym ───────────────────────────────────────────────────────────────
+      match /gym/{docId} {
+        allow read,   delete: if isOwner(uid);
+
+        allow create, update: if isOwner(uid)
+          // date is required
+          && nonEmpty('date')
+          // body weight must be positive if included
+          && positiveIfPresent('weight');
+      }
+
+
+      // ── Finance ───────────────────────────────────────────────────────────
+      match /finance/{docId} {
+        allow read,   delete: if isOwner(uid);
+
+        allow create, update: if isOwner(uid)
+          // amount must be present and positive
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0
+          // category is required
+          && nonEmpty('category')
+          // date is required
+          && nonEmpty('date');
+      }
+
+
+      // ── Personal (notes, knowledge base, etc.) ───────────────────────────
+      match /personal/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+
+
+      // ── Any other subcollection under users/{uid} ────────────────────────
+      // Catch-all for future collections — auth check only, no field rules.
+      match /{collection}/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// HOW TO APPLY — STEP BY STEP
+// ════════════════════════════════════════════════════════════════════════════
+//
+// 1. Go to https://console.firebase.google.com
+// 2. Select your project (or create one if you haven't)
+// 3. In the left sidebar: Build → Firestore Database
+// 4. If Firestore isn't set up yet:
+//      a. Click "Create database"
+//      b. Choose "Start in production mode" (rules will block everything)
+//      c. Pick a region close to you (e.g. australia-southeast1)
+// 5. Click the "Rules" tab at the top of Firestore
+// 6. Select all text in the editor and delete it
+// 7. Paste everything between the rules_version line and the closing brace
+//    (the actual rules block — not these comments)
+// 8. Click "Publish"
+// 9. Rules take effect immediately
+//
+// HOW TO TEST THE RULES (Firebase Console):
+//   Rules tab → "Rules Playground" button (top right)
+//   - Set Authentication: authenticated, UID = your test UID
+//   - Path: /users/{yourUID}/tasks/someTask
+//   - Method: get / create / update / delete
+//   - Should return "Allow" for your UID, "Deny" for any other UID
+//
+// ════════════════════════════════════════════════════════════════════════════
+// INTEGRATION WITH data-validator.js
+// ════════════════════════════════════════════════════════════════════════════
+//
+// data-validator.js catches bad data IN THE BROWSER before it's sent.
+// Firebase rules catch bad data AT THE DATABASE if something slips through.
+// Together they give you two layers of protection.
+//
+// Flow:
+//   User action → data-validator.js → (if valid) → NetworkMonitor.queue()
+//                                                       ↓
+//                                              Firebase security rules
+//                                                       ↓
+//                                               Data written to Firestore
+//
+// ════════════════════════════════════════════════════════════════════════════
+// WIRING VALIDATION INTO YOUR SAVE FUNCTIONS
+// ════════════════════════════════════════════════════════════════════════════
+//
+// 1. ADD THE SCRIPT TAG to dashboard.html (before the Babel bundle):
+//
+//    <script src="data-validator.js"></script>
+//
+//
+// 2. SHOW A TOAST (add this helper once near your state declarations):
+//
+//    const [toast, setToast] = useState(null);
+//    function showToast(msg, type) {
+//      setToast({ msg, type: type || 'error' });
+//      setTimeout(function() { setToast(null); }, 3500);
+//    }
+//
+//    // Toast UI (add inside your App return, above everything else):
+//    {toast && (
+//      <div style={{
+//        position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)',
+//        background: toast.type === 'error' ? 'rgba(255,107,107,0.95)' : 'rgba(105,240,174,0.95)',
+//        color: '#fff', padding: '10px 18px', borderRadius: 10, fontSize: 13,
+//        fontWeight: 600, zIndex: 999, boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+//        maxWidth: 320, textAlign: 'center'
+//      }}>
+//        {toast.msg}
+//      </div>
+//    )}
+//
+//
+// 3. VALIDATE IN saveModal() — find your existing saveModal function and
+//    add validation at the top:
+//
+//    function saveModal() {
+//      // -- ADD THIS BLOCK --
+//      if (modal === 'add_task') {
+//        var result = DataValidator.validate('task', mForm);
+//        if (!result.valid) { showToast(result.firstError); return; }
+//      }
+//      if (modal === 'log_weight') {
+//        var result = DataValidator.validate('bodyWeight', {
+//          weight: Number(mForm.weight),
+//          date:   todayStr()
+//        });
+//        if (!result.valid) { showToast(result.firstError); return; }
+//      }
+//      // -- END ADDED BLOCK --
+//
+//      // ... rest of your existing saveModal code unchanged ...
+//    }
+//
+//
+// 4. VALIDATE IN submitRefl() — before the analyzeReflection call:
+//
+//    function submitRefl() {
+//      if (!reflIn.trim()) return;
+//      const na = reflAns.concat([{ q: REFL_QS[reflStep - 1], a: reflIn }]);
+//
+//      if (reflStep >= REFL_QS.length) {
+//        // -- ADD THIS CHECK --
+//        var result = DataValidator.validate('reflection', { answers: na });
+//        if (!result.valid) { showToast(result.firstError); return; }
+//        // -- END ADDED CHECK --
+//      }
+//
+//      // ... rest of your existing submitRefl code unchanged ...
+//    }
+//
+//
+// 5. VALIDATE FINANCE ENTRIES — in your FinanceSection's save handler:
+//
+//    function saveExpense(entry) {
+//      try {
+//        DataValidator.validateOrThrow('financeEntry', entry);
+//        // ... save to state / Firebase ...
+//      } catch (e) {
+//        showToast(e.message);
+//      }
+//    }
+//
+//
+// 6. REGISTER A FIREBASE SAVE OPERATION with NetworkMonitor (when you add Firebase):
+//
+//    // Register once at startup:
+//    NetworkMonitor.register('saveTask', function(args) {
+//      return ErrorHandler.withRetry(function() {
+//        return db.collection('users').doc(args.uid)
+//                 .collection('tasks').doc(args.taskId)
+//                 .set(args.data);
+//      }, { maxRetries: 3, source: 'firebase-tasks' });
+//    });
+//
+//    // Then in your save function (after validation passes):
+//    NetworkMonitor.queue('saveTask', {
+//      uid:    currentUser.uid,
+//      taskId: newTask.id.toString(),
+//      data:   newTask
+//    });
+//    // ^ If offline, this queues automatically and retries when back online.

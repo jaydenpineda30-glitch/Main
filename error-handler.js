@@ -1,6 +1,6 @@
 /**
  * error-handler.js
- * Core error logging, retry logic, and analytics.
+ * Core error logging, retry logic, and log export.
  * No external dependencies — uses localStorage for persistence.
  * Exposes global: window.ErrorHandler
  */
@@ -137,39 +137,18 @@
       this.info('Logs exported', 'error-handler', { data: { count: logs.length } });
     },
 
-    // ── Analytics ────────────────────────────────────────────────────────────
+    // ── Counts (used by monitoring-dashboard.js) ─────────────────────────────
 
     getAnalytics: function () {
-      var logs      = loadLogs();
-      var bySource  = {};
-      var bySev     = {};
-      var byHour    = {};
-      var msgCount  = {};
-      var now       = Date.now();
-      var weekAgo   = new Date(now - 7 * 864e5).toISOString();
-
-      logs.forEach(function (l) {
-        bySource[l.source]   = (bySource[l.source]   || 0) + 1;
-        bySev[l.severity]    = (bySev[l.severity]    || 0) + 1;
-        msgCount[l.message]  = (msgCount[l.message]  || 0) + 1;
-        var h = new Date(l.timestamp).getHours();
-        byHour[h] = (byHour[h] || 0) + 1;
-      });
-
-      var topErrors = Object.keys(msgCount)
-        .map(function (k) { return { message: k, count: msgCount[k] }; })
-        .sort(function (a, b) { return b.count - a.count; })
-        .slice(0, 5);
-
-      var thisWeek = logs.filter(function (l) { return l.timestamp >= weekAgo; });
-
+      var logs    = loadLogs();
+      var bySev   = {};
+      var weekAgo = new Date(Date.now() - 7 * 864e5).toISOString();
+      logs.forEach(function (l) { bySev[l.severity] = (bySev[l.severity] || 0) + 1; });
       return {
         total:      logs.length,
-        thisWeek:   thisWeek.length,
-        bySource:   bySource,
+        thisWeek:   logs.filter(function (l) { return l.timestamp >= weekAgo; }).length,
         bySeverity: bySev,
-        byHour:     byHour,
-        topErrors:  topErrors
+        topErrors:  []   // removed — use exportLogs() for full detail
       };
     },
 
@@ -181,21 +160,6 @@
       return function () {
         this._listeners = this._listeners.filter(function (l) { return l !== cb; });
       }.bind(this);
-    },
-
-    // ── Utility wrappers ─────────────────────────────────────────────────────
-
-    /** Wrap a sync function so uncaught errors are auto-logged. */
-    wrap: function (fn, source) {
-      var self = this;
-      return function () {
-        try {
-          return fn.apply(this, arguments);
-        } catch (e) {
-          self.error(e.message || String(e), source || 'wrapped', { error: e });
-          throw e;
-        }
-      };
     },
 
     /**
