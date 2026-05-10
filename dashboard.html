@@ -254,7 +254,7 @@ const SEED_REFL=[{id:1746835200000,date:"2026-05-10T02:00:00.000Z",answers:[
   {question:REFL_QS[2],answer:"Gym consistency has been good this week — hit 81kg body weight and 85kg bench press which is a personal best. Nutrition could be better, I've been eating more takeaway because I'm stressed and don't have time to cook properly.",area:"Health"},
   {question:REFL_QS[3],answer:"Personal relationships have been neglected this week. I've been isolating to focus on assignments — haven't caught up with anyone outside of work. It's starting to feel a bit lonely even though I know it's temporary.",area:"Balance"},
   {question:REFL_QS[4],answer:"Want to improve my time management next week so assessments don't pile up at once. One win from this week is staying consistent with gym training despite the heavy assessment load — proving I can maintain good habits even when stressed.",area:"Growth & Wins"}
-],analysis:{emotionalState:"Cautiously optimistic — mixed but moving forward",dominantPattern:"Growth orientation — approaching challenges with curiosity",rootIssue:"Strongest friction in your academic load — multiple assessments converging simultaneously",insight:"You approached challenges this week with curiosity rather than rigidity — looking at what to improve rather than cataloguing what went wrong. That orientation is a genuine psychological strength. It's the difference between feedback as information and feedback as verdict.",recommendation:"Channel this week's momentum into one specific commitment: pick the area with the most untapped potential from your reflection and schedule a deliberate block of time for it.",patternHistory:"First reflection — patterns will emerge as you keep logging each week.",sentimentScore:0.17,detectedPatterns:["growth_mindset"]}}];
+],analysis:{emotionalState:"Cautiously optimistic — mixed but moving forward",dominantPattern:"Growth orientation — approaching challenges with curiosity",rootIssue:"Strongest friction in your academic load — multiple assessments converging simultaneously",insight:"You approached challenges this week with curiosity rather than rigidity — looking at what to improve rather than cataloguing what went wrong. That orientation is a genuine psychological strength. It's the difference between feedback as information and feedback as verdict.",recommendation:"Channel this week's momentum into one specific commitment: pick the area with the most untapped potential from your reflection and schedule a deliberate block of time for it.",patternHistory:"First reflection — patterns will emerge as you keep logging each week.",sentimentScore:0.17,detectedPatterns:["growth_mindset"],sentColor:"#ffd166",sentBg:"rgba(255,209,102,0.06)",sentBorder:"rgba(255,209,102,0.25)"}}];
 function analyzeReflection(answers,history){
   const allText=answers.map(function(a){return a.a;}).join(" ").toLowerCase();
   const NEG=["overwhelm","stressed","stress","anxious","anxiety","tired","exhaust","frustrat","struggl","difficult","hard","fail","behind","worr","drain","burnout","burnt out","can't","couldn't","unable","avoid","procrastinat","miss","forgot","lonely","isolat","depress","hopeless","unmotivated","no motivation","falling behind"];
@@ -326,7 +326,7 @@ function analyzeReflection(answers,history){
     else if(stressWeeks===0)patternHistory="Consistently positive tone across your last "+total+" reflections — you're tracking a meaningful stretch of stability and growth.";
     else patternHistory="Mixed weeks across your last "+total+" reflections ("+stressWeeks+" higher-stress, "+(total-stressWeeks)+" more positive). No single dominant pattern yet — keep logging for clearer trends.";
   } else if(history&&history.length===1){patternHistory="Second reflection logged. One more week of data needed before cross-week patterns can be identified.";}
-  return{emotionalState,dominantPattern,rootIssue,insight,recommendation,patternHistory,sentimentScore:sentScore,detectedPatterns:patterns};
+  return{emotionalState,dominantPattern,rootIssue,insight,recommendation,patternHistory,sentimentScore:sentScore,detectedPatterns:patterns,sentColor:sentScore>=0.1?"#69f0ae":sentScore<=-0.1?"#ff6b6b":"#ffd166",sentBg:sentScore>=0.1?"rgba(105,240,174,0.06)":sentScore<=-0.1?"rgba(255,107,107,0.06)":"rgba(255,209,102,0.06)",sentBorder:sentScore>=0.1?"rgba(105,240,174,0.25)":sentScore<=-0.1?"rgba(255,107,107,0.25)":"rgba(255,209,102,0.25)"};
 }
 
 // ── Rule-based check-in ────────────────────────────────────────────────────
@@ -1052,15 +1052,15 @@ function App(){
               </div>
             </div>}
             {reflStep>REFL_QS.length&&<div>
-              {reflAnalysis?(function(){const sc=reflAnalysis.sentimentScore;const sCo=sc>=0.1?T.success:sc<=-0.1?T.danger:T.warn;const sBg=sc>=0.1?"rgba(105,240,174,0.06)":sc<=-0.1?"rgba(255,107,107,0.06)":"rgba(255,209,102,0.06)";const sBr=sc>=0.1?"rgba(105,240,174,0.25)":sc<=-0.1?"rgba(255,107,107,0.25)":"rgba(255,209,102,0.25)";return<div>
+              {reflAnalysis&&<div>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"10px 12px",borderRadius:10,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.2)"}}>
                   <span style={{fontSize:20}}>📊</span>
                   <div><div style={{fontSize:13,fontWeight:700,color:T.text}}>Weekly Psychological Insight</div><div style={{fontSize:10,color:T.text3}}>Based on your answers and reflection history</div></div>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-                  <div style={{padding:"10px 12px",borderRadius:10,background:sBg,border:"0.5px solid "+sBr}}>
+                  <div style={{padding:"10px 12px",borderRadius:10,background:reflAnalysis.sentBg,border:"0.5px solid "+reflAnalysis.sentBorder}}>
                     <div style={{fontSize:9,color:T.text3,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Emotional State</div>
-                    <div style={{fontSize:11,color:sCo,fontWeight:600,lineHeight:1.4}}>{reflAnalysis.emotionalState}</div>
+                    <div style={{fontSize:11,color:reflAnalysis.sentColor,fontWeight:600,lineHeight:1.4}}>{reflAnalysis.emotionalState}</div>
                   </div>
                   <div style={{padding:"10px 12px",borderRadius:10,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.18)"}}>
                     <div style={{fontSize:9,color:T.text3,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Dominant Pattern</div>
@@ -1084,7 +1084,8 @@ function App(){
                   <div style={{fontSize:12,color:T.text2,lineHeight:1.7}}>{reflAnalysis.patternHistory}</div>
                 </div>
                 <button style={btn} onClick={function(){setReflStep(0);setReflAnalysis(null);}}>Done</button>
-              </div>;})()):(<div><div style={{fontSize:12,color:T.success,marginBottom:10}}>✓ Reflection saved</div><button style={btn} onClick={function(){setReflStep(0);}}>Done</button></div>)}
+              </div>}
+              {!reflAnalysis&&<div><div style={{fontSize:12,color:T.success,marginBottom:10}}>✓ Reflection saved</div><button style={btn} onClick={function(){setReflStep(0);}}>Done</button></div>}
             </div>}
           </div>
         </div>}
