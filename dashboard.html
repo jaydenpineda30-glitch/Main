@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Jayden's Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse 80% 55% at 15% 85%, rgba(255,80,0,0.28) 0%, transparent 55%),
+      radial-gradient(ellipse 65% 65% at 85% 10%, rgba(90,0,255,0.38) 0%, transparent 55%),
+      radial-gradient(ellipse 60% 50% at 55% 55%, rgba(0,8,50,0.85) 0%, transparent 70%),
+      #05071a;
+    color:#e8eaf6;
+    font-family:system-ui,sans-serif;
+    min-height:100vh;
+  }
+  input[type=range]{width:100%;accent-color:#c77dff;}
+  select option{background:#0d0f28;color:#e8eaf6;}
+  ::-webkit-scrollbar{width:4px;}
+  ::-webkit-scrollbar-track{background:rgba(255,255,255,0.03);}
+  ::-webkit-scrollbar-thumb{background:rgba(199,125,255,0.35);border-radius:2px;}
+  input,select,textarea,button{-webkit-tap-highlight-color:transparent;}
+  /* Animated background streaks */
+  .glass-bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;}
+  .glass-bg .streak{position:absolute;border-radius:999px;height:2px;opacity:0;}
+  .glass-bg .s1{width:340px;background:linear-gradient(90deg,transparent,#ff6a00,#ee0979);top:28%;left:-60px;transform:rotate(-28deg);animation:st 5s ease-in-out 0s infinite alternate;}
+  .glass-bg .s2{width:280px;background:linear-gradient(90deg,transparent,#7f00ff,#4fc3f7);bottom:22%;right:-40px;transform:rotate(22deg);animation:st 6s ease-in-out 1s infinite alternate-reverse;}
+  .glass-bg .s3{width:200px;background:linear-gradient(90deg,transparent,#00e5ff);top:60%;left:3%;transform:rotate(-12deg);animation:st 4s ease-in-out 0.5s infinite alternate;}
+  .glass-bg .s4{width:180px;background:linear-gradient(90deg,transparent,#c77dff);top:15%;right:20%;transform:rotate(15deg);animation:st 4.5s ease-in-out 2s infinite alternate-reverse;}
+  @keyframes st{from{opacity:0.4;transform:translateY(-10px) rotate(-28deg);}to{opacity:0.85;transform:translateY(10px) rotate(-26deg);}}
+  /* Particles */
+  .glass-bg .p{position:absolute;border-radius:50%;animation:fp var(--dur) ease-in-out var(--delay) infinite;}
+  @keyframes fp{0%{opacity:0;transform:translateY(0) scale(.5);}50%{opacity:.7;}100%{opacity:0;transform:translateY(-90px) scale(1.3);}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="app-error" style="display:none;padding:32px 24px;font-family:system-ui;background:#05071a;color:#ff6b6b;min-height:100vh;position:fixed;inset:0;z-index:9999;overflow:auto;"></div>
+<script>
+window.addEventListener('error', function(e) {
+  var el = document.getElementById('app-error');
+  if (el) {
+    el.style.display = 'block';
+    el.innerHTML = '<h2 style="color:#ff6b6b;margin-bottom:16px">Dashboard Error</h2>' +
+      '<p style="color:#e8eaf6;margin-bottom:8px;font-size:13px">Please report this to your developer:</p>' +
+      '<pre style="background:rgba(255,255,255,0.05);padding:12px;border-radius:8px;font-size:12px;white-space:pre-wrap;color:#ffd166">' +
+      (e.message || 'Unknown error') + '\n\n' + (e.filename || '') + ':' + (e.lineno || '') + '</pre>';
+  }
+});
+</script>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err: err }; }
+  componentDidCatch(err) {
+    var el = document.getElementById('app-error');
+    if (el) {
+      el.style.display = 'block';
+      el.innerHTML = '<h2 style="color:#ff6b6b;margin-bottom:16px">Render Error</h2>' +
+        '<pre style="background:rgba(255,255,255,0.05);padding:12px;border-radius:8px;font-size:12px;white-space:pre-wrap;color:#ffd166">' +
+        (err ? err.message : 'Unknown') + '</pre>';
+    }
+  }
+  render() {
+    if (this.state.err) return null;
+    return this.props.children;
+  }
+}
+
+const T={bg:"#05071a",bg2:"rgba(255,255,255,0.07)",bg3:"rgba(255,255,255,0.04)",border:"rgba(255,255,255,0.09)",border2:"rgba(255,255,255,0.16)",text:"#e8eaf6",text2:"#9fa8c7",text3:"rgba(255,255,255,0.28)",accent:"#c77dff",accentBg:"rgba(199,125,255,0.15)",danger:"#ff6b6b",dangerBg:"rgba(255,107,107,0.15)",success:"#69f0ae",successBg:"rgba(105,240,174,0.15)",warn:"#ffd166",warnBg:"rgba(255,209,102,0.15)",orange:"#ff9a3c",orangeBg:"rgba(255,154,60,0.15)"};
+const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const TASK_CATS=["Finances","Errands","Admin","Health","Social","Study","Meal Prep","Car & Transport","Home","Family","Work","Self-care","Shopping","Other"];
+const SUBJECTS={"WIA&B":"WORK IN ACCOUNTING & BOOKKEEPING INDUSTRY","POB":"PREPARE OPERATIONAL BUDGETS","BAS/IAS":"BAS/IAS","FinStmts NRE":"PREPARE FINANCIAL STATEMENTS FOR NON-REPORTING ENTITIES","Payroll":"ESTABLISH & MAINTAIN PAYROLL SYSTEMS","PFR":"PREPARE FINANCIAL REPORTS","Law":"LAW"};
+const SC={"WIA&B":"#BA7517","POB":"#D85A30","BAS/IAS":"#7F77DD","FinStmts NRE":"#D4537E","Payroll":"#378ADD","PFR":"#1D9E75","Law":"#639922"};
+
+const UNI_EVENTS=[
+  {id:"u1",date:"2026-05-07",time:"8:30–10:30",subject:"Payroll",title:"Practice Revision for AT1 Manual Payroll",assessment:false},
+  {id:"u2",date:"2026-05-07",time:"13:30–16:30",subject:"PFR",title:"Ch.15 Balance Day Adjustments",assessment:false},
+  {id:"u3",date:"2026-05-11",time:"8:30–11:30",subject:"WIA&B",title:"Ch.3 Set up & maintain compliance systems",assessment:false},
+  {id:"u4",date:"2026-05-11",time:"12:30–16:30",subject:"POB",title:"Assessment 1",assessment:true},
+  {id:"u5",date:"2026-05-12",time:"8:30–11:45",subject:"BAS/IAS",title:"Ch.4 Other Reporting Requirements (LCT, FBT, FTC, WET)",assessment:false},
+  {id:"u6",date:"2026-05-12",time:"13:30–16:30",subject:"FinStmts NRE",title:"Ch.5.1 Formation of a Partnership + AT1 Review",assessment:false},
+  {id:"u7",date:"2026-05-13",time:"13:00–16:00",subject:"Law",title:"Ch.7 Business Structures + Start Assignment 2",assessment:false},
+  {id:"u8",date:"2026-05-14",time:"8:30–10:30",subject:"Payroll",title:"SUPERVISED ASSESSMENT 1 — In-Class Manual Payroll",assessment:true},
+  {id:"u9",date:"2026-05-14",time:"13:30–16:30",subject:"PFR",title:"Assessment 1",assessment:true},
+  {id:"u10",date:"2026-05-18",time:"8:30–11:30",subject:"WIA&B",title:"Assessment 1",assessment:true},
+  {id:"u11",date:"2026-05-18",time:"12:30–16:30",subject:"POB",title:"Part A of Assessment 2",assessment:true},
+  {id:"u12",date:"2026-05-19",time:"8:30–11:45",subject:"BAS/IAS",title:"Ch.5 Completing the BAS + Revision",assessment:false},
+  {id:"u13",date:"2026-05-19",time:"13:30–16:30",subject:"FinStmts NRE",title:"Assignment 1",assessment:true},
+  {id:"u14",date:"2026-05-20",time:"13:00–16:00",subject:"Law",title:"Submit Assessment 1",assessment:true},
+  {id:"u15",date:"2026-05-21",time:"8:30–10:30",subject:"Payroll",title:"Start Xero Payroll — Ch.5 Processing + Ch.6 Establishing",assessment:false},
+  {id:"u16",date:"2026-05-21",time:"13:30–16:30",subject:"PFR",title:"Ch.16 Closing Entries",assessment:false},
+  {id:"u17",date:"2026-05-25",time:"8:30–11:30",subject:"WIA&B",title:"Ch.5 Develop competency (5.1) + Assignment 2 discussion",assessment:false},
+  {id:"u18",date:"2026-05-25",time:"12:30–16:30",subject:"POB",title:"Ch.4 Cash Budgets (4.1–4.5) + Pit stop 5",assessment:false},
+  {id:"u19",date:"2026-05-26",time:"8:30–11:45",subject:"BAS/IAS",title:"SUPERVISED ASSESSMENT 1 — IAS & BAS Preparation",assessment:true},
+  {id:"u20",date:"2026-05-26",time:"13:30–16:30",subject:"FinStmts NRE",title:"Ch.5.3 Introduction of an additional partner",assessment:false},
+  {id:"u21",date:"2026-05-27",time:"13:00–16:00",subject:"Law",title:"Ch.9 Real & Personal Property + Ch.10 Intellectual Property",assessment:false},
+  {id:"u22",date:"2026-05-28",time:"8:30–10:30",subject:"Payroll",title:"Ch.7 Multi-Period Xero + Ch.8 EOY Processes",assessment:false},
+  {id:"u23",date:"2026-05-28",time:"13:30–16:30",subject:"PFR",title:"Ch.17 Final Reports",assessment:false},
+  {id:"u24",date:"2026-06-01",time:"8:30–11:30",subject:"WIA&B",title:"Ch.5 Develop competency (5.2–5.4)",assessment:false},
+  {id:"u25",date:"2026-06-01",time:"12:30–16:30",subject:"POB",title:"Part B of Assessment 2",assessment:true},
+  {id:"u26",date:"2026-06-02",time:"8:30–11:45",subject:"BAS/IAS",title:"Assessment 2 — Xero Case Study",assessment:true},
+  {id:"u27",date:"2026-06-02",time:"13:30–16:30",subject:"FinStmts NRE",title:"Assessment 2",assessment:true},
+  {id:"u28",date:"2026-06-03",time:"13:00–16:00",subject:"Law",title:"Submit Assessment 2 Part A",assessment:true},
+  {id:"u29",date:"2026-06-04",time:"8:30–10:30",subject:"Payroll",title:"Assessment 2 — Xero Case Study Q&A",assessment:true},
+  {id:"u30",date:"2026-06-04",time:"13:30–16:30",subject:"PFR",title:"Assessment 2",assessment:true},
+];
+const WORK_EVENTS=[
+  {id:"w1",date:"2026-05-08",time:"17:00–22:00",title:"Support shift",type:"shift"},
+  {id:"w2",date:"2026-05-09",time:"17:00–22:00",title:"Support shift",type:"shift"},
+  {id:"w3",date:"2026-05-09",time:"7:00–8:00",title:"GoTab Happy Hour",type:"social"},
+  {id:"w4",date:"2026-05-13",time:"17:00–22:00",title:"Support shift",type:"shift"},
+  {id:"w5",date:"2026-05-14",time:"17:00–22:00",title:"Support shift",type:"shift"},
+  {id:"w6",date:"2026-05-16",time:"7:00–8:00",title:"GoTab Happy Hour",type:"social"},
+  {id:"w7",date:"2026-05-23",time:"7:00–8:00",title:"GoTab Happy Hour",type:"social"},
+  {id:"w8",date:"2026-05-30",time:"7:00–8:00",title:"GoTab Happy Hour",type:"social"},
+  {id:"w9",date:"2026-06-06",time:"7:00–8:00",title:"GoTab Happy Hour",type:"social"},
+];
+
+const INIT={
+  uni:{subjects:Object.keys(SUBJECTS).map(function(k,i){return{id:i+1,name:k,progress:30+i*5};}),completedEvents:[]},
+  gym:{
+    exercises:[
+      {id:1,name:"Bench Press",logs:[{date:"2026-04-21",weight:78},{date:"2026-04-28",weight:80},{date:"2026-05-05",weight:82.5},{date:"2026-05-07",weight:85}]},
+      {id:2,name:"Squat",logs:[{date:"2026-04-22",weight:95},{date:"2026-04-29",weight:100},{date:"2026-05-06",weight:102.5}]},
+      {id:3,name:"Overhead Press",logs:[{date:"2026-04-21",weight:55},{date:"2026-04-28",weight:57.5},{date:"2026-05-05",weight:60}]},
+    ],
+    bodyWeight:[{date:"2026-04-28",weight:80.5},{date:"2026-05-05",weight:81}],
+    lastBWWeek:null,
+    rotation:[
+      {id:1,name:"Push Day",focus:"Chest, shoulders, triceps"},
+      {id:2,name:"Pull Day",focus:"Back, biceps"},
+      {id:3,name:"Legs — Hamstring Focus",focus:"Hamstrings, glutes, calves"},
+      {id:4,name:"Upper Day",focus:"Full upper body"},
+      {id:5,name:"Legs — Quad Focus",focus:"Quads, glutes, calves"},
+    ],
+    rotIdx:1,
+    workouts:[
+      {id:1,name:"Push Day",date:"2026-05-07",rotId:1,sets:[
+        {id:1,exercise:"Bench Press",sets:"4",reps:"8",weight:"85"},
+        {id:2,exercise:"Overhead Press",sets:"3",reps:"10",weight:"60"},
+        {id:3,exercise:"Tricep Pushdown",sets:"3",reps:"12",weight:"32.5"},
+      ]},
+    ],
+  },
+  personal:{
+    tasks:[
+      {id:1,name:"Pay electricity bill",cat:"Finances",priority:"urgent",due:"2026-05-09",done:false,addedAt:"2026-05-02",editedAt:null},
+      {id:2,name:"Book dentist appointment",cat:"Errands",priority:"normal",due:"2026-05-20",done:false,addedAt:"2026-05-01",editedAt:null},
+      {id:3,name:"Renew car registration",cat:"Admin",priority:"urgent",due:"2026-05-12",done:false,addedAt:"2026-04-30",editedAt:null},
+    ],
+    archived:[],
+  },
+  docs:[
+    {id:"d1",title:"Assessment schedule",tags:["uni"],content:"POB AT1 due 11 May. Payroll Supervised AT1 14 May in-class. PFR AT1 due 14 May. WIA&B AT1 due 18 May. POB Part A AT2 due 18 May. FinStmts NRE Assignment 1 due 19 May. Law AT1 due 20 May. BAS/IAS Supervised AT1 26 May."},
+    {id:"d2",title:"GoTab shifts",tags:["work"],content:"Support shifts: Thu 8 May 5-10pm, Fri 9 May 5-10pm, Wed 13 May 5-10pm, Thu 14 May 5-10pm."},
+  ],
+  reflections:[],
+  finance:{
+    financeVersion:2,
+    sources:[{id:1,name:"GoTab (Rippling)",amount:0},{id:2,name:"Jobseeker",amount:802.40},{id:3,name:"",amount:0}],
+    monthlyBudget:0,
+    monthlyIncome:{
+      "2026-02":{"2":802.40},
+      "2026-03":{"2":1604.80},
+      "2026-04":{"1":4750.86,"2":1067.50},
+      "2026-05":{"1":150}
+    },
+    recurringTemplates:[
+      {id:"r1",name:"TPG Internet",amount:84.99,cat:"Bills"},
+      {id:"r2",name:"Spotify",amount:15.99,cat:"Addiction"},
+      {id:"r3",name:"Apple iCloud",amount:1.49,cat:"Bills"},
+      {id:"r4",name:"Felix Mobile (Phone Plan)",amount:25.00,cat:"Bills"},
+      {id:"r5",name:"Hungry Jack's (daily)",amount:95.00,cat:"Addiction"},
+      {id:"r6",name:"Replenish Vending",amount:24.00,cat:"Addiction"},
+      {id:"r7",name:"7-Eleven runs",amount:10.00,cat:"Addiction"},
+      {id:"r8",name:"Blue Hippo Laundry",amount:19.05,cat:"Bills"},
+      {id:"r9",name:"Fuel (petrol)",amount:160.00,cat:"Other"},
+      {id:"r10",name:"JT Business (grooming/wax)",amount:45.00,cat:"Other"}
+    ],
+    monthlyRecurringOverrides:{
+      "2026-02":{"r1":{amount:79.99},"r9":{amount:199.26},"r10":{amount:78.00}},
+      "2026-03":{"r9":{amount:138.00},"r10":{amount:38.00}},
+      "2026-04":{"r9":{amount:185.00},"r10":{amount:47.50}},
+      "2026-05":{"r9":{amount:84.01},"r10":{amount:49.00}}
+    },
+    expenses:[
+      {id:5001,name:"Coles groceries",amount:47.55,cat:"Other",month:"2026-05"},
+      {id:5002,name:"KFC Brimbank",amount:11.60,cat:"Addiction",month:"2026-05"},
+      {id:5003,name:"KFC Swanston St",amount:12.50,cat:"Addiction",month:"2026-05"},
+      {id:5004,name:"KIS Hair",amount:55.83,cat:"Other",month:"2026-05"},
+      {id:5005,name:"M Fittipaldi",amount:40.00,cat:"Other",month:"2026-05"},
+      {id:5006,name:"Melbourne Spiegaltent (event)",amount:104.32,cat:"Other",month:"2026-05"},
+      {id:5007,name:"Kwafood Fried Chicken",amount:23.66,cat:"Addiction",month:"2026-05"},
+      {id:5008,name:"Siddeley St Docklands",amount:15.30,cat:"Other",month:"2026-05"},
+      {id:5009,name:"Tamar Drive Convenience",amount:12.13,cat:"Other",month:"2026-05"},
+      {id:5010,name:"Rawad Convenience",amount:2.03,cat:"Other",month:"2026-05"},
+      {id:5011,name:"ATM fees",amount:6.25,cat:"Other",month:"2026-05"},
+      {id:4001,name:"Vicroads (car registration)",amount:94.45,cat:"Bills",month:"2026-04"},
+      {id:4002,name:"Groceries (Coles/Woolworths/ALDI)",amount:168.67,cat:"Other",month:"2026-04"},
+      {id:4003,name:"KFC (4 visits)",amount:92.75,cat:"Addiction",month:"2026-04"},
+      {id:4004,name:"Bean Project coffee",amount:25.80,cat:"Addiction",month:"2026-04"},
+      {id:4005,name:"Altavend vending",amount:9.60,cat:"Addiction",month:"2026-04"},
+      {id:4006,name:"St Burgs Caroline (dining)",amount:42.63,cat:"Other",month:"2026-04"},
+      {id:4007,name:"Myki (transport)",amount:15.00,cat:"Other",month:"2026-04"},
+      {id:4008,name:"M Fittipaldi",amount:43.00,cat:"Other",month:"2026-04"},
+      {id:4009,name:"Pline PH (phone accessories)",amount:13.49,cat:"Other",month:"2026-04"},
+      {id:4010,name:"Target + Priceline",amount:11.50,cat:"Other",month:"2026-04"},
+      {id:4011,name:"Jazzy Mobiles",amount:20.25,cat:"Other",month:"2026-04"},
+      {id:4012,name:"South East Leisure",amount:4.02,cat:"Other",month:"2026-04"},
+      {id:4013,name:"Ezymart Swanston",amount:2.06,cat:"Other",month:"2026-04"},
+      {id:4014,name:"Daniel Pineda (transfer)",amount:5.00,cat:"Other",month:"2026-04"},
+      {id:4015,name:"ATM fees",amount:6.70,cat:"Other",month:"2026-04"},
+      {id:3001,name:"ASIC annual fee",amount:45.00,cat:"Bills",month:"2026-03"},
+      {id:3002,name:"Whinner Autocare (car service)",amount:170.00,cat:"Bills",month:"2026-03"},
+      {id:3003,name:"Groceries (Coles/IGA)",amount:161.89,cat:"Other",month:"2026-03"},
+      {id:3004,name:"KFC (3 visits)",amount:29.45,cat:"Addiction",month:"2026-03"},
+      {id:3005,name:"McDonalds Derrimut",amount:5.30,cat:"Addiction",month:"2026-03"},
+      {id:3006,name:"Road trip fuel (BP/Caltex — Warrnambool)",amount:122.00,cat:"Other",month:"2026-03"},
+      {id:3007,name:"Road trip food (McDonalds Warrnambool, Woolworths Dennington)",amount:76.45,cat:"Other",month:"2026-03"},
+      {id:3008,name:"Water Lantern Festival tickets",amount:114.98,cat:"Other",month:"2026-03"},
+      {id:3009,name:"Festival food & drinks (Tojos, Grillz, Ice Screams)",amount:44.84,cat:"Other",month:"2026-03"},
+      {id:3010,name:"Myki (transport)",amount:50.00,cat:"Other",month:"2026-03"},
+      {id:3011,name:"M Fittipaldi",amount:25.00,cat:"Other",month:"2026-03"},
+      {id:3012,name:"Bean Project coffee",amount:4.80,cat:"Addiction",month:"2026-03"},
+      {id:3013,name:"Brimbank Aquatic Centre",amount:11.80,cat:"Other",month:"2026-03"},
+      {id:3014,name:"JB HiFi",amount:9.50,cat:"Other",month:"2026-03"},
+      {id:3015,name:"Pline PH",amount:19.99,cat:"Other",month:"2026-03"},
+      {id:3016,name:"Dining out (Greek Taste, Banh Mi, Delite Fish)",amount:50.24,cat:"Other",month:"2026-03"},
+      {id:3017,name:"Altavend vending",amount:4.80,cat:"Addiction",month:"2026-03"},
+      {id:3018,name:"Foodie Fair + South East Leisure + misc",amount:19.91,cat:"Other",month:"2026-03"},
+      {id:3019,name:"ATM fees",amount:5.80,cat:"Other",month:"2026-03"},
+      {id:2001,name:"Specsavers (glasses)",amount:39.00,cat:"Bills",month:"2026-02"},
+      {id:2002,name:"Beverly Rooftop (night out)",amount:393.52,cat:"Addiction",month:"2026-02"},
+      {id:2003,name:"Groceries (Coles/ALDI/IGA)",amount:54.58,cat:"Other",month:"2026-02"},
+      {id:2004,name:"KFC",amount:15.90,cat:"Addiction",month:"2026-02"},
+      {id:2005,name:"McDonalds",amount:26.50,cat:"Addiction",month:"2026-02"},
+      {id:2006,name:"Tobacco Station",amount:1.70,cat:"Addiction",month:"2026-02"},
+      {id:2007,name:"Dining out (Lucky Corner, Subway, Asian Express, Khao, Proper Pizza)",amount:100.61,cat:"Other",month:"2026-02"},
+      {id:2008,name:"Myki (transport)",amount:48.00,cat:"Other",month:"2026-02"},
+      {id:2009,name:"iBuy Bargains",amount:15.69,cat:"Other",month:"2026-02"},
+      {id:2010,name:"CWH Derrimut",amount:10.99,cat:"Other",month:"2026-02"},
+      {id:2011,name:"Altavend vending",amount:4.80,cat:"Addiction",month:"2026-02"},
+      {id:2012,name:"Ezymart + Four Phoenix + Veneto (convenience)",amount:9.34,cat:"Other",month:"2026-02"},
+      {id:2013,name:"ATM fees",amount:9.15,cat:"Other",month:"2026-02"}
+    ]
+  },
+};
+
+function localDateStr(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+function todayStr(){return localDateStr(new Date());}
+function weekMonday(){const n=new Date();const d=n.getDay();const off=d===0?-6:1-d;const m=new Date(n);m.setDate(n.getDate()+off);return localDateStr(m);}
+function daysBetween(s){const d=new Date(s);d.setHours(23,59,59);return Math.ceil((d-new Date())/864e5);}
+function fmtDate(s){if(!s)return"";return new Date(s).toLocaleDateString("en-AU",{day:"numeric",month:"short"});}
+function toMins(s){const parts=(s||"0:00").split(":");return parseInt(parts[0])*60+parseInt(parts[1]||0);}
+function parseTimes(t){if(!t)return{start:480,end:540};const norm=t.replace(/[–-]/g,"|");const parts=norm.split("|");return{start:toMins(parts[0].trim()),end:toMins(parts[1].trim())};}
+function getWeekDates(ref){const now=ref||new Date();const dow=now.getDay();const off=dow===0?-6:1-dow;return DAYS.map(function(_,i){const d=new Date(now);d.setDate(now.getDate()+off+i);return d;});}
+function dStr(d){return localDateStr(d);}
+function wCol(type){return type==="social"?"#1D9E75":"#5a6070";}
+function shiftPay(timeStr){if(!timeStr)return null;const t=parseTimes(timeStr);const CUT=19*60;let norm=0,pen=0;for(let m=t.start;m<t.end;m++){m<CUT?norm++:pen++;}return{normalHrs:+(norm/60).toFixed(2),penaltyHrs:+(pen/60).toFixed(2),totalEquiv:+(norm/60+pen/60*1.5).toFixed(2)};}
+function taskUrg(t){if(t.done)return"done";const od=t.due?daysBetween(t.due)*-1:0;const ref=t.editedAt||t.addedAt||todayStr();const age=Math.floor((new Date()-new Date(ref))/864e5);if(od>7)return"red";if(od>3)return"yellow";if(od>0)return"orange";if(age>7)return"yellow";return t.priority==="urgent"?"urgent":"normal";}
+const TUC={red:T.danger,yellow:T.warn,orange:T.orange,urgent:T.danger,normal:T.text2,done:T.success};
+const TUB={red:T.dangerBg,yellow:T.warnBg,orange:T.orangeBg,urgent:T.dangerBg,normal:T.bg3,done:T.successBg};
+function taskLabel(t){if(t.done)return"done";const od=t.due?daysBetween(t.due)*-1:0;const ref=t.editedAt||t.addedAt||todayStr();const age=Math.floor((new Date()-new Date(ref))/864e5);if(od>0)return od+"d overdue";if(age>7)return"untouched "+age+"d";if(t.due)return"due "+fmtDate(t.due);return"";}
+
+// ── Reflection Engine ─────────────────────────────────────────────────────
+const REFL_QS=[
+  "Which subject or concept felt most challenging this week? What specifically made it difficult?",
+  "What work task or project did you struggle with most? What would help you succeed with it?",
+  "How consistent were you with exercise and nutrition this week? What got in the way?",
+  "How well did you balance study/work with personal relationships? What felt neglected?",
+  "What's one area you want to improve next week? What's one win from this week worth celebrating?"
+];
+const REFL_LABELS=["Academic","Work","Health","Balance","Growth & Wins"];
+const SEED_REFL=[{id:1746835200000,date:"2026-05-10T02:00:00.000Z",answers:[
+  {question:REFL_QS[0],answer:"Payroll Supervised assessment is the most challenging this week — it's an in-class exam and I get anxious under timed conditions. I understand the content but second-guess myself under pressure. Balancing POB and PFR at the same time is overwhelming.",area:"Academic"},
+  {question:REFL_QS[1],answer:"GoTab shifts have been manageable, no major issues. What would help is not having assessment deadlines clash with shift days — a buffer day between work and exams would make a real difference to my preparation.",area:"Work"},
+  {question:REFL_QS[2],answer:"Gym consistency has been good this week — hit 81kg body weight and 85kg bench press which is a personal best. Nutrition could be better, I've been eating more takeaway because I'm stressed and don't have time to cook properly.",area:"Health"},
+  {question:REFL_QS[3],answer:"Personal relationships have been neglected this week. I've been isolating to focus on assignments — haven't caught up with anyone outside of work. It's starting to feel a bit lonely even though I know it's temporary.",area:"Balance"},
+  {question:REFL_QS[4],answer:"Want to improve my time management next week so assessments don't pile up at once. One win from this week is staying consistent with gym training despite the heavy assessment load — proving I can maintain good habits even when stressed.",area:"Growth & Wins"}
+],analysis:{emotionalState:"Cautiously optimistic — mixed but moving forward",dominantPattern:"Growth orientation — approaching challenges with curiosity",rootIssue:"Strongest friction in your academic load — multiple assessments converging simultaneously",insight:"You approached challenges this week with curiosity rather than rigidity — looking at what to improve rather than cataloguing what went wrong. That orientation is a genuine psychological strength. It's the difference between feedback as information and feedback as verdict.",recommendation:"Channel this week's momentum into one specific commitment: pick the area with the most untapped potential from your reflection and schedule a deliberate block of time for it.",patternHistory:"First reflection — patterns will emerge as you keep logging each week.",sentimentScore:0.17,detectedPatterns:["growth_mindset"],sentColor:"#ffd166",sentBg:"rgba(255,209,102,0.06)",sentBorder:"rgba(255,209,102,0.25)"}}];
+function analyzeReflection(answers,history){
+  const allText=answers.map(function(a){return a.a;}).join(" ").toLowerCase();
+  const NEG=["overwhelm","stressed","stress","anxious","anxiety","tired","exhaust","frustrat","struggl","difficult","hard","fail","behind","worr","drain","burnout","burnt out","can't","couldn't","unable","avoid","procrastinat","miss","forgot","lonely","isolat","depress","hopeless","unmotivated","no motivation","falling behind"];
+  const POS=["great","well","good","happy","proud","confident","motivat","focused","achiev","succeed","managed","improv","progress","excited","grateful","calm","balanced","productive","consistent","win","celebrat","better","strong","growth","learn","breakthrough","clarity","clear"];
+  const PERF=["perfect","not good enough","should have","could have","disappoint","let myself down","not where","behind schedule","should be","wasn't enough","fell short","not enough","never enough"];
+  const BURNOUT=["exhaust","burnt out","burnout","drain","can't keep","too much","overwhelming","no energy","so tired","no motivation","running on empty","barely"];
+  const GROWTH=["learn","improv","trying","working on","getting better","progress","develop","growing","want to improve","next week","work on","focus on"];
+  const AON=["always","never","everything","nothing","complete failure","totally","all the time","every time","impossible","worst"];
+  function countHits(text,kws){return kws.filter(function(k){return text.indexOf(k)!==-1;}).length;}
+  const neg=countHits(allText,NEG);const pos=countHits(allText,POS);const perf=countHits(allText,PERF);const burn=countHits(allText,BURNOUT);const growth=countHits(allText,GROWTH);const aon=countHits(allText,AON);
+  const sentScore=Math.max(-1,Math.min(1,(pos-neg)/6));
+  let emotionalState;
+  if(sentScore>=0.5)emotionalState="Positive — feeling capable and progressing";
+  else if(sentScore>=0.1)emotionalState="Cautiously optimistic — mixed but moving forward";
+  else if(sentScore>=-0.1)emotionalState="Neutral — steady but not thriving";
+  else if(sentScore>=-0.4)emotionalState="Stressed — carrying notable tension this week";
+  else emotionalState="Depleted — significant strain detected";
+  const patterns=[];
+  if(burn>=2)patterns.push("burnout_risk");
+  if(perf>=2)patterns.push("perfectionism");
+  if(aon>=2)patterns.push("all_or_nothing");
+  if(growth>=2)patterns.push("growth_mindset");
+  if(neg>pos*1.5)patterns.push("high_stress");
+  if(pos>neg*2)patterns.push("resilient_week");
+  const qScores=answers.map(function(a){const t=a.a.toLowerCase();return countHits(t,POS)-countHits(t,NEG);});
+  const worstIdx=qScores.indexOf(Math.min.apply(null,qScores));
+  const bestIdx=qScores.indexOf(Math.max.apply(null,qScores));
+  const areas=["your academic load","your work situation","your physical health habits","your work-life balance","your personal growth direction"];
+  let dominantPattern;
+  if(patterns.indexOf("burnout_risk")!==-1)dominantPattern="Burnout risk — energy reserves running low";
+  else if(patterns.indexOf("perfectionism")!==-1)dominantPattern="Perfectionist pressure — very high internal standards";
+  else if(patterns.indexOf("high_stress")!==-1)dominantPattern="High stress load — multiple areas feeling stretched";
+  else if(patterns.indexOf("all_or_nothing")!==-1)dominantPattern="All-or-nothing thinking — seeing things in extremes";
+  else if(patterns.indexOf("growth_mindset")!==-1)dominantPattern="Growth orientation — approaching challenges with curiosity";
+  else if(patterns.indexOf("resilient_week")!==-1)dominantPattern="Resilient week — navigating challenges effectively";
+  else dominantPattern="Steady week — maintaining baseline without major spikes";
+  let rootIssue;
+  if(worstIdx>=0&&qScores[worstIdx]<0){rootIssue="Strongest friction in "+areas[worstIdx];if(patterns.indexOf("perfectionism")!==-1)rootIssue+=" — possibly amplified by perfectionist expectations";else if(patterns.indexOf("all_or_nothing")!==-1)rootIssue+=" — all-or-nothing framing may be intensifying this";}
+  else{rootIssue=bestIdx>=0?"Strongest momentum in "+areas[bestIdx]:"No single dominant friction point this week";}
+  let insight;
+  if(patterns.indexOf("burnout_risk")!==-1)insight="Your language this week signals depletion across multiple areas. Burnout doesn't arrive suddenly — it builds through sustained output without adequate recovery. The fact that you're recognising it is the first and most important step. Your nervous system is asking for genuine rest, not just less work.";
+  else if(patterns.indexOf("perfectionism")!==-1)insight="There's a pattern of measuring your efforts against an ideal rather than a realistic baseline. Perfectionism often masquerades as high standards but functions as a stress amplifier — raising the bar each time you clear it. Progress over perfection is a skill worth practising deliberately this week.";
+  else if(patterns.indexOf("all_or_nothing")!==-1)insight="Your language this week leans toward absolutes (always/never/everything/nothing). This thinking pattern amplifies difficulty — one missed session becomes 'failing at fitness,' one hard day becomes 'a terrible week.' The reality almost always sits in the grey zone.";
+  else if(patterns.indexOf("high_stress")!==-1)insight="Multiple domains felt strained simultaneously this week. When stress shows up across academic, physical, and relational areas at once, it usually signals that recovery mechanisms need attention — sleep quality, micro-breaks, and brief transitions between tasks often matter more than you'd expect.";
+  else if(patterns.indexOf("growth_mindset")!==-1)insight="You approached challenges this week with curiosity rather than rigidity — looking at what to improve rather than cataloguing what went wrong. That orientation is a genuine psychological strength. It's the difference between feedback as information and feedback as verdict.";
+  else if(sentScore>=0.3)insight="This was a strong week. Take a moment to notice what conditions made that possible — specific habits, environments, or mindsets. Understanding what works is as valuable as diagnosing what doesn't, and most people skip this step.";
+  else insight="A stable week — not dramatic in either direction. These plateau periods are where consistent habits quietly build the foundations for future momentum. The absence of visible progress doesn't mean nothing is moving.";
+  let recommendation;
+  if(patterns.indexOf("burnout_risk")!==-1)recommendation="Prioritise one genuinely restorative activity this week — not productive rest, actual rest. Protect one block of time with no output requirement. Even 90 minutes of complete disconnection can meaningfully reset your baseline.";
+  else if(patterns.indexOf("perfectionism")!==-1)recommendation="Before your next major task, decide in advance what 'good enough' looks like and aim for that deliberately. Notice the difference in energy expenditure versus your usual standard.";
+  else if(patterns.indexOf("all_or_nothing")!==-1)recommendation="When you notice absolute language in your own thinking, pause and find one counter-example. One exception breaks the rule and restructures the framing entirely.";
+  else if(patterns.indexOf("high_stress")!==-1)recommendation="Identify the single highest-leverage action that would reduce your stress load most — not the most urgent task, but the one whose completion creates the most breathing room — and do that one first this week.";
+  else if(patterns.indexOf("growth_mindset")!==-1)recommendation="Channel this week's momentum into one specific commitment: pick the area with the most untapped potential from your reflection and schedule a deliberate block of time for it.";
+  else recommendation="Note down what made this week manageable — two or three specific conditions that were present. Keep these as a reference point when harder weeks arrive.";
+  let patternHistory="First reflection — patterns will emerge as you keep logging each week.";
+  if(history&&history.length>=2){
+    const prev=history.slice(-5);
+    const prevTexts=prev.map(function(r){return(r.answers||[]).map(function(a){return(a.a||a.answer||"");}).join(" ").toLowerCase();});
+    const stressWeeks=prevTexts.filter(function(t){return countHits(t,NEG)>countHits(t,POS);}).length;
+    const prevPats=[].concat.apply([],history.slice(-4).filter(function(r){return r.analysis&&r.analysis.detectedPatterns;}).map(function(r){return r.analysis.detectedPatterns;}));
+    const burnCount=prevPats.filter(function(p){return p==="burnout_risk";}).length;
+    const perfCount=prevPats.filter(function(p){return p==="perfectionism";}).length;
+    const stressCount=prevPats.filter(function(p){return p==="high_stress";}).length;
+    const total=prev.length;
+    if(burnCount>=2)patternHistory="Burnout risk has appeared in "+burnCount+" of your last "+Math.min(4,history.length)+" reflections. This is a recurring pattern that warrants real attention, not just a harder push.";
+    else if(perfCount>=2)patternHistory="Perfectionism has surfaced in "+perfCount+" of your last "+Math.min(4,history.length)+" reflections — a consistent internal pressure source rather than a one-off response.";
+    else if(stressCount>=2)patternHistory="High stress has been flagged in "+stressCount+" recent reflections. Worth asking: is this situational (exam period, busy work stretch) or a longer pattern?";
+    else if(stressWeeks>=Math.ceil(total*0.7))patternHistory="Stress has dominated "+stressWeeks+" of your last "+total+" reflections. Worth asking: is this environment, workload, or an internal pattern?";
+    else if(stressWeeks===0)patternHistory="Consistently positive tone across your last "+total+" reflections — you're tracking a meaningful stretch of stability and growth.";
+    else patternHistory="Mixed weeks across your last "+total+" reflections ("+stressWeeks+" higher-stress, "+(total-stressWeeks)+" more positive). No single dominant pattern yet — keep logging for clearer trends.";
+  } else if(history&&history.length===1){patternHistory="Second reflection logged. One more week of data needed before cross-week patterns can be identified.";}
+  return{emotionalState,dominantPattern,rootIssue,insight,recommendation,patternHistory,sentimentScore:sentScore,detectedPatterns:patterns,sentColor:sentScore>=0.1?"#69f0ae":sentScore<=-0.1?"#ff6b6b":"#ffd166",sentBg:sentScore>=0.1?"rgba(105,240,174,0.06)":sentScore<=-0.1?"rgba(255,107,107,0.06)":"rgba(255,209,102,0.06)",sentBorder:sentScore>=0.1?"rgba(105,240,174,0.25)":sentScore<=-0.1?"rgba(255,107,107,0.25)":"rgba(255,209,102,0.25)"};
+}
+
+// ── Rule-based check-in ────────────────────────────────────────────────────
+function generateCheckin(data){
+  const blocks=[];
+  const tUni=UNI_EVENTS.filter(function(ev){return ev.date===todayStr();});
+  const tWork=WORK_EVENTS.filter(function(ev){return ev.date===todayStr();});
+  const tmr=localDateStr(new Date(Date.now()+864e5));
+  const tmrFree=UNI_EVENTS.filter(function(ev){return ev.date===tmr;}).length===0&&WORK_EVENTS.filter(function(ev){return ev.date===tmr;}).length===0;
+  const soon=UNI_EVENTS.filter(function(ev){return ev.assessment&&daysBetween(ev.date)>=0&&daysBetween(ev.date)<=5;});
+  const overdue=data.personal.tasks.filter(function(t){return !t.done&&t.due&&daysBetween(t.due)<0;});
+  const urgent=data.personal.tasks.filter(function(t){return !t.done&&t.priority==="urgent"&&t.due&&daysBetween(t.due)>=0;});
+  const gymRot=data.gym.rotation||[];
+  const rotLen=gymRot.length>0?gymRot.length:1;
+  const nextSess=gymRot.length>0?gymRot[(data.gym.rotIdx||0)%rotLen]:null;
+
+  // Schedule block
+  let schedLines=[];
+  if(tUni.length>0){schedLines.push(tUni.map(function(ev){return(SUBJECTS[ev.subject]||ev.subject)+" "+ev.time+(ev.assessment?" 📋":"");}).join(" · "));}
+  else{schedLines.push("No uni classes today.");}
+  if(tWork.length>0){schedLines.push(tWork.map(function(ev){return ev.title+" "+ev.time;}).join(", "));}
+  blocks.push({header:"📅 Today's Schedule",items:schedLines});
+
+  // Assessments block
+  if(soon.length>0){
+    const lines=soon.map(function(ev){
+      const d=daysBetween(ev.date);
+      const when=d===0?"today":d===1?"tomorrow":"in "+d+" days";
+      return(SUBJECTS[ev.subject]||ev.subject)+" — "+ev.title+" due "+when+". Have you made a start?";
+    });
+    blocks.push({header:"📋 Assessments",items:lines});
+  }
+
+  // Tasks block
+  if(overdue.length>0||urgent.length>0){
+    const lines=[];
+    overdue.forEach(function(t){lines.push(t.name+" is "+Math.abs(daysBetween(t.due))+"d overdue — worth sorting today.");});
+    urgent.forEach(function(t){lines.push(t.name+" is due "+fmtDate(t.due)+" — don't leave it too late.");});
+    blocks.push({header:"✅ Tasks",items:lines});
+  }
+
+  // Suggestion block
+  if(tmrFree){
+    const pending=data.personal.tasks.filter(function(t){return !t.done;});
+    if(pending.length>0){
+      blocks.push({header:"💡 Suggestion",items:["Tomorrow looks free — good window to knock off "+pending[0].name+(pending.length>1?" or "+pending[1].name:"")+"."+(nextSess?" Could also fit in your "+nextSess.name+"!":"")]});
+    } else {
+      blocks.push({header:"💡 Suggestion",items:["Tomorrow is free — great chance to get ahead on study or hit the gym"+(nextSess?" ("+nextSess.name+" is up next).":".")]}); 
+    }
+  } else if(nextSess){
+    blocks.push({header:"💡 Suggestion",items:["Next gym session is "+nextSess.name+" ("+nextSess.focus+"). Pre-fill your weights on the dashboard before you go."]});
+  }
+
+  // Question block
+  if(soon.length>0){
+    blocks.push({header:"❓ Check-in",items:["What's the first assessment you're going to put time into today, Jayden?"]});
+  } else if(overdue.length>0){
+    blocks.push({header:"❓ Check-in",items:["Which overdue task are you clearing first today?"]});
+  } else {
+    blocks.push({header:"❓ Check-in",items:["What's the one thing you want to have done by end of day?"]});
+  }
+
+  return blocks;
+}
+
+function Sparkline(props){
+  const data=props.data||[];const color=props.color||T.accent;const w=props.width||220;const h=props.height||48;
+  if(data.length<2)return React.createElement("div",{style:{fontSize:11,color:T.text3,padding:"8px 0"}},"Log more entries to see trend");
+  const vals=data.map(function(d){return d.weight;});
+  const mn=Math.min.apply(null,vals)-1;const mx=Math.max.apply(null,vals)+1;const range=mx-mn;
+  const pts=vals.map(function(v,i){return((i/(vals.length-1))*w)+","+(h-((v-mn)/range)*h);}).join(" ");
+  return React.createElement("div",{style:{position:"relative",marginBottom:4}},
+    React.createElement("svg",{width:w,height:h,style:{overflow:"visible",display:"block"}},
+      React.createElement("polyline",{points:pts,fill:"none",stroke:color,strokeWidth:"1.5",strokeLinejoin:"round"}),
+      vals.map(function(v,i){const x=(i/(vals.length-1))*w;const y=h-((v-mn)/range)*h;return React.createElement("circle",{key:i,cx:x,cy:y,r:"2.5",fill:color});})
+    ),
+    React.createElement("div",{style:{position:"absolute",right:0,top:0,fontSize:11,fontWeight:700,color:color}},vals[vals.length-1]+"kg")
+  );
+}
+
+function useIsMob(){const [m,setM]=useState(typeof window!=="undefined"&&window.innerWidth<768);useEffect(function(){function h(){setM(window.innerWidth<768);}window.addEventListener("resize",h);return function(){window.removeEventListener("resize",h);};},[]);return m;}
+
+function GymSection(props){
+  const gymData=props.gymData;const onAddEx=props.onAddEx;const onLogW=props.onLogW;const onSave=props.onSave;const onUpdateRot=props.onUpdateRot;const mob=props.mob||false;
+  const [tab,setTab]=useState("progress");
+  const [wkt,setWkt]=useState({name:"",date:todayStr(),sets:[]});
+  const [row,setRow]=useState({exercise:"",sets:"",reps:"",weight:""});
+  const [rName,setRName]=useState("");const [rFocus,setRFocus]=useState("");
+  const rotation=gymData.rotation||[];const rotLen=rotation.length>0?rotation.length:1;
+  const rotIdx=(gymData.rotIdx||0)%rotLen;const nextSess=rotation.length>0?rotation[rotIdx]:null;
+  const gs={card:{background:T.bg2,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",border:"0.5px solid "+T.border2,borderRadius:12,padding:"14px 16px",marginBottom:10,boxShadow:"0 4px 24px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.08)"},btn:{padding:"5px 11px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text2,cursor:"pointer",fontSize:12},btnP:{padding:"6px 13px",borderRadius:8,border:"1px solid rgba(199,125,255,0.45)",background:"rgba(199,125,255,0.15)",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,boxShadow:"0 0 10px rgba(199,125,255,0.2)"},inp:{width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"}};
+  function addRow(){if(!row.exercise)return;setWkt(function(w){return{...w,sets:[...w.sets,{...row,id:Date.now()}]};});setRow({exercise:"",sets:"",reps:"",weight:""});}
+  function removeRow(i){setWkt(function(w){return{...w,sets:w.sets.filter(function(_,j){return j!==i;})};});}
+  function saveWkt(){if(wkt.sets.length===0)return;const name=wkt.name||(nextSess?nextSess.name:"Workout");const rotId=nextSess?nextSess.id:null;if(onSave)onSave({...wkt,name:name,id:Date.now(),rotId:rotId});setWkt({name:"",date:todayStr(),sets:[]});}
+  function addRotItem(){if(!rName)return;const nr=rotation.concat([{id:Date.now(),name:rName,focus:rFocus}]);if(onUpdateRot)onUpdateRot(nr,rotIdx);setRName("");setRFocus("");}
+  function removeRotItem(id){const nr=rotation.filter(function(r){return r.id!==id;});if(onUpdateRot)onUpdateRot(nr,Math.min(rotIdx,Math.max(0,nr.length-1)));}
+  const tabs=["progress","workout","rotation","archive"];
+  return(
+    <div style={{maxWidth:800}}>
+      <div style={{display:"flex",gap:6,marginBottom:12}}>
+        {tabs.map(function(tb){return(<button key={tb} onClick={function(){setTab(tb);}} style={{padding:"4px 10px",borderRadius:99,cursor:"pointer",fontSize:11,border:tab===tb?"1px solid "+T.accent:"0.5px solid "+T.border,background:tab===tb?T.accentBg:"transparent",color:tab===tb?T.accent:T.text2}}>{tb.charAt(0).toUpperCase()+tb.slice(1)}</button>);})}</div>
+      {tab==="progress"&&<div>
+        <div style={gs.card}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:13,fontWeight:500,color:T.text}}>Body weight trend</div><span style={{fontSize:10,color:T.text3}}>Logged weekly</span></div>
+          <Sparkline data={gymData.bodyWeight||[]} color={T.accent} width={mob?280:360} height={60}/>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>{(gymData.bodyWeight||[]).slice(-6).map(function(l,i){return<div key={i} style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.bg3,color:T.text2}}>{fmtDate(l.date)}: {l.weight}kg</div>;})}</div>
+        </div>
+        <div style={gs.card}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={{fontSize:13,fontWeight:500,color:T.text}}>Exercise progression</div><button style={gs.btn} onClick={onAddEx}>+ Exercise</button></div>
+          {(gymData.exercises||[]).map(function(ex){const logs=ex.logs||[];const last=logs.length>0?logs[logs.length-1]:null;const prev=logs.length>1?logs[logs.length-2]:null;const diff=(last&&prev)?last.weight-prev.weight:null;const trend=diff===null?null:diff>0?"↑":diff<0?"↓":"=";const tCol=trend==="↑"?T.success:trend==="↓"?T.danger:T.text2;
+            return(<div key={ex.id} style={{marginBottom:20,paddingBottom:16,borderBottom:"0.5px solid "+T.border}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontWeight:600,fontSize:14,color:T.text}}>{ex.name}</span>{last&&<span style={{fontSize:12,color:T.text2}}>Last: {last.weight}kg</span>}{trend&&<span style={{fontSize:16,color:tCol}}>{trend}</span>}</div>
+                <button style={gs.btn} onClick={function(){if(onLogW)onLogW(ex);}}>Log weight</button>
+              </div>
+              <Sparkline data={logs} color="#378ADD" width={mob?280:360} height={44}/>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>{logs.slice(-5).map(function(l,i){return<div key={i} style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.bg3,color:T.text2}}>{fmtDate(l.date)}: {l.weight}kg</div>;})}</div>
+            </div>);
+          })}
+        </div>
+      </div>}
+      {tab==="workout"&&<div>
+        {nextSess&&<div style={{...gs.card,background:T.successBg,border:"0.5px solid "+T.success+"40",marginBottom:10}}>
+          <div style={{fontSize:10,color:T.success,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Up next in rotation</div>
+          <div style={{fontSize:15,fontWeight:700,color:T.text}}>{nextSess.name}</div>
+          <div style={{fontSize:11,color:T.text2,marginTop:2}}>{nextSess.focus}</div>
+          <div style={{fontSize:10,color:T.text3,marginTop:4}}>Saving this workout advances your rotation.</div>
+        </div>}
+        <div style={gs.card}>
+          <div style={{fontSize:13,fontWeight:500,color:T.text,marginBottom:12}}>Log workout</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 120px",gap:8,marginBottom:12}}>
+            <input style={gs.inp} placeholder={nextSess?nextSess.name:"Workout name"} value={wkt.name} onChange={function(ev){setWkt(function(w){return{...w,name:ev.target.value};});}}/>
+            <input style={gs.inp} type="date" value={wkt.date} onChange={function(ev){setWkt(function(w){return{...w,date:ev.target.value};});}}/>
+          </div>
+          {mob?(<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10}}>
+            <input style={{...gs.inp,padding:"10px 12px",fontSize:14}} placeholder="Exercise (e.g. Squat)" value={row.exercise} onChange={function(ev){setRow(function(r){return{...r,exercise:ev.target.value};});}}/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              <input style={{...gs.inp,padding:"10px 12px",fontSize:14}} type="number" placeholder="Sets" value={row.sets} onChange={function(ev){setRow(function(r){return{...r,sets:ev.target.value};});}}/>
+              <input style={{...gs.inp,padding:"10px 12px",fontSize:14}} type="number" placeholder="Reps" value={row.reps} onChange={function(ev){setRow(function(r){return{...r,reps:ev.target.value};});}}/>
+              <input style={{...gs.inp,padding:"10px 12px",fontSize:14}} type="number" placeholder="kg" value={row.weight} onChange={function(ev){setRow(function(r){return{...r,weight:ev.target.value};});}}/>
+            </div>
+            <button style={{...gs.btnP,padding:"10px",fontSize:14,borderRadius:10}} onClick={addRow}>+ Add set</button>
+          </div>):(<div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 55px 55px 70px 44px",gap:6,marginBottom:4}}>{["Exercise","Sets","Reps","kg",""].map(function(h,i){return<div key={i} style={{fontSize:9,color:T.text3}}>{h}</div>;})}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 55px 55px 70px 44px",gap:6,marginBottom:8}}>
+              <input style={gs.inp} placeholder="e.g. Squat" value={row.exercise} onChange={function(ev){setRow(function(r){return{...r,exercise:ev.target.value};});}}/>
+              <input style={gs.inp} type="number" placeholder="4" value={row.sets} onChange={function(ev){setRow(function(r){return{...r,sets:ev.target.value};});}}/>
+              <input style={gs.inp} type="number" placeholder="8" value={row.reps} onChange={function(ev){setRow(function(r){return{...r,reps:ev.target.value};});}}/>
+              <input style={gs.inp} type="number" placeholder="80" value={row.weight} onChange={function(ev){setRow(function(r){return{...r,weight:ev.target.value};});}}/>
+              <button style={gs.btnP} onClick={addRow}>+</button>
+            </div>
+          </div>)}
+          {wkt.sets.length>0&&<div style={{marginBottom:12}}>{wkt.sets.map(function(ws,wi){return(<div key={ws.id||wi} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"5px 8px",background:T.bg3,borderRadius:6,marginBottom:4}}><span style={{color:T.text}}>{ws.exercise}</span><span style={{color:T.text2}}>{ws.sets}×{ws.reps} @ {ws.weight}kg</span><button onClick={function(){removeRow(wi);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:14}}>×</button></div>);})}</div>}
+          <button style={gs.btnP} onClick={saveWkt}>Save & advance rotation →</button>
+        </div>
+      </div>}
+      {tab==="rotation"&&<div style={gs.card}>
+        <div style={{fontSize:13,fontWeight:500,color:T.text,marginBottom:4}}>Current rotation</div>
+        <div style={{fontSize:11,color:T.text2,marginBottom:14}}>Workouts cycle through this order. Saving advances to the next.</div>
+        {rotation.map(function(r,i){const isCur=i===rotIdx;return(<div key={r.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8,padding:"10px 12px",borderRadius:8,background:isCur?T.successBg:T.bg3,border:"0.5px solid "+(isCur?T.success+"60":T.border)}}>
+          <div style={{width:22,height:22,borderRadius:"50%",background:isCur?T.success:T.bg2,border:"1px solid "+(isCur?T.success:T.border2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:isCur?T.bg:T.text3,flexShrink:0}}>{i+1}</div>
+          <div style={{flex:1}}><div style={{fontSize:13,fontWeight:isCur?600:400,color:T.text}}>{r.name}{isCur&&<span style={{fontSize:10,color:T.success,marginLeft:8}}>← next</span>}</div><div style={{fontSize:10,color:T.text2}}>{r.focus}</div></div>
+          <button onClick={function(){if(onUpdateRot)onUpdateRot(rotation,i);}} style={{...gs.btn,fontSize:10,padding:"2px 7px"}}>Set current</button>
+          <button onClick={function(){removeRotItem(r.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:14}}>×</button>
+        </div>);})}
+        <div style={{marginTop:14,paddingTop:12,borderTop:"0.5px solid "+T.border}}>
+          <div style={{fontSize:11,color:T.text2,marginBottom:8}}>Add to rotation</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:6}}>
+            <input style={mob?{...gs.inp,padding:"10px 12px",fontSize:14}:gs.inp} placeholder="Session name" value={rName} onChange={function(ev){setRName(ev.target.value);}}/>
+            <input style={mob?{...gs.inp,padding:"10px 12px",fontSize:14}:gs.inp} placeholder="Focus muscles" value={rFocus} onChange={function(ev){setRFocus(ev.target.value);}}/>
+          </div>
+          <button style={gs.btnP} onClick={addRotItem}>Add session</button>
+        </div>
+      </div>}
+      {tab==="archive"&&<div>
+        {(gymData.workouts||[]).length===0?<div style={{...gs.card,fontSize:12,color:T.text2}}>No workouts yet. Log one in the Workout tab.</div>:(gymData.workouts||[]).slice().reverse().map(function(wk){const rotMatch=rotation.filter(function(r){return r.id===wk.rotId;});const rotName=rotMatch.length>0?rotMatch[0].focus:null;return(<div key={wk.id} style={gs.card}><div style={{display:"flex",justifyContent:"space-between",marginBottom:8,alignItems:"center"}}><div><span style={{fontWeight:600,color:T.text,fontSize:14}}>{wk.name}</span>{rotName&&<span style={{fontSize:10,color:T.success,marginLeft:8}}>{rotName}</span>}</div><span style={{fontSize:11,color:T.text3}}>{fmtDate(wk.date)}</span></div>{(wk.sets||[]).map(function(ws,wi){return(<div key={wi} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"5px 0",borderBottom:"0.5px solid "+T.border}}><span style={{color:T.text2}}>{ws.exercise}</span><span style={{color:T.text}}>{ws.sets}×{ws.reps} @ {ws.weight}kg</span></div>);})}</div>);})}
+      </div>}
+    </div>
+  );
+}
+
+function FinanceSection({data,onUpdate,mob}){
+  mob=mob||false;
+  const [month,setMonth]=useState(todayStr().slice(0,7));
+  const [expForm,setExpForm]=useState({name:"",amount:"",cat:"Other"});
+  const [editExpId,setEditExpId]=useState(null);
+  const [editExpForm,setEditExpForm]=useState({name:"",amount:"",cat:"Other"});
+  const [editSrc,setEditSrc]=useState(false);
+  const [showRecMgr,setShowRecMgr]=useState(false);
+  const [recForm,setRecForm]=useState({name:"",amount:"",cat:"Bills"});
+  const fBtn={padding:"5px 11px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text2,cursor:"pointer",fontSize:12};
+  const fBtnP={padding:"6px 13px",borderRadius:8,border:"1px solid rgba(199,125,255,0.45)",background:"rgba(199,125,255,0.15)",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,boxShadow:"0 0 10px rgba(199,125,255,0.2)"};
+  const fInp={width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"};
+  function fCard(ex){return{background:T.bg2,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",border:"0.5px solid "+T.border2,borderRadius:12,padding:"14px 16px",marginBottom:10,boxShadow:"0 4px 24px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.08)",...(ex||{})};}
+  const CATS=["Bills","Addiction","Other"];
+  const CAT_COL={Bills:T.accent,Addiction:T.danger,Other:T.warn};
+  const sources=data.sources||[{id:1,name:"GoTab (Rippling)",amount:0},{id:2,name:"Jobseeker",amount:802.40},{id:3,name:"",amount:0}];
+  const monthlyIncome=data.monthlyIncome||{};
+  const allExpenses=data.expenses||[];
+  const recurringTemplates=data.recurringTemplates||[];
+  const monthlyRecurringOverrides=data.monthlyRecurringOverrides||{};
+  const monthBudget=Number(data.monthlyBudget||0);
+  const monthOverrides=monthlyRecurringOverrides[month]||{};
+  const recurringThisMonth=recurringTemplates.filter(function(t){return !(monthOverrides[t.id]&&monthOverrides[t.id].excluded);}).map(function(t){const ov=monthOverrides[t.id];return{...t,amount:ov&&ov.amount!==undefined?ov.amount:t.amount,isRecurring:true};});
+  const skippedThisMonth=recurringTemplates.filter(function(t){return monthOverrides[t.id]&&monthOverrides[t.id].excluded;});
+  const oneOffThisMonth=allExpenses.filter(function(e){return e.month===month;});
+  const allThisMonth=recurringThisMonth.concat(oneOffThisMonth);
+  const srcAmounts=monthlyIncome[month]||{};
+  const totalIncome=sources.reduce(function(a,s){return a+(srcAmounts[s.id]!==undefined?Number(srcAmounts[s.id]):Number(s.amount)||0);},0);
+  const totalExpenses=allThisMonth.reduce(function(a,e){return a+Number(e.amount);},0);
+  const net=totalIncome-totalExpenses;
+  const budgetLeft=monthBudget>0?monthBudget-totalExpenses:null;
+  const goTabIncome=Number(srcAmounts[1]!==undefined?srcAmounts[1]:0);
+  const weeklyGoTab=goTabIncome/4;
+  const billsRecurring=recurringThisMonth.filter(function(e){return e.cat==="Bills";});
+  const billsMonthlyTotal=billsRecurring.reduce(function(a,e){return a+Number(e.amount);},0);
+  const weeklyBills=billsMonthlyTotal*12/52;
+  const weeklyFree=weeklyGoTab-weeklyBills;
+  function shiftMonth(n){const d=new Date(month+"-15");d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,7);}
+  function fmtM(m){return new Date(m+"-15").toLocaleDateString("en-AU",{month:"long",year:"numeric"});}
+  function fmtShortM(m){return new Date(m+"-15").toLocaleDateString("en-AU",{month:"short",year:"2-digit"});}
+  function totalForMonth(m){const mo=monthlyRecurringOverrides[m]||{};const rec=recurringTemplates.filter(function(t){return !(mo[t.id]&&mo[t.id].excluded);}).reduce(function(a,t){return a+Number(mo[t.id]&&mo[t.id].amount!==undefined?mo[t.id].amount:t.amount);},0);const oo=allExpenses.filter(function(e){return e.month===m;}).reduce(function(a,e){return a+Number(e.amount);},0);return rec+oo;}
+  function avgExp(){const past=[-3,-2,-1].map(function(o){return totalForMonth(shiftMonth(o));});const nz=past.filter(function(v){return v>0;});return nz.length>0?nz.reduce(function(a,b){return a+b;},0)/nz.length:totalExpenses;}
+  const avgE=avgExp();
+  const forecast=[1,2,3,4,5,6].map(function(i){const m=shiftMonth(i);return{month:m,income:totalIncome,expenses:avgE,net:totalIncome-avgE};});
+  const curDate=new Date(month+"-15");
+  const futureMonthsInYear=11-curDate.getMonth();
+  const eoyNet=net+futureMonthsInYear*(totalIncome-avgE);
+  function addExpense(){if(!expForm.name||!expForm.amount)return;onUpdate({...data,expenses:allExpenses.concat([{id:Date.now(),name:expForm.name,amount:Number(expForm.amount),cat:expForm.cat,month:month}])});setExpForm({name:"",amount:"",cat:"Other"});}
+  function removeOneOff(id){onUpdate({...data,expenses:allExpenses.filter(function(e){return e.id!==id;})});}
+  function saveEditExp(){if(!editExpForm.name||!editExpForm.amount)return;onUpdate({...data,expenses:allExpenses.map(function(e){return e.id===editExpId?{...e,name:editExpForm.name,amount:Number(editExpForm.amount),cat:editExpForm.cat}:e;})});setEditExpId(null);}
+  function skipRecurring(tId){const mo={...monthOverrides,[tId]:{...(monthOverrides[tId]||{}),excluded:true}};onUpdate({...data,monthlyRecurringOverrides:{...monthlyRecurringOverrides,[month]:mo}});}
+  function restoreRecurring(tId){const mo={...monthOverrides};if(mo[tId]){const n={...mo[tId]};delete n.excluded;mo[tId]=n;}onUpdate({...data,monthlyRecurringOverrides:{...monthlyRecurringOverrides,[month]:mo}});}
+  function deleteTemplate(tId){onUpdate({...data,recurringTemplates:recurringTemplates.filter(function(t){return t.id!==tId;})});}
+  function addRecurring(){if(!recForm.name||!recForm.amount)return;onUpdate({...data,recurringTemplates:recurringTemplates.concat([{id:"r"+Date.now(),name:recForm.name,amount:Number(recForm.amount),cat:recForm.cat}])});setRecForm({name:"",amount:"",cat:"Bills"});}
+  function updateSourceIncome(srcId,val){const mi={...monthlyIncome,[month]:{...(monthlyIncome[month]||{}),[srcId]:Number(val)}};onUpdate({...data,monthlyIncome:mi});}
+  function updateSourceName(id,val){onUpdate({...data,sources:sources.map(function(s){return s.id===id?{...s,name:val}:s;})});}
+  function updateBudget(val){onUpdate({...data,monthlyBudget:Number(val)});}
+  return(
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+        <button style={fBtn} onClick={function(){setMonth(shiftMonth(-1));}}>← prev</button>
+        <div style={{fontSize:15,fontWeight:700,color:T.text}}>{fmtM(month)}</div>
+        <button style={fBtn} onClick={function(){setMonth(shiftMonth(1));}}>next →</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:budgetLeft!==null?"repeat(4,1fr)":"repeat(3,1fr)",gap:10,marginBottom:12}}>
+        {[{label:"Income",value:"$"+totalIncome.toFixed(2),color:T.success},{label:"Expenses",value:"$"+totalExpenses.toFixed(2),color:T.danger},{label:"Net",value:(net>=0?"+":"")+net.toFixed(2),color:net>=0?T.success:T.danger}].concat(budgetLeft!==null?[{label:"Budget left",value:(budgetLeft>=0?"$":"−$")+Math.abs(budgetLeft).toFixed(2),color:budgetLeft>=0?T.warn:T.danger}]:[]).map(function(s){return(<div key={s.label} style={{...fCard(),marginBottom:0,textAlign:"center"}}><div style={{fontSize:10,color:T.text3,marginBottom:4}}>{s.label}</div><div style={{fontSize:budgetLeft!==null?18:22,fontWeight:700,color:s.color}}>{s.value}</div></div>);})}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10,marginBottom:10}}>
+        <div style={fCard()}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>Income Sources</div><button style={fBtn} onClick={function(){setEditSrc(function(s){return !s;});}}>{editSrc?"Done":"Edit"}</button></div>
+          {sources.map(function(s){const val=srcAmounts[s.id]!==undefined?srcAmounts[s.id]:(s.amount||"");return(<div key={s.id} style={{marginBottom:10}}>{editSrc&&<input style={{...fInp,marginBottom:4}} placeholder={"Source "+s.id} value={s.name} onChange={function(ev){updateSourceName(s.id,ev.target.value);}}/>}{!editSrc&&<div style={{fontSize:11,color:T.text2,marginBottom:4}}>{s.name||"Source "+s.id}</div>}<input style={fInp} type="number" step="0.01" placeholder="0.00" value={val} onChange={function(ev){updateSourceIncome(s.id,ev.target.value);}}/></div>);})}
+          <div style={{borderTop:"0.5px solid "+T.border,paddingTop:8,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:T.text2}}>Total income</span><span style={{fontSize:13,fontWeight:700,color:T.success}}>${totalIncome.toFixed(2)}</span></div>
+        </div>
+        <div style={fCard()}>
+          <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:12}}>By Category</div>
+          {CATS.map(function(cat){const catExps=allThisMonth.filter(function(e){return e.cat===cat;});const catTotal=catExps.reduce(function(a,e){return a+Number(e.amount);},0);const pct=totalExpenses>0?Math.round(catTotal/totalExpenses*100):0;return(<div key={cat} style={{marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:11,fontWeight:600,color:CAT_COL[cat]}}>{cat}</span><span style={{fontSize:11,color:T.text2}}>${catTotal.toFixed(2)}<span style={{fontSize:9,color:T.text3}}> {pct}%</span></span></div><div style={{height:4,borderRadius:2,background:"rgba(255,255,255,0.06)"}}><div style={{width:pct+"%",height:"100%",borderRadius:2,background:CAT_COL[cat],transition:"width 0.4s"}}/></div></div>);})}
+          <div style={{borderTop:"0.5px solid "+T.border,paddingTop:8,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:T.text2}}>Total expenses</span><span style={{fontSize:13,fontWeight:700,color:T.danger}}>${totalExpenses.toFixed(2)}</span></div>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10,marginBottom:10}}>
+        <div style={fCard()}>
+          <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:2}}>Weekly Budget</div>
+          <div style={{fontSize:10,color:T.text3,marginBottom:12}}>GoTab income this month ÷ 4 weeks</div>
+          {goTabIncome===0&&<div style={{fontSize:11,color:T.warn,marginBottom:10,padding:"6px 8px",borderRadius:6,background:"rgba(255,209,102,0.08)"}}>No GoTab income entered for {fmtM(month)} yet — update Income Sources above</div>}
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",borderRadius:8,background:"rgba(105,240,174,0.08)",border:"0.5px solid rgba(105,240,174,0.2)"}}>
+              <span style={{fontSize:11,color:T.text2}}>GoTab weekly</span>
+              <span style={{fontSize:14,fontWeight:700,color:T.success}}>${weeklyGoTab.toFixed(2)}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",borderRadius:8,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.15)"}}>
+              <span style={{fontSize:11,color:T.text2}}>Weekly bills share</span>
+              <span style={{fontSize:13,fontWeight:600,color:T.accent}}>−${weeklyBills.toFixed(2)}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderRadius:8,background:weeklyFree>=0?"rgba(105,240,174,0.12)":"rgba(255,107,107,0.12)",border:"0.5px solid "+(weeklyFree>=0?"rgba(105,240,174,0.35)":"rgba(255,107,107,0.35)")}}>
+              <span style={{fontSize:12,fontWeight:600,color:T.text}}>Free per week</span>
+              <span style={{fontSize:18,fontWeight:700,color:weeklyFree>=0?T.success:T.danger}}>{weeklyFree>=0?"$":"−$"}{Math.abs(weeklyFree).toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+        <div style={fCard()}>
+          <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:2}}>Upcoming Bills</div>
+          <div style={{fontSize:10,color:T.text3,marginBottom:12}}>Fixed bills that hit each month</div>
+          {billsRecurring.length===0&&<div style={{fontSize:11,color:T.text3}}>No recurring bills this month</div>}
+          {billsRecurring.map(function(b){return(<div key={b.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"0.5px solid rgba(255,255,255,0.05)"}}>
+            <span style={{fontSize:11,color:T.text}}>{b.name}</span>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:11,fontWeight:600,color:T.accent}}>${Number(b.amount).toFixed(2)}/mo</div>
+              <div style={{fontSize:9,color:T.text3}}>${(Number(b.amount)*12/52).toFixed(2)}/wk</div>
+            </div>
+          </div>);})}
+          {billsRecurring.length>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:8,marginTop:4,borderTop:"0.5px solid "+T.border}}>
+            <span style={{fontSize:11,fontWeight:700,color:T.text}}>Total bills</span>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:12,fontWeight:700,color:T.accent}}>${billsMonthlyTotal.toFixed(2)}/mo</div>
+              <div style={{fontSize:10,color:T.text3}}>${weeklyBills.toFixed(2)}/wk</div>
+            </div>
+          </div>}
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10,marginBottom:10}}>
+        <div style={fCard()}>
+          <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:6}}>Monthly Budget</div>
+          <div style={{fontSize:10,color:T.text3,marginBottom:8}}>Set a spending limit to see how much you have left</div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:11,color:T.text3}}>$</span><input style={{...fInp,flex:1}} type="number" step="10" placeholder="e.g. 1500" value={monthBudget||""} onChange={function(ev){updateBudget(ev.target.value);}}/></div>
+          {monthBudget>0&&<div style={{marginTop:10,padding:"8px 10px",borderRadius:8,background:budgetLeft>=0?"rgba(255,209,102,0.1)":"rgba(255,107,107,0.1)",border:"0.5px solid "+(budgetLeft>=0?T.warn:T.danger)+"40"}}><div style={{fontSize:10,color:T.text2,marginBottom:2}}>{budgetLeft>=0?"Spending money left this month":"Over budget by"}</div><div style={{fontSize:20,fontWeight:700,color:budgetLeft>=0?T.warn:T.danger}}>{budgetLeft>=0?"$"+budgetLeft.toFixed(2):"$"+Math.abs(budgetLeft).toFixed(2)}</div></div>}
+        </div>
+        <div style={fCard()}>
+          <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>End of Year Projection</div>
+          <div style={{fontSize:10,color:T.text3,marginBottom:10}}>Current income vs average spending to 31 Dec {curDate.getFullYear()}</div>
+          <div style={{fontSize:30,fontWeight:700,color:eoyNet>=0?T.success:T.danger,marginBottom:4}}>{eoyNet>=0?"+":"-"}<span style={{fontSize:16}}>$</span>{Math.abs(eoyNet).toFixed(0)}</div>
+          <div style={{fontSize:10,color:T.text2}}>{futureMonthsInYear} month{futureMonthsInYear!==1?"s":""} remaining · avg expenses ${avgE.toFixed(0)}/mo</div>
+        </div>
+      </div>
+      <div style={fCard()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:T.text}}>Expenses — {fmtM(month)}</div>
+            <div style={{fontSize:10,color:T.text3,marginTop:2}}>What you've actually spent so far this month</div>
+          </div>
+          <button style={{...fBtn,color:T.accent,borderColor:"rgba(199,125,255,0.3)"}} onClick={function(){setShowRecMgr(function(s){return !s;});}}>⚙ Recurring</button>
+        </div>
+        <div style={{marginTop:12,marginBottom:14,padding:"10px 12px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"0.5px solid rgba(255,255,255,0.07)"}}>
+          <div style={{fontSize:10,color:T.text3,marginBottom:8,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4}}>Add one-off expense</div>
+          {mob?(<div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <input style={{...fInp,padding:"10px 12px",fontSize:14}} placeholder="e.g. KFC Brimbank" value={expForm.name} onChange={function(ev){setExpForm(function(f){return{...f,name:ev.target.value};});}}/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <input style={{...fInp,padding:"10px 12px",fontSize:14}} type="number" step="0.01" placeholder="Amount $" value={expForm.amount} onChange={function(ev){setExpForm(function(f){return{...f,amount:ev.target.value};});}}/>
+              <select style={{...fInp,padding:"10px 12px",fontSize:14}} value={expForm.cat} onChange={function(ev){setExpForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select>
+            </div>
+            <button style={{...fBtnP,padding:"11px",fontSize:14,borderRadius:10}} onClick={addExpense}>+ Add expense</button>
+          </div>):(<div style={{display:"grid",gridTemplateColumns:"1fr 90px 105px 44px",gap:6,alignItems:"center"}}>
+            <input style={fInp} placeholder="e.g. KFC Brimbank" value={expForm.name} onChange={function(ev){setExpForm(function(f){return{...f,name:ev.target.value};});}}/>
+            <input style={fInp} type="number" step="0.01" placeholder="Amount" value={expForm.amount} onChange={function(ev){setExpForm(function(f){return{...f,amount:ev.target.value};});}}/>
+            <select style={fInp} value={expForm.cat} onChange={function(ev){setExpForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select>
+            <button style={fBtnP} onClick={addExpense}>+</button>
+          </div>)}
+        </div>
+        {skippedThisMonth.length>0&&<div style={{marginBottom:10,padding:"6px 10px",borderRadius:8,background:"rgba(255,255,255,0.03)",border:"0.5px solid rgba(255,255,255,0.07)"}}><div style={{fontSize:9,color:T.text3,marginBottom:6}}>SKIPPED THIS MONTH — click to restore</div>{skippedThisMonth.map(function(t){return(<button key={t.id} onClick={function(){restoreRecurring(t.id);}} style={{...fBtn,marginRight:4,marginBottom:4,fontSize:10,textDecoration:"line-through",color:T.text3}}>{t.name}</button>);})}</div>}
+        {recurringThisMonth.length>0&&<div style={{marginBottom:14}}>
+          <div style={{fontSize:10,fontWeight:700,color:T.accent,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Fixed Recurring</div>
+          {recurringThisMonth.map(function(e){return(<div key={e.id||e.name} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",borderRadius:8,background:"rgba(199,125,255,0.05)",border:"0.5px solid rgba(199,125,255,0.18)",marginBottom:4}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:9,color:T.accent}}>🔄</span>
+              <div><div style={{fontSize:12,color:T.text}}>{e.name}</div><div style={{fontSize:9,color:CAT_COL[e.cat]}}>{e.cat}</div></div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:12,fontWeight:600,color:T.accent}}>−${Number(e.amount).toFixed(2)}</span>
+              <button onClick={function(){skipRecurring(e.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:10}} title="Skip this month">skip</button>
+            </div>
+          </div>);})}
+        </div>}
+        <div>
+          <div style={{fontSize:10,fontWeight:700,color:T.warn,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>One-off Spending</div>
+          {oneOffThisMonth.length===0&&<div style={{fontSize:11,color:T.text3,padding:"8px 0"}}>No one-off expenses added yet — use the form above</div>}
+          {oneOffThisMonth.map(function(e){
+            if(editExpId===e.id){return mob?(<div key={e.id} style={{display:"flex",flexDirection:"column",gap:8,marginBottom:8,padding:"10px 12px",borderRadius:10,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.25)"}}>
+              <input style={{...fInp,padding:"10px 12px",fontSize:14}} value={editExpForm.name} onChange={function(ev){setEditExpForm(function(f){return{...f,name:ev.target.value};});}}/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <input style={{...fInp,padding:"10px 12px",fontSize:14}} type="number" step="0.01" value={editExpForm.amount} onChange={function(ev){setEditExpForm(function(f){return{...f,amount:ev.target.value};});}}/>
+                <select style={{...fInp,padding:"10px 12px",fontSize:14}} value={editExpForm.cat} onChange={function(ev){setEditExpForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <button style={{...fBtnP,padding:"10px",fontSize:14,borderRadius:10}} onClick={saveEditExp}>Save ✓</button>
+                <button style={{...fBtn,padding:"10px",fontSize:14,borderRadius:10,textAlign:"center"}} onClick={function(){setEditExpId(null);}}>Cancel</button>
+              </div>
+            </div>):(<div key={e.id} style={{display:"grid",gridTemplateColumns:"1fr 90px 105px 44px 36px",gap:5,marginBottom:6,alignItems:"center"}}>
+              <input style={fInp} value={editExpForm.name} onChange={function(ev){setEditExpForm(function(f){return{...f,name:ev.target.value};});}}/>
+              <input style={fInp} type="number" step="0.01" value={editExpForm.amount} onChange={function(ev){setEditExpForm(function(f){return{...f,amount:ev.target.value};});}}/>
+              <select style={fInp} value={editExpForm.cat} onChange={function(ev){setEditExpForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select>
+              <button style={fBtnP} onClick={saveEditExp}>✓</button>
+              <button style={fBtn} onClick={function(){setEditExpId(null);}}>✕</button>
+            </div>);}
+            return(<div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",borderRadius:8,background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.07)",marginBottom:4}}>
+              <div><div style={{fontSize:12,color:T.text}}>{e.name}</div><div style={{fontSize:9,color:CAT_COL[e.cat]}}>{e.cat}</div></div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:12,fontWeight:600,color:CAT_COL[e.cat]}}>−${Number(e.amount).toFixed(2)}</span>
+                <button onClick={function(){setEditExpId(e.id);setEditExpForm({name:e.name,amount:e.amount,cat:e.cat});}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:13}} title="Edit">✏</button>
+                <button onClick={function(){removeOneOff(e.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,lineHeight:1}} title="Delete">×</button>
+              </div>
+            </div>);
+          })}
+        </div>
+      </div>
+      {showRecMgr&&<div style={fCard()}>
+        <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>Recurring Expenses</div>
+        <div style={{fontSize:10,color:T.text3,marginBottom:12}}>These apply every month automatically. Use "skip" in the expense list to exclude one for a specific month.</div>
+        {recurringTemplates.map(function(t){return(<div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 10px",borderRadius:8,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.18)",marginBottom:6}}><div><span style={{fontSize:12,color:T.text}}>{t.name}</span><span style={{fontSize:10,color:CAT_COL[t.cat]||T.text2,marginLeft:8}}>{t.cat}</span></div><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:12,fontWeight:600,color:T.accent}}>${Number(t.amount).toFixed(2)}/mo</span><button onClick={function(){deleteTemplate(t.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,lineHeight:1}}>×</button></div></div>);})}
+        <div style={{marginTop:12,paddingTop:10,borderTop:"0.5px solid "+T.border}}><div style={{fontSize:11,color:T.text2,marginBottom:8}}>Add recurring expense</div><div style={{display:"grid",gridTemplateColumns:"1fr 90px 105px 44px",gap:6,alignItems:"center"}}><input style={fInp} placeholder="Name" value={recForm.name} onChange={function(ev){setRecForm(function(f){return{...f,name:ev.target.value};});}}/><input style={fInp} type="number" step="0.01" placeholder="$/mo" value={recForm.amount} onChange={function(ev){setRecForm(function(f){return{...f,amount:ev.target.value};});}}/><select style={fInp} value={recForm.cat} onChange={function(ev){setRecForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select><button style={fBtnP} onClick={addRecurring}>+</button></div></div>
+      </div>}
+      <div style={fCard()}>
+        <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>6-Month Forecast</div>
+        <div style={{fontSize:10,color:T.text3,marginBottom:12}}>Based on current income & average of past 3 months' spending</div>
+        <div style={{display:"grid",gridTemplateColumns:mob?"repeat(3,1fr)":"repeat(6,1fr)",gap:6}}>
+          {forecast.map(function(f,i){return(<div key={i} style={{textAlign:"center",padding:"10px 6px",borderRadius:10,background:f.net>=0?"rgba(105,240,174,0.08)":"rgba(255,107,107,0.08)",border:"0.5px solid "+(f.net>=0?"rgba(105,240,174,0.2)":"rgba(255,107,107,0.2)")}}><div style={{fontSize:9,color:T.text3,marginBottom:4}}>{fmtShortM(f.month)}</div><div style={{fontSize:10,color:T.success,marginBottom:1}}>+${f.income.toFixed(0)}</div><div style={{fontSize:10,color:T.danger,marginBottom:4}}>-${f.expenses.toFixed(0)}</div><div style={{fontSize:12,fontWeight:700,color:f.net>=0?T.success:T.danger}}>{f.net>=0?"+":""}{f.net.toFixed(0)}</div></div>);})}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App(){
+  const [page,setPage]=useState("Dashboard");
+  const [data,setData]=useState(function(){try{const s=localStorage.getItem("dash_v1");if(!s)return{...INIT,reflections:SEED_REFL};const saved=JSON.parse(s);const fin=saved.finance||{};let out=saved;if(!fin.financeVersion||fin.financeVersion<2){out={...out,finance:INIT.finance};}if(!out.reflections||out.reflections.length===0){out={...out,reflections:SEED_REFL};}return out;}catch(_){return{...INIT,reflections:SEED_REFL};}});
+  const [wkOff,setWkOff]=useState(0);
+  const [activeDay,setActiveDay]=useState(todayStr());
+  const [checkinBlocks,setCheckinBlocks]=useState([]);
+  const [nxtRows,setNxtRows]=useState([{id:1,exercise:"",sets:"",reps:"",weight:""},{id:2,exercise:"",sets:"",reps:"",weight:""},{id:3,exercise:"",sets:"",reps:"",weight:""}]);
+  const [bwIn,setBwIn]=useState("");
+  const [editTaskId,setEditTaskId]=useState(null);
+  const [editTaskForm,setEditTaskForm]=useState({});
+  const [showArch,setShowArch]=useState(false);
+  const [reflStep,setReflStep]=useState(0);
+  const [reflAns,setReflAns]=useState([]);
+  const [reflIn,setReflIn]=useState("");
+  const [reflAnalysis,setReflAnalysis]=useState(null);
+  const [modal,setModal]=useState(null);
+  const [mForm,setMForm]=useState({});
+  const [docIn,setDocIn]=useState({title:"",tags:"",content:""});
+  const [forceMob,setForceMob]=useState(false);
+  const rawMob=useIsMob();
+  const mob=forceMob||rawMob;
+
+  useEffect(function(){try{localStorage.setItem("dash_v1",JSON.stringify(data));}catch(_){};},[data]);
+
+  const baseDate=new Date();baseDate.setDate(baseDate.getDate()+wkOff*7);
+  const weekDates=getWeekDates(baseDate);
+  const thisWeek=weekMonday();
+  const bwLogged=data.gym.lastBWWeek===thisWeek;
+  const dow=new Date().getDay();const dLeft=dow===0?0:7-dow;
+  const bwUrg=bwLogged?"done":dLeft>=4?"blue":dLeft>=2?"yellow":"red";
+  const bwColMap={blue:T.accent,yellow:T.warn,red:T.danger,done:T.success};
+  const bwBgMap={blue:T.accentBg,yellow:T.warnBg,red:T.dangerBg,done:T.successBg};
+  const gymRot=data.gym.rotation||[];const gymRotLen=gymRot.length>0?gymRot.length:1;
+  const gymRotIdx=(data.gym.rotIdx||0)%gymRotLen;const nextRot=gymRot.length>0?gymRot[gymRotIdx]:null;
+  const upcoming=UNI_EVENTS.filter(function(ev){const ce=data.uni.completedEvents||[];return ev.assessment&&ce.indexOf(ev.id)===-1&&daysBetween(ev.date)>=0;}).sort(function(a,b){return new Date(a.date)-new Date(b.date);}).slice(0,8);
+  const activeTasks=data.personal.tasks.filter(function(t){return !t.done;});
+  const doneTasks=data.personal.tasks.filter(function(t){return t.done;});
+  const urgTasks=activeTasks.filter(function(t){return t.priority==="urgent";}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});
+  const normTasks=activeTasks.filter(function(t){return t.priority==="normal";}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});
+  const activeDayEvs=UNI_EVENTS.filter(function(ev){return ev.date===activeDay;}).concat(WORK_EVENTS.filter(function(ev){return ev.date===activeDay;})).sort(function(a,b){return(a.time||"").localeCompare(b.time||"");});
+  const shifts=WORK_EVENTS.filter(function(ev){return ev.type==="shift";});
+  const totNorm=shifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.normalHrs:0);},0);
+  const totPen=shifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.penaltyHrs:0);},0);
+  const totEquiv=shifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.totalEquiv:0);},0);
+
+  function doCheckin(){setCheckinBlocks(generateCheckin(data));}
+  function toggleCalEv(id){setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
+  function updateProg(id,val){setData(function(p){return{...p,uni:{...p.uni,subjects:p.uni.subjects.map(function(s){return s.id===id?{...s,progress:Number(val)}:s;})}}; });}
+  function toggleTask(id){setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.map(function(t){return t.id===id?{...t,done:!t.done}:t;})}}; });}
+  function archiveDone(){setData(function(p){const done=p.personal.tasks.filter(function(t){return t.done;}).map(function(t){return{...t,archivedAt:todayStr()};});return{...p,personal:{...p.personal,tasks:p.personal.tasks.filter(function(t){return !t.done;}),archived:(p.personal.archived||[]).concat(done)}};});}
+  function restoreTask(id){setData(function(p){const arch=p.personal.archived||[];const match=arch.filter(function(t){return t.id===id;});if(match.length===0)return p;return{...p,personal:{...p.personal,tasks:p.personal.tasks.concat([{...match[0],done:false,archivedAt:undefined}]),archived:arch.filter(function(x){return x.id!==id;})}};});}
+  function saveEditTask(){setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.map(function(t){return t.id===editTaskId?{...t,...editTaskForm,editedAt:todayStr()}:t;})}}; });setEditTaskId(null);setEditTaskForm({});}
+  function logBW(){if(!bwIn)return;setData(function(p){return{...p,gym:{...p.gym,bodyWeight:(p.gym.bodyWeight||[]).concat([{date:todayStr(),weight:Number(bwIn)}]),lastBWWeek:thisWeek}};});setBwIn("");}
+  function saveNextSess(){const rows=nxtRows.filter(function(r){return r.exercise&&r.weight;});if(rows.length===0)return;const name=nextRot?nextRot.name:"Next Session";const rotId=nextRot?nextRot.id:null;const wk={id:Date.now(),name:name,date:todayStr(),rotId:rotId,sets:rows.map(function(r,i){return{...r,id:i+1};})};setData(function(p){const rl=p.gym.rotation?p.gym.rotation.length:1;return{...p,gym:{...p.gym,workouts:(p.gym.workouts||[]).concat([wk]),rotIdx:((p.gym.rotIdx||0)+1)%Math.max(rl,1)}};});setNxtRows([{id:1,exercise:"",sets:"",reps:"",weight:""},{id:2,exercise:"",sets:"",reps:"",weight:""},{id:3,exercise:"",sets:"",reps:"",weight:""}]);}
+  function saveModal(){if(modal==="add_subject")setData(function(p){return{...p,uni:{...p.uni,subjects:p.uni.subjects.concat([{id:Date.now(),name:mForm.name,progress:0}])}};});else if(modal==="add_exercise")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.concat([{id:Date.now(),name:mForm.name,logs:[]}])}};});else if(modal==="log_weight")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.map(function(ex){return ex.id===mForm.exId?{...ex,logs:ex.logs.concat([{date:todayStr(),weight:Number(mForm.weight)}])}:ex;})}};});else if(modal==="add_task")setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.concat([{id:Date.now(),name:mForm.name,cat:mForm.cat||"Errands",priority:mForm.priority||"normal",due:mForm.due,done:false,addedAt:todayStr(),editedAt:null}])}};});setModal(null);setMForm({});}
+  function updateFinance(fin){setData(function(p){return{...p,finance:fin};});}
+  function submitRefl(){if(!reflIn.trim())return;const na=reflAns.concat([{q:REFL_QS[reflStep-1],a:reflIn}]);setReflAns(na);setReflIn("");if(reflStep<REFL_QS.length){setReflStep(reflStep+1);}else{const an=analyzeReflection(na,data.reflections);setReflAnalysis(an);setData(function(p){return{...p,reflections:p.reflections.concat([{id:Date.now(),date:new Date().toISOString(),answers:na.map(function(qa,i){return{question:qa.q,answer:qa.a,area:REFL_LABELS[i]};}),analysis:an}])};});setReflStep(REFL_QS.length+1);}}
+
+  function renderWeek(){
+    if(mob){
+      const dayEvs=UNI_EVENTS.filter(function(ev){return ev.date===activeDay;}).concat(WORK_EVENTS.filter(function(ev){return ev.date===activeDay;})).sort(function(a,b){return(a.time||"").localeCompare(b.time||"");});
+      return(
+        <div>
+          <div style={{display:"flex",gap:4,overflowX:"auto",paddingBottom:6,marginBottom:10}}>
+            {weekDates.map(function(d,di){const ds=dStr(d);const isTdy=ds===todayStr();const isActive=ds===activeDay;return(
+              <button key={di} onClick={function(){setActiveDay(ds);}} style={{flex:"0 0 auto",minWidth:42,padding:"7px 6px",borderRadius:10,border:isActive?"1px solid "+T.accent:"0.5px solid "+T.border,background:isActive?T.accentBg:"rgba(255,255,255,0.03)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                <span style={{fontSize:9,color:isTdy?T.accent:T.text3,fontWeight:600}}>{DAYS[di]}</span>
+                <span style={{fontSize:15,fontWeight:isTdy?700:500,color:isTdy?T.accent:isActive?T.text:T.text2}}>{d.getDate()}</span>
+                {UNI_EVENTS.concat(WORK_EVENTS).some(function(ev){return ev.date===ds;})&&<div style={{width:4,height:4,borderRadius:"50%",background:isActive?T.accent:T.text3}}/>}
+              </button>
+            );})}
+          </div>
+          {dayEvs.length===0?<div style={{fontSize:12,color:T.text3,padding:"12px 0",textAlign:"center"}}>No events today</div>:dayEvs.map(function(ev){const isW=!!ev.type;const col=isW?wCol(ev.type):(SC[ev.subject]||"#888");const ce=data.uni.completedEvents||[];const done=!isW&&ce.indexOf(ev.id)!==-1;return(
+            <div key={ev.id} onClick={function(){if(!isW)toggleCalEv(ev.id);}} style={{display:"flex",gap:10,padding:"10px 12px",borderRadius:10,background:col+"14",border:"0.5px solid "+col+"35",marginBottom:8,cursor:isW?"default":"pointer",opacity:done?0.5:1,alignItems:"flex-start"}}>
+              <div style={{width:3,background:col,borderRadius:2,alignSelf:"stretch",minHeight:28,flexShrink:0,marginTop:2}}/>
+              <div style={{flex:1}}>
+                <div style={{fontSize:11,fontWeight:700,color:col}}>{isW?"Work":(SUBJECTS[ev.subject]||ev.subject)}{ev.assessment?" 📋":""}</div>
+                <div style={{fontSize:13,color:T.text,marginTop:2,lineHeight:1.4}}>{ev.title}</div>
+                <div style={{fontSize:10,color:T.text3,marginTop:3}}>{ev.time}</div>
+              </div>
+              {!isW&&<input type="checkbox" checked={done} onChange={function(){toggleCalEv(ev.id);}} style={{accentColor:col,width:18,height:18,flexShrink:0}} onClick={function(e){e.stopPropagation();}}/>}
+            </div>
+          );})}
+        </div>
+      );
+    }
+    const PPM=0.26;
+    const allEvs=[];weekDates.forEach(function(d){UNI_EVENTS.filter(function(ev){return ev.date===dStr(d);}).forEach(function(ev){allEvs.push(ev);});WORK_EVENTS.filter(function(ev){return ev.date===dStr(d);}).forEach(function(ev){allEvs.push(ev);});});
+    const allT=allEvs.length>0?allEvs.map(function(ev){return parseTimes(ev.time);}):[];
+    const minH=allT.length>0?Math.max(6,Math.floor(Math.min.apply(null,allT.map(function(t){return t.start;}))/60)):7;
+    const maxH=allT.length>0?Math.min(24,Math.ceil(Math.max.apply(null,allT.map(function(t){return t.end;}))/60)+1):22;
+    const hours=[];for(let h=minH;h<=maxH;h++)hours.push(h);
+    const totalH=(maxH-minH)*60*PPM;
+    const now=new Date();const nowMins=now.getHours()*60+now.getMinutes();
+    return(
+      <div style={{display:"flex"}}>
+        <div style={{width:28,flexShrink:0,position:"relative",height:totalH,marginTop:26}}>{hours.map(function(h){return<div key={h} style={{position:"absolute",top:(h-minH)*60*PPM-6,fontSize:8,color:T.text3,textAlign:"right",width:24}}>{h===12?"12p":h<12?h+"a":(h-12)+"p"}</div>;})}</div>
+        <div style={{flex:1,display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1}}>
+          {weekDates.map(function(d,di){
+            const ds=dStr(d);const isTdy=ds===todayStr();const isPast=new Date(ds)<new Date(todayStr());
+            const dayEvs=UNI_EVENTS.filter(function(ev){return ev.date===ds;}).concat(WORK_EVENTS.filter(function(ev){return ev.date===ds;}));
+            return(<div key={di} style={{display:"flex",flexDirection:"column",cursor:"pointer"}} onClick={function(){setActiveDay(ds);}}>
+              <div style={{textAlign:"center",marginBottom:2,padding:"2px 0",borderRadius:4,background:activeDay===ds?T.accentBg:"transparent"}}>
+                <div style={{fontSize:8,color:isTdy?T.accent:T.text3}}>{DAYS[di]}</div>
+                <div style={{fontSize:10,fontWeight:isTdy?700:400,color:isTdy?T.accent:isPast?T.text3:T.text,width:16,height:16,borderRadius:"50%",background:isTdy?T.accentBg:"transparent",display:"flex",alignItems:"center",justifyContent:"center",margin:"1px auto"}}>{d.getDate()}</div>
+              </div>
+              <div style={{position:"relative",height:totalH,borderLeft:"0.5px solid "+T.border,opacity:isPast?0.5:1}}>
+                {hours.map(function(h){return<div key={h} style={{position:"absolute",top:(h-minH)*60*PPM,left:0,right:0,borderTop:"0.5px solid "+T.border}}/>;} )}
+                {isTdy&&nowMins>=minH*60&&nowMins<=maxH*60&&<div style={{position:"absolute",top:(nowMins-minH*60)*PPM,left:0,right:0,borderTop:"1.5px solid "+T.danger,zIndex:10}}><div style={{position:"absolute",left:-3,top:-3,width:6,height:6,borderRadius:"50%",background:T.danger}}/></div>}
+                {dayEvs.map(function(ev){const isW=!!ev.type;const col=isW?wCol(ev.type):(SC[ev.subject]||"#888");const ce=data.uni.completedEvents||[];const done=!isW&&ce.indexOf(ev.id)!==-1;const tp=parseTimes(ev.time);return(<div key={ev.id} onClick={function(evn){evn.stopPropagation();if(!isW)toggleCalEv(ev.id);}} style={{position:"absolute",top:(tp.start-minH*60)*PPM,left:1,right:1,height:Math.max((tp.end-tp.start)*PPM,10),borderRadius:2,background:col+(done?"15":"28"),borderLeft:"2px solid "+col,padding:"1px 2px",overflow:"hidden",boxSizing:"border-box",zIndex:5,opacity:done?0.4:1}}><div style={{fontSize:6.5,fontWeight:700,color:col,whiteSpace:"nowrap",overflow:"hidden"}}>{isW?"Work":ev.subject}{ev.assessment?" ●":""}</div></div>);})}
+              </div>
+            </div>);
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function card(ex){return{background:T.bg2,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",border:"0.5px solid "+T.border2,borderRadius:12,padding:"14px 16px",marginBottom:10,boxShadow:"0 4px 24px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.08)",...(ex||{})};}
+  const sT={fontSize:13,fontWeight:500,marginBottom:10,color:T.text};
+  const btn={padding:"5px 11px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text2,cursor:"pointer",fontSize:12,backdropFilter:"blur(8px)"};
+  const btnP={padding:"6px 13px",borderRadius:8,border:"1px solid rgba(199,125,255,0.45)",background:"rgba(199,125,255,0.15)",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,boxShadow:"0 0 10px rgba(199,125,255,0.2)"};
+  const inp={width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"};
+  function navBtn(a){return{padding:"6px 13px",borderRadius:8,border:a?"1px solid rgba(199,125,255,0.5)":"0.5px solid rgba(255,255,255,0.1)",background:a?"rgba(199,125,255,0.15)":"rgba(255,255,255,0.04)",color:a?T.accent:T.text2,cursor:"pointer",fontSize:12,fontWeight:a?600:400,whiteSpace:"nowrap",boxShadow:a?"0 0 10px rgba(199,125,255,0.25)":"none",backdropFilter:"blur(8px)",transition:"all 0.2s"};}
+  function bdg(type){const m={urgent:{bg:T.dangerBg,c:T.danger},normal:{bg:T.bg3,c:T.text2},success:{bg:T.successBg,c:T.success}};const col=m[type]||m.normal;return{display:"inline-block",fontSize:9,padding:"1px 6px",borderRadius:99,background:col.bg,color:col.c,fontWeight:600};}
+
+  return(
+    <div style={{fontFamily:"system-ui,sans-serif",minHeight:"100vh",background:"transparent",color:T.text,position:"relative"}}>
+      {/* Animated glass background */}
+      <div className="glass-bg" id="glassBg"><div className="streak s1"/><div className="streak s2"/><div className="streak s3"/><div className="streak s4"/></div>
+      {!mob&&<nav style={{display:"flex",gap:4,padding:"10px 16px",background:"rgba(5,7,26,0.7)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"0.5px solid rgba(199,125,255,0.2)",overflowX:"auto",alignItems:"center",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 20px rgba(0,0,0,0.4)"}}>
+        <div style={{fontSize:13,fontWeight:700,color:T.accent,marginRight:14,textShadow:"0 0 12px rgba(199,125,255,0.6)"}}>Jayden</div>
+        {["Dashboard","Uni","Work","Gym","Personal","Finance","Reflection"].map(function(s){return<button key={s} style={navBtn(page===s)} onClick={function(){setPage(s);}}>{s}</button>;})}
+      </nav>}
+      {!mob&&<button onClick={function(){setForceMob(true);}} style={{position:"fixed",bottom:24,right:24,zIndex:200,padding:"10px 16px",borderRadius:99,border:"1px solid rgba(199,125,255,0.5)",background:"rgba(14,16,40,0.95)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:700,boxShadow:"0 4px 20px rgba(199,125,255,0.3)",display:"flex",alignItems:"center",gap:6}}>📱 Mobile view</button>}
+      {mob&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",background:"rgba(5,7,26,0.85)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"0.5px solid rgba(199,125,255,0.2)",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 20px rgba(0,0,0,0.4)"}}>
+        <div style={{fontSize:13,fontWeight:700,color:T.accent,textShadow:"0 0 12px rgba(199,125,255,0.6)"}}>{page}</div>
+        {!rawMob&&<button onClick={function(){setForceMob(false);}} style={{padding:"5px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.06)",color:T.text2,cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",gap:5}}>🖥 Desktop view</button>}
+      </div>}
+      <div style={{padding:mob?"10px 12px":"12px 14px",maxWidth:mob?430:1100,margin:"0 auto",position:"relative",zIndex:1,paddingBottom:mob?80:undefined}}>
+
+        {page==="Dashboard"&&<div>
+          {/* Calendar + weather side by side */}
+          <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 220px",gap:10,marginBottom:12,alignItems:"start"}}>
+            <div style={card({marginBottom:0})}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div style={{fontSize:11,fontWeight:500,color:T.text}}>Week of {fmtDate(dStr(weekDates[0]))} — {fmtDate(dStr(weekDates[6]))}</div>
+                <div style={{display:"flex",gap:6}}>
+                  <button style={btn} onClick={function(){setWkOff(function(o){return o-1;});}}>← prev</button>
+                  <button style={{...btn,color:wkOff===0?T.accent:T.text2}} onClick={function(){setWkOff(0);setActiveDay(todayStr());}}>today</button>
+                  <button style={btn} onClick={function(){setWkOff(function(o){return o+1;});}}>next →</button>
+                </div>
+              </div>
+              {renderWeek()}
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8,paddingTop:6,borderTop:"0.5px solid "+T.border}}>
+                {Object.keys(SC).map(function(k){return<div key={k} style={{display:"flex",alignItems:"center",gap:3}}><div style={{width:6,height:6,borderRadius:2,background:SC[k]}}/><span style={{fontSize:8,color:T.text3}}>{k}</span></div>;})}
+                <div style={{display:"flex",alignItems:"center",gap:3}}><div style={{width:6,height:6,borderRadius:2,background:"#5a6070"}}/><span style={{fontSize:8,color:T.text3}}>Work</span></div>
+              </div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <div style={{background:T.bg2,border:"0.5px solid "+T.border,borderRadius:10,padding:"14px 16px"}}>
+                <div style={{fontSize:10,color:T.text3,marginBottom:8}}>Melbourne</div>
+                <div style={{fontSize:28,lineHeight:1}}>☁️</div>
+                <div style={{fontSize:24,fontWeight:700,color:T.text,marginTop:6}}>12°C</div>
+                <div style={{fontSize:12,color:T.text2,marginTop:3}}>Cloudy</div>
+                <div style={{fontSize:11,color:T.warn,marginTop:6}}>55% chance of rain</div>
+              </div>
+              {nextRot&&<div style={{background:T.successBg,border:"0.5px solid "+T.success+"40",borderRadius:10,padding:"14px 16px",cursor:"pointer"}} onClick={function(){setPage("Gym");}}>
+                <div style={{fontSize:9,color:T.success,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Next session</div>
+                <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:3}}>{nextRot.name}</div>
+                <div style={{fontSize:11,color:T.text2,lineHeight:1.4}}>{nextRot.focus}</div>
+                <div style={{fontSize:9,color:T.success,marginTop:8}}>Tap to open Gym →</div>
+              </div>}
+            </div>
+          </div>
+
+          {/* Check-in full width */}
+          <div style={{...card({background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.1)"}),marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,marginBottom:10}}>
+              <div style={{fontSize:10,color:T.text3,display:"flex",alignItems:"center",gap:5}}><div style={{width:5,height:5,borderRadius:"50%",background:T.accent}}/>Daily Check-in · {new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long"})}</div>
+              <button style={{...btn,fontSize:11}} onClick={doCheckin}>↻ Refresh</button>
+            </div>
+            {checkinBlocks.length===0?<div style={{fontSize:12,color:T.text3}}>Press ↻ Refresh to generate today's check-in.</div>:checkinBlocks.map(function(block,bi){return(<div key={bi} style={{marginBottom:10}}>{block.header&&<div style={{fontSize:11,fontWeight:600,color:T.accent,marginBottom:4}}>{block.header}</div>}{block.items.map(function(item,ii){return<div key={ii} style={{fontSize:13,lineHeight:1.7,color:T.text}}>{item}</div>;})}</div>);})}
+            {activeDayEvs.length>0&&<div style={{marginTop:12,paddingTop:10,borderTop:"0.5px solid "+T.border,display:"flex",gap:6,flexWrap:"wrap"}}>{activeDayEvs.map(function(ev){const isW=!!ev.type;const col=isW?wCol(ev.type):(SC[ev.subject]||"#888");const ce=data.uni.completedEvents||[];const done=!isW&&ce.indexOf(ev.id)!==-1;return(<div key={ev.id} onClick={function(){if(!isW)toggleCalEv(ev.id);}} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 9px",borderRadius:6,background:col+"18",border:"0.5px solid "+col+"40",cursor:isW?"default":"pointer",opacity:done?0.4:1,flexShrink:0}}>{!isW&&<input type="checkbox" checked={done} onChange={function(){toggleCalEv(ev.id);}} onClick={function(evn){evn.stopPropagation();}} style={{accentColor:col}}/>}<div><div style={{fontSize:10,fontWeight:600,color:col}}>{isW?"GoTab":ev.subject}<span style={{fontWeight:400,color:T.text3}}> · {ev.time}</span></div><div style={{fontSize:9,color:T.text2}}>{ev.title.slice(0,32)}{ev.assessment?" 📋":""}</div></div></div>);})}</div>}
+          </div>
+
+          {/* 3-col */}
+          <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"220px 1fr 220px",gap:10}}>
+            <div style={card()}>
+              <div style={sT}>Upcoming assessments</div>
+              {upcoming.length===0?<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>:upcoming.map(function(a){const days=daysBetween(a.date);return(<div key={a.id} style={{marginBottom:10,paddingBottom:10,borderBottom:"0.5px solid "+T.border,cursor:"pointer"}} onClick={function(){setPage("Uni");}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:3}}><div style={{display:"flex",alignItems:"center",gap:5,flex:1,minWidth:0}}><div style={{width:6,height:6,borderRadius:"50%",background:SC[a.subject]||T.accent,flexShrink:0,marginTop:2}}/><span style={{fontSize:10,fontWeight:700,color:SC[a.subject]||T.accent,lineHeight:1.3}}>{SUBJECTS[a.subject]||a.subject}</span></div><span style={{fontSize:10,color:days<=3?T.danger:T.text2,fontWeight:600,flexShrink:0,marginLeft:4}}>{days===0?"today":days===1?"tomorrow":days+"d"}</span></div>
+                <div style={{fontSize:11,color:T.text,lineHeight:1.3,paddingLeft:11}}>{a.title}</div>
+                <div style={{fontSize:9,color:T.text3,marginTop:2,paddingLeft:11}}>{fmtDate(a.date)}</div>
+              </div>);})}
+            </div>
+            <div>
+              <div style={card()}>
+                <div style={sT}>Next session — pre-fill weights</div>
+                <div style={{fontSize:11,color:T.text2,marginBottom:8}}>{nextRot?<span>Next up: <strong style={{color:T.success}}>{nextRot.name}</strong> — {nextRot.focus}</span>:"Set up your rotation in the Gym tab."}</div>
+                {mob?nxtRows.map(function(row,i){return(<div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 52px 52px 64px",gap:5,marginBottom:6}}>
+                  <input style={{...inp,padding:"8px 8px",fontSize:12}} placeholder={["Bench Press","Squat","OHP"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
+                  <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="Sets" value={row.sets} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,sets:ev.target.value}:x;});});}}/>
+                  <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="Reps" value={row.reps} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,reps:ev.target.value}:x;});});}}/>
+                  <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="kg" value={row.weight} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,weight:ev.target.value}:x;});});}}/>
+                </div>);}):(
+                <div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 50px 50px 60px",gap:6,marginBottom:4}}>{["Exercise","Sets","Reps","kg"].map(function(h){return<div key={h} style={{fontSize:9,color:T.text3}}>{h}</div>;})}</div>
+                {nxtRows.map(function(row,i){return(<div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 50px 50px 60px",gap:6,marginBottom:6}}>
+                  <input style={inp} placeholder={["Bench Press","Squat","Overhead Press"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
+                  <input style={inp} type="number" placeholder="4" value={row.sets} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,sets:ev.target.value}:x;});});}}/>
+                  <input style={inp} type="number" placeholder="8" value={row.reps} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,reps:ev.target.value}:x;});});}}/>
+                  <input style={inp} type="number" placeholder="80" value={row.weight} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,weight:ev.target.value}:x;});});}}/>
+                </div>);})}
+                </div>)}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4}}>
+                  <button style={btn} onClick={function(){setNxtRows(function(r){return r.concat([{id:Date.now(),exercise:"",sets:"",reps:"",weight:""}]);});}}>+ Row</button>
+                  <button style={btnP} onClick={saveNextSess}>Save to Gym →</button>
+                </div>
+              </div>
+              <div style={card({border:"1px solid "+(bwLogged?T.success:bwColMap[bwUrg])+"50",background:bwLogged?T.successBg:bwBgMap[bwUrg]})}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <div style={{fontSize:12,fontWeight:600,color:bwLogged?T.success:bwColMap[bwUrg]}}>Weekly body weight</div>
+                  {!bwLogged&&<div style={{fontSize:10,color:bwColMap[bwUrg],fontWeight:600,padding:"2px 7px",borderRadius:99,background:bwColMap[bwUrg]+"18"}}>{dLeft}d left</div>}
+                </div>
+                {bwLogged
+                  ?<div style={{display:"flex",alignItems:"center",gap:12,padding:"4px 0"}}>
+                    <div style={{fontSize:32,color:T.success,lineHeight:1,fontWeight:700}}>✓</div>
+                    <div>
+                      <div style={{fontSize:22,fontWeight:700,color:T.success,lineHeight:1.1}}>{(data.gym.bodyWeight&&data.gym.bodyWeight.length>0)?data.gym.bodyWeight[data.gym.bodyWeight.length-1].weight+" kg":"Logged"}</div>
+                      <div style={{fontSize:10,color:T.success,opacity:0.75,marginTop:2}}>Logged this week</div>
+                    </div>
+                  </div>
+                  :<div>
+                    <div style={{fontSize:10,color:T.text3,marginBottom:8}}>{dLeft<=1?"Last chance — ends tomorrow!":dLeft<=3?"Log before the week ends":"Log once this week"}</div>
+                    <div style={{display:"flex",gap:6}}><input style={{...inp,flex:1}} type="number" step="0.1" placeholder="e.g. 81.2 kg" value={bwIn} onChange={function(ev){setBwIn(ev.target.value);}}/><button style={{...btnP,background:bwColMap[bwUrg]+"22",color:bwColMap[bwUrg]}} onClick={logBW}>Log</button></div>
+                  </div>
+                }
+              </div>
+            </div>
+            <div style={card()}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={sT}>Tasks</div><button style={btn} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+</button></div>
+              {urgTasks.length===0&&normTasks.length===0&&doneTasks.length===0&&<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>}
+              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:TUB[urg],border:"0.5px solid "+TUC[urg]+"30"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div></div>);})}</div>}
+              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:TUB[urg],border:"0.5px solid "+TUC[urg]+"30"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div></div>);})}</div>}
+              {doneTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneTasks.map(function(t){return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:5,alignItems:"center",opacity:0.45}}><input type="checkbox" checked={true} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,flexShrink:0}}/><div style={{fontSize:11,color:T.text3,textDecoration:"line-through"}}>{t.name}</div></div>);})}</div>}
+            </div>
+          </div>
+        </div>}
+
+        {page==="Uni"&&<div>
+          <div style={card()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={sT}>Subject progress</div><button style={btn} onClick={function(){setModal("add_subject");setMForm({});}}>+ Subject</button></div>
+            <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14}}>{data.uni.subjects.map(function(s){return(<div key={s.id}><div style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:3}}><span style={{fontWeight:600,color:SC[s.name]||T.text}}>{SUBJECTS[s.name]||s.name}</span><span style={{color:T.text2}}>{s.progress}%</span></div><input type="range" min={0} max={100} value={s.progress} onChange={function(ev){updateProg(s.id,ev.target.value);}} style={{width:"100%"}}/><div style={{height:3,borderRadius:2,background:T.bg3,overflow:"hidden"}}><div style={{width:s.progress+"%",height:"100%",background:SC[s.name]||T.accent,borderRadius:2,transition:"width 0.3s"}}/></div></div>);})}</div>
+          </div>
+          <div style={card()}>
+            <div style={sT}>Classes this week</div>
+            {(function(){const wd=getWeekDates();const ws=dStr(wd[0]);const we=dStr(wd[6]);const classes=UNI_EVENTS.filter(function(ev){return !ev.assessment&&ev.date>=ws&&ev.date<=we;}).sort(function(a,b){return a.date.localeCompare(b.date)||a.time.localeCompare(b.time);});if(classes.length===0)return<div style={{fontSize:12,color:T.text2}}>No classes this week.</div>;let lastDate="";return classes.map(function(ev){const isPast=ev.date<todayStr();const showDate=ev.date!==lastDate;lastDate=ev.date;return(<div key={ev.id}>{showDate&&<div style={{fontSize:10,fontWeight:600,color:isPast?T.text3:T.text2,marginTop:10,marginBottom:6,paddingTop:8,borderTop:"0.5px solid "+T.border}}>{new Date(ev.date+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"short"})}{isPast&&<span style={{marginLeft:6,fontSize:9,color:T.text3,fontWeight:400}}>passed</span>}</div>}<div style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start",opacity:isPast?0.55:1}}><div style={{width:2,borderRadius:2,background:SC[ev.subject]||T.accent,alignSelf:"stretch",minHeight:28,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:SC[ev.subject]||T.accent,marginBottom:1,textDecoration:isPast?"line-through":"none"}}>{SUBJECTS[ev.subject]||ev.subject}</div><div style={{fontSize:12,color:isPast?T.text2:T.text,lineHeight:1.5}}>{ev.title}</div><div style={{fontSize:10,color:T.text3,marginTop:2}}>{ev.time}</div></div></div></div>);});}())}
+          </div>
+          <div style={card()}>
+            <div style={sT}>Assignments & assessments due</div>
+            {(function(){const assessments=UNI_EVENTS.filter(function(ev){return ev.assessment;}).sort(function(a,b){return new Date(a.date)-new Date(b.date);});if(assessments.length===0)return<div style={{fontSize:12,color:T.text2}}>No assessments scheduled.</div>;return assessments.map(function(ev){const ce=data.uni.completedEvents||[];const done=ce.indexOf(ev.id)!==-1;const days=daysBetween(ev.date);const isPast=days<0;const isUrg=!done&&days>=0&&days<=3;return(<div key={ev.id} style={{display:"flex",gap:10,marginBottom:10,opacity:done?0.35:1,alignItems:"flex-start",padding:"8px 10px",borderRadius:7,background:done?T.bg3:isUrg?T.dangerBg:isPast?"rgba(247,111,111,0.06)":T.bg3,border:"0.5px solid "+(done?T.border:isUrg?T.danger+"40":isPast?T.danger+"20":T.border)}}><input type="checkbox" checked={done} onChange={function(){toggleCalEv(ev.id);}} style={{accentColor:SC[ev.subject]||T.accent,marginTop:3,flexShrink:0}}/><div style={{flex:1}}><div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginBottom:3}}><span style={{fontSize:10,fontWeight:700,color:SC[ev.subject]||T.accent}}>{SUBJECTS[ev.subject]||ev.subject}</span>{isUrg&&<span style={bdg("urgent")}>{days===0?"due today":days===1?"due tomorrow":"due in "+days+" days"}</span>}{!done&&isPast&&<span style={bdg("urgent")}>overdue</span>}{done&&<span style={bdg("success")}>submitted</span>}</div><div style={{fontSize:12,color:T.text,textDecoration:done?"line-through":"none",marginBottom:2}}>{ev.title}</div><div style={{fontSize:10,color:T.text3}}>{fmtDate(ev.date)} · {ev.time}</div></div></div>);});}())}
+          </div>
+        </div>}
+
+        {page==="Work"&&<div style={{maxWidth:700}}>
+          <div style={card()}>
+            <div style={sT}>Pay period summary</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:10}}>{[{label:"Standard hrs",value:totNorm.toFixed(1)+"h",sub:"before 7pm",color:T.success},{label:"Penalty hrs",value:totPen.toFixed(1)+"h",sub:"after 7pm × 1.5",color:T.warn},{label:"Total equiv",value:totEquiv.toFixed(1)+"h",sub:"std equivalent",color:T.accent}].map(function(stat){return(<div key={stat.label} style={{background:T.bg3,borderRadius:8,padding:"12px 14px"}}><div style={{fontSize:10,color:T.text2,marginBottom:4}}>{stat.label}</div><div style={{fontSize:22,fontWeight:700,color:stat.color,lineHeight:1}}>{stat.value}</div><div style={{fontSize:9,color:T.text3,marginTop:4}}>{stat.sub}</div></div>);})}</div>
+            <div style={{fontSize:10,color:T.text3}}>Penalty rate: after 7:00pm = 1.5×</div>
+          </div>
+          <div style={card()}>
+            <div style={sT}>Shift breakdown</div>
+            {WORK_EVENTS.slice().sort(function(a,b){return new Date(a.date)-new Date(b.date);}).map(function(ev){const past=daysBetween(ev.date)<0;const pay=ev.type==="shift"?shiftPay(ev.time):null;return(<div key={ev.id} style={{display:"flex",gap:10,marginBottom:8,alignItems:"center",opacity:past?0.5:1,padding:"8px 10px",background:T.bg3,borderRadius:6}}><div style={{width:3,borderRadius:2,background:wCol(ev.type),alignSelf:"stretch",minHeight:24,flexShrink:0}}/><div style={{flex:1}}><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:2}}><span style={{fontSize:11,fontWeight:600,color:ev.type==="social"?T.success:T.text}}>{ev.title}</span><span style={{fontSize:10,color:T.text3}}>{fmtDate(ev.date)} · {ev.time}</span>{past&&<span style={bdg("normal")}>past</span>}</div>{pay&&<div style={{display:"flex",gap:10,fontSize:10}}><span style={{color:T.success}}>{pay.normalHrs}h standard</span>{pay.penaltyHrs>0&&<span style={{color:T.warn}}>{pay.penaltyHrs}h × 1.5</span>}<span style={{color:T.text2,fontWeight:600}}>= {pay.totalEquiv}h equiv</span></div>}</div></div>);})}
+          </div>
+        </div>}
+
+        {page==="Gym"&&<GymSection mob={mob} gymData={data.gym} onAddEx={function(){setModal("add_exercise");setMForm({});}} onLogW={function(ex){setModal("log_weight");setMForm({exId:ex.id,exName:ex.name});}} onSave={function(wk){setData(function(p){const rl=p.gym.rotation?p.gym.rotation.length:1;return{...p,gym:{...p.gym,workouts:(p.gym.workouts||[]).concat([wk]),rotIdx:((p.gym.rotIdx||0)+1)%Math.max(rl,1)}};});}} onUpdateRot={function(rot,idx){setData(function(p){return{...p,gym:{...p.gym,rotation:rot,rotIdx:idx}};});}}/>}
+
+        {page==="Personal"&&<div style={{maxWidth:640}}>
+          <div style={card()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={sT}>Tasks</div><div style={{display:"flex",gap:6}}>{doneTasks.length>0&&<button style={{...btn,color:T.success,borderColor:T.success+"50"}} onClick={archiveDone}>Archive done</button>}<button style={btn} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+ Task</button></div></div>
+            {editTaskId&&<div style={{marginBottom:14,padding:"10px 12px",background:T.bg3,borderRadius:8,border:"0.5px solid "+T.accent+"40"}}><div style={{fontSize:11,color:T.accent,marginBottom:8,fontWeight:500}}>Editing task</div><div style={{display:"flex",flexDirection:"column",gap:6}}><input style={inp} value={editTaskForm.name||""} onChange={function(ev){setEditTaskForm(function(f){return{...f,name:ev.target.value};});}} placeholder="Task name"/><div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:6}}><select style={inp} value={editTaskForm.cat||"Errands"} onChange={function(ev){setEditTaskForm(function(f){return{...f,cat:ev.target.value};});}}>{TASK_CATS.map(function(c){return<option key={c}>{c}</option>;})}</select><select style={inp} value={editTaskForm.priority||"normal"} onChange={function(ev){setEditTaskForm(function(f){return{...f,priority:ev.target.value};});}}><option value="normal">Normal</option><option value="urgent">Urgent</option></select><input type="date" style={inp} value={editTaskForm.due||""} onChange={function(ev){setEditTaskForm(function(f){return{...f,due:ev.target.value};});}}/></div><div style={{display:"flex",gap:6,justifyContent:"flex-end"}}><button style={btn} onClick={function(){setEditTaskId(null);}}>Cancel</button><button style={btnP} onClick={saveEditTask}>Save</button></div></div></div>}
+            {data.personal.tasks.length===0&&<div style={{fontSize:12,color:T.text2}}>No tasks yet.</div>}
+            {["urgent","normal"].map(function(pri){const tasks=data.personal.tasks.filter(function(t){return t.priority===pri;}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});if(tasks.length===0)return null;return(<div key={pri} style={{marginBottom:14}}><div style={{fontSize:9,fontWeight:700,color:pri==="urgent"?T.danger:T.text3,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>{pri}</div>{tasks.map(function(t){const urg=taskUrg(t);const col=TUC[urg];const bg=TUB[urg];return(<div key={t.id} style={{display:"flex",alignItems:"flex-start",gap:8,marginBottom:8,padding:"8px 10px",borderRadius:7,background:bg,border:"0.5px solid "+col+"30"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:10,color:col,marginTop:1}}>{t.cat} · {taskLabel(t)}</div></div><button onClick={function(){setEditTaskId(t.id);setEditTaskForm({name:t.name,cat:t.cat,priority:t.priority,due:t.due});}} style={{...btn,fontSize:10,padding:"2px 7px"}}>Edit</button></div>);})}</div>);})}
+          </div>
+          {(data.personal.archived||[]).length>0&&<div style={card()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:12,fontWeight:500,color:T.text3}}>Archived ({(data.personal.archived||[]).length})</div><button style={btn} onClick={function(){setShowArch(function(a){return !a;});}}>{showArch?"Hide":"Show"}</button></div>{showArch&&(data.personal.archived||[]).slice().reverse().map(function(t){return(<div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"6px 0",borderBottom:"0.5px solid "+T.border}}><div><span style={{color:T.text3,textDecoration:"line-through"}}>{t.name}</span><span style={{fontSize:10,color:T.text3,marginLeft:8}}>{fmtDate(t.archivedAt)}</span></div><button onClick={function(){restoreTask(t.id);}} style={{...btn,fontSize:10,padding:"2px 8px",color:T.accent,borderColor:T.accent+"50"}}>Restore</button></div>);})}</div>}
+          <div style={card()}><div style={sT}>Knowledge base</div><div style={{fontSize:11,color:T.text2,marginBottom:10}}>Notes here feed your daily check-in context.</div>{(data.docs||[]).map(function(d){return(<div key={d.id} style={{marginBottom:8,padding:"8px 10px",background:T.bg3,borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><div style={{fontSize:12,fontWeight:500,color:T.text}}>{d.title}</div><div style={{fontSize:10,color:T.text3,marginTop:2}}>{d.content.slice(0,80)}...</div><div style={{marginTop:4,display:"flex",gap:4}}>{(d.tags||[]).map(function(tag){return<span key={tag} style={{fontSize:9,padding:"1px 6px",borderRadius:99,background:T.accentBg,color:T.accent}}>{tag}</span>;})}</div></div><button onClick={function(){setData(function(p){return{...p,docs:(p.docs||[]).filter(function(x){return x.id!==d.id;})};});}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,marginLeft:8}}>×</button></div>);})}<div style={{marginTop:12,display:"flex",flexDirection:"column",gap:6}}><input style={inp} placeholder="Title" value={docIn.title} onChange={function(ev){setDocIn(function(p){return{...p,title:ev.target.value};});}}/><input style={inp} placeholder="Tags (comma separated)" value={docIn.tags} onChange={function(ev){setDocIn(function(p){return{...p,tags:ev.target.value};});}}/><textarea style={{...inp,resize:"vertical"}} rows={3} placeholder="Content..." value={docIn.content} onChange={function(ev){setDocIn(function(p){return{...p,content:ev.target.value};});}}/><button style={btnP} onClick={function(){if(!docIn.title||!docIn.content)return;setData(function(p){return{...p,docs:(p.docs||[]).concat([{id:"doc"+Date.now(),title:docIn.title,tags:docIn.tags.split(",").map(function(t){return t.trim();}),content:docIn.content}])};});setDocIn({title:"",tags:"",content:""});}}>Add document</button></div></div>
+        </div>}
+
+        {page==="Finance"&&<div style={{maxWidth:mob?undefined:900}}><FinanceSection mob={mob} data={data.finance||{}} onUpdate={updateFinance}/></div>}
+
+        {page==="Reflection"&&<div style={{maxWidth:600}}>
+          <div style={card()}>
+            <div style={sT}>Weekly Reflection</div>
+            {reflStep===0&&<div>
+              <div style={{fontSize:12,color:T.text2,marginBottom:14,lineHeight:1.6}}>5 focused questions. ~5 minutes. Honest answers only.{data.reflections.length>0&&<span style={{marginLeft:8,color:T.text3}}>Last: {new Date(data.reflections[data.reflections.length-1].date).toLocaleDateString("en-AU")}</span>}</div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14}}>{REFL_LABELS.map(function(l,i){return<div key={i} style={{fontSize:10,padding:"3px 10px",borderRadius:99,background:T.accentBg,border:"0.5px solid rgba(199,125,255,0.25)",color:T.accent}}>{l}</div>;})}</div>
+              <button style={btnP} onClick={function(){setReflStep(1);setReflAns([]);setReflAnalysis(null);}}>Start this week's reflection →</button>
+              {data.reflections.length>0&&<div style={{marginTop:20}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.text3,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Previous Reflections</div>
+                {data.reflections.slice(-3).reverse().map(function(r,i){const a=r.analysis;const sc=a?a.sentimentScore:null;return<div key={i} style={{marginBottom:8,padding:"10px 12px",background:T.bg3,borderRadius:8,border:"0.5px solid "+T.border}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:a?5:0}}>
+                    <div style={{fontSize:11,fontWeight:600,color:T.text}}>{new Date(r.date).toLocaleDateString("en-AU")}</div>
+                    {sc!==null&&<div style={{fontSize:10,fontWeight:700,color:sc>=0.1?T.success:sc<=-0.1?T.danger:T.warn}}>{sc>=0.1?"↑ Positive":sc<=-0.1?"↓ Stressed":"→ Neutral"}</div>}
+                  </div>
+                  {a&&<div style={{fontSize:11,color:T.accent,marginBottom:3}}>{a.dominantPattern}</div>}
+                  {a&&<div style={{fontSize:11,color:T.text3,lineHeight:1.4}}>{a.insight.slice(0,110)}...</div>}
+                  {!a&&r.summary&&<div style={{fontSize:11,color:T.text2}}>{r.summary.slice(0,120)}</div>}
+                </div>;})}
+              </div>}
+            </div>}
+            {reflStep>0&&reflStep<=REFL_QS.length&&<div>
+              <div style={{display:"flex",gap:3,marginBottom:14}}>{REFL_QS.map(function(_,i){return<div key={i} style={{flex:1,height:3,borderRadius:2,background:i<reflStep?T.accent:"rgba(255,255,255,0.08)",transition:"background 0.3s"}}/>;})}</div>
+              <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:T.accent,background:T.accentBg,padding:"3px 10px",borderRadius:99,display:"inline-block",marginBottom:10}}>{REFL_LABELS[reflStep-1]} · {reflStep} of {REFL_QS.length}</div>
+              <div style={{fontSize:14,fontWeight:500,marginBottom:16,lineHeight:1.6,color:T.text}}>{REFL_QS[reflStep-1]}</div>
+              {reflAns.length>0&&<div style={{marginBottom:12}}>{reflAns.map(function(qa,i){return<div key={i} style={{marginBottom:4,fontSize:11,color:T.text3,padding:"5px 8px",background:T.bg3,borderRadius:6}}><span style={{color:T.text2,fontWeight:500}}>{REFL_LABELS[i]}: </span>{qa.a.slice(0,60)}{qa.a.length>60?"...":""}</div>;})}</div>}
+              <textarea value={reflIn} onChange={function(ev){setReflIn(ev.target.value);}} rows={5} style={{...inp,resize:"vertical",marginBottom:12,fontSize:13,lineHeight:1.6}} placeholder="Be honest — this is only visible to you..."/>
+              <div style={{display:"flex",gap:8}}>
+                {reflStep>1&&<button style={btn} onClick={function(){const prev=reflAns[reflStep-2]?reflAns[reflStep-2].a:"";setReflAns(reflAns.slice(0,reflStep-2));setReflIn(prev);setReflStep(reflStep-1);}}>← Back</button>}
+                <button style={btnP} onClick={submitRefl}>{reflStep<REFL_QS.length?"Next →":"Finish & Analyse"}</button>
+              </div>
+            </div>}
+            {reflStep>REFL_QS.length&&<div>
+              {reflAnalysis&&<div>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"10px 12px",borderRadius:10,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.2)"}}>
+                  <span style={{fontSize:20}}>📊</span>
+                  <div><div style={{fontSize:13,fontWeight:700,color:T.text}}>Weekly Psychological Insight</div><div style={{fontSize:10,color:T.text3}}>Based on your answers and reflection history</div></div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+                  <div style={{padding:"10px 12px",borderRadius:10,background:reflAnalysis.sentBg,border:"0.5px solid "+reflAnalysis.sentBorder}}>
+                    <div style={{fontSize:9,color:T.text3,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Emotional State</div>
+                    <div style={{fontSize:11,color:reflAnalysis.sentColor,fontWeight:600,lineHeight:1.4}}>{reflAnalysis.emotionalState}</div>
+                  </div>
+                  <div style={{padding:"10px 12px",borderRadius:10,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.18)"}}>
+                    <div style={{fontSize:9,color:T.text3,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Dominant Pattern</div>
+                    <div style={{fontSize:11,color:T.accent,fontWeight:600,lineHeight:1.4}}>{reflAnalysis.dominantPattern}</div>
+                  </div>
+                </div>
+                <div style={{padding:"10px 12px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:10}}>
+                  <div style={{fontSize:9,color:T.text3,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Root Issue Identified</div>
+                  <div style={{fontSize:12,color:T.text,lineHeight:1.5}}>{reflAnalysis.rootIssue}</div>
+                </div>
+                <div style={{padding:"12px 14px",borderRadius:10,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.18)",marginBottom:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}><span style={{fontSize:14}}>🧠</span><div style={{fontSize:10,fontWeight:700,color:T.accent,textTransform:"uppercase",letterSpacing:0.5}}>Psychological Analysis</div></div>
+                  <div style={{fontSize:12,color:T.text2,lineHeight:1.8}}>{reflAnalysis.insight}</div>
+                </div>
+                <div style={{padding:"12px 14px",borderRadius:10,background:"rgba(105,240,174,0.06)",border:"0.5px solid rgba(105,240,174,0.2)",marginBottom:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}><span style={{fontSize:14}}>💡</span><div style={{fontSize:10,fontWeight:700,color:T.success,textTransform:"uppercase",letterSpacing:0.5}}>Recommendation</div></div>
+                  <div style={{fontSize:12,color:T.text2,lineHeight:1.8}}>{reflAnalysis.recommendation}</div>
+                </div>
+                <div style={{padding:"12px 14px",borderRadius:10,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:16}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}><span style={{fontSize:14}}>📈</span><div style={{fontSize:10,fontWeight:700,color:T.text2,textTransform:"uppercase",letterSpacing:0.5}}>Pattern History</div></div>
+                  <div style={{fontSize:12,color:T.text2,lineHeight:1.7}}>{reflAnalysis.patternHistory}</div>
+                </div>
+                <button style={btn} onClick={function(){setReflStep(0);setReflAnalysis(null);}}>Done</button>
+              </div>}
+              {!reflAnalysis&&<div><div style={{fontSize:12,color:T.success,marginBottom:10}}>✓ Reflection saved</div><button style={btn} onClick={function(){setReflStep(0);}}>Done</button></div>}
+            </div>}
+          </div>
+        </div>}
+      </div>
+
+      {modal&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.82)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:200,padding:mob?"0":"16px"}} onClick={function(){setModal(null);}}>
+        <div style={{background:"rgba(14,16,40,0.97)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 32px":"22px",width:mob?"100%":"340px",maxWidth:"100%",border:"0.5px solid rgba(199,125,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.1)"}} onClick={function(ev){ev.stopPropagation();}}>
+          {mob&&<div style={{width:36,height:4,borderRadius:2,background:"rgba(255,255,255,0.2)",margin:"0 auto 20px"}}/>}
+          <div style={{fontSize:15,fontWeight:600,marginBottom:16,color:T.text}}>{modal==="add_subject"&&"Add subject"}{modal==="add_exercise"&&"Add exercise"}{modal==="log_weight"&&"Log weight — "+(mForm.exName||"")}{modal==="add_task"&&"Add task"}</div>
+          {(modal==="add_subject"||modal==="add_exercise"||modal==="add_task")&&<div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Name</div><input style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.name||""} onChange={function(ev){setMForm(function(f){return{...f,name:ev.target.value};});}} placeholder="Enter name..."/></div>}
+          {modal==="log_weight"&&<div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Weight (kg)</div><input type="number" step="0.5" style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.weight||""} onChange={function(ev){setMForm(function(f){return{...f,weight:ev.target.value};});}} placeholder="e.g. 85"/></div>}
+          {modal==="add_task"&&<div><div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Category</div><select style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.cat||"Errands"} onChange={function(ev){setMForm(function(f){return{...f,cat:ev.target.value};});}}>{TASK_CATS.map(function(c){return<option key={c}>{c}</option>;})}</select></div><div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Priority</div><select style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.priority||"normal"} onChange={function(ev){setMForm(function(f){return{...f,priority:ev.target.value};});}}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></div><div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Due date</div><input type="date" style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.due||""} onChange={function(ev){setMForm(function(f){return{...f,due:ev.target.value};});}}/></div></div>}
+          <div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
+            {mob?<button style={{...btnP,padding:"13px",fontSize:14,width:"100%",borderRadius:10}} onClick={saveModal}>Save</button>:<button style={btnP} onClick={saveModal}>Save</button>}
+            <button style={{...(mob?{...btn,padding:"11px",fontSize:13,width:"100%",borderRadius:10,textAlign:"center"}:btn)}} onClick={function(){setModal(null);}}>Cancel</button>
+          </div>
+        </div>
+      </div>}
+
+      {mob&&<nav style={{display:"flex",position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:"rgba(5,7,26,0.97)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"0.5px solid rgba(199,125,255,0.18)",justifyContent:"space-around",alignItems:"stretch",boxShadow:"0 -4px 24px rgba(0,0,0,0.5)"}}>
+        {[{name:"Dashboard",icon:"⊞"},{name:"Uni",icon:"📚"},{name:"Work",icon:"💼"},{name:"Gym",icon:"💪"},{name:"Personal",icon:"✓"},{name:"Finance",icon:"$"},{name:"Reflection",icon:"◎"}].map(function(item){const active=page===item.name;return(
+          <button key={item.name} onClick={function(){setPage(item.name);}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,padding:"8px 4px",color:active?T.accent:T.text3,flex:1,minHeight:54,position:"relative"}}>
+            {active&&<div style={{position:"absolute",top:0,left:"50%",transform:"translateX(-50%)",width:24,height:2,borderRadius:1,background:T.accent}}/>}
+            <span style={{fontSize:17,lineHeight:1}}>{item.icon}</span>
+            <span style={{fontSize:9,fontWeight:active?700:400,letterSpacing:0.2}}>{item.name}</span>
+          </button>
+        );})}
+      </nav>}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(React.createElement(ErrorBoundary, null, React.createElement(App)));
+</script>
+<script>
+// Inject floating particles into the glass background
+(function(){
+  const bg=document.getElementById("glassBg");
+  if(!bg)return;
+  const colors=["#fff","#c77dff","#4fc3f7","#ff6a00","#69f0ae"];
+  for(let i=0;i<45;i++){
+    const p=document.createElement("div");
+    const sz=(1.5+Math.random()*2.5)+"px";
+    p.className="p";
+    p.style.cssText="left:"+Math.random()*100+"%;top:"+Math.random()*100+"%;width:"+sz+";height:"+sz+";background:"+colors[Math.floor(Math.random()*colors.length)]+";--dur:"+(2+Math.random()*4)+"s;--delay:"+(Math.random()*6)+"s;";
+    bg.appendChild(p);
+  }
+})();
+</script>
+</body>
+</html>
