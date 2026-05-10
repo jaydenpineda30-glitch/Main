@@ -239,6 +239,96 @@ const TUC={red:T.danger,yellow:T.warn,orange:T.orange,urgent:T.danger,normal:T.t
 const TUB={red:T.dangerBg,yellow:T.warnBg,orange:T.orangeBg,urgent:T.dangerBg,normal:T.bg3,done:T.successBg};
 function taskLabel(t){if(t.done)return"done";const od=t.due?daysBetween(t.due)*-1:0;const ref=t.editedAt||t.addedAt||todayStr();const age=Math.floor((new Date()-new Date(ref))/864e5);if(od>0)return od+"d overdue";if(age>7)return"untouched "+age+"d";if(t.due)return"due "+fmtDate(t.due);return"";}
 
+// ── Reflection Engine ─────────────────────────────────────────────────────
+const REFL_QS=[
+  "Which subject or concept felt most challenging this week? What specifically made it difficult?",
+  "What work task or project did you struggle with most? What would help you succeed with it?",
+  "How consistent were you with exercise and nutrition this week? What got in the way?",
+  "How well did you balance study/work with personal relationships? What felt neglected?",
+  "What's one area you want to improve next week? What's one win from this week worth celebrating?"
+];
+const REFL_LABELS=["Academic","Work","Health","Balance","Growth & Wins"];
+const SEED_REFL=[{id:1746835200000,date:"2026-05-10T02:00:00.000Z",answers:[
+  {question:REFL_QS[0],answer:"Payroll Supervised assessment is the most challenging this week — it's an in-class exam and I get anxious under timed conditions. I understand the content but second-guess myself under pressure. Balancing POB and PFR at the same time is overwhelming.",area:"Academic"},
+  {question:REFL_QS[1],answer:"GoTab shifts have been manageable, no major issues. What would help is not having assessment deadlines clash with shift days — a buffer day between work and exams would make a real difference to my preparation.",area:"Work"},
+  {question:REFL_QS[2],answer:"Gym consistency has been good this week — hit 81kg body weight and 85kg bench press which is a personal best. Nutrition could be better, I've been eating more takeaway because I'm stressed and don't have time to cook properly.",area:"Health"},
+  {question:REFL_QS[3],answer:"Personal relationships have been neglected this week. I've been isolating to focus on assignments — haven't caught up with anyone outside of work. It's starting to feel a bit lonely even though I know it's temporary.",area:"Balance"},
+  {question:REFL_QS[4],answer:"Want to improve my time management next week so assessments don't pile up at once. One win from this week is staying consistent with gym training despite the heavy assessment load — proving I can maintain good habits even when stressed.",area:"Growth & Wins"}
+],analysis:{emotionalState:"Cautiously optimistic — mixed but moving forward",dominantPattern:"Growth orientation — approaching challenges with curiosity",rootIssue:"Strongest friction in your academic load — multiple assessments converging simultaneously",insight:"You approached challenges this week with curiosity rather than rigidity — looking at what to improve rather than cataloguing what went wrong. That orientation is a genuine psychological strength. It's the difference between feedback as information and feedback as verdict.",recommendation:"Channel this week's momentum into one specific commitment: pick the area with the most untapped potential from your reflection and schedule a deliberate block of time for it.",patternHistory:"First reflection — patterns will emerge as you keep logging each week.",sentimentScore:0.17,detectedPatterns:["growth_mindset"]}}];
+function analyzeReflection(answers,history){
+  const allText=answers.map(function(a){return a.a;}).join(" ").toLowerCase();
+  const NEG=["overwhelm","stressed","stress","anxious","anxiety","tired","exhaust","frustrat","struggl","difficult","hard","fail","behind","worr","drain","burnout","burnt out","can't","couldn't","unable","avoid","procrastinat","miss","forgot","lonely","isolat","depress","hopeless","unmotivated","no motivation","falling behind"];
+  const POS=["great","well","good","happy","proud","confident","motivat","focused","achiev","succeed","managed","improv","progress","excited","grateful","calm","balanced","productive","consistent","win","celebrat","better","strong","growth","learn","breakthrough","clarity","clear"];
+  const PERF=["perfect","not good enough","should have","could have","disappoint","let myself down","not where","behind schedule","should be","wasn't enough","fell short","not enough","never enough"];
+  const BURNOUT=["exhaust","burnt out","burnout","drain","can't keep","too much","overwhelming","no energy","so tired","no motivation","running on empty","barely"];
+  const GROWTH=["learn","improv","trying","working on","getting better","progress","develop","growing","want to improve","next week","work on","focus on"];
+  const AON=["always","never","everything","nothing","complete failure","totally","all the time","every time","impossible","worst"];
+  function countHits(text,kws){return kws.filter(function(k){return text.indexOf(k)!==-1;}).length;}
+  const neg=countHits(allText,NEG);const pos=countHits(allText,POS);const perf=countHits(allText,PERF);const burn=countHits(allText,BURNOUT);const growth=countHits(allText,GROWTH);const aon=countHits(allText,AON);
+  const sentScore=Math.max(-1,Math.min(1,(pos-neg)/6));
+  let emotionalState;
+  if(sentScore>=0.5)emotionalState="Positive — feeling capable and progressing";
+  else if(sentScore>=0.1)emotionalState="Cautiously optimistic — mixed but moving forward";
+  else if(sentScore>=-0.1)emotionalState="Neutral — steady but not thriving";
+  else if(sentScore>=-0.4)emotionalState="Stressed — carrying notable tension this week";
+  else emotionalState="Depleted — significant strain detected";
+  const patterns=[];
+  if(burn>=2)patterns.push("burnout_risk");
+  if(perf>=2)patterns.push("perfectionism");
+  if(aon>=2)patterns.push("all_or_nothing");
+  if(growth>=2)patterns.push("growth_mindset");
+  if(neg>pos*1.5)patterns.push("high_stress");
+  if(pos>neg*2)patterns.push("resilient_week");
+  const qScores=answers.map(function(a){const t=a.a.toLowerCase();return countHits(t,POS)-countHits(t,NEG);});
+  const worstIdx=qScores.indexOf(Math.min.apply(null,qScores));
+  const bestIdx=qScores.indexOf(Math.max.apply(null,qScores));
+  const areas=["your academic load","your work situation","your physical health habits","your work-life balance","your personal growth direction"];
+  let dominantPattern;
+  if(patterns.indexOf("burnout_risk")!==-1)dominantPattern="Burnout risk — energy reserves running low";
+  else if(patterns.indexOf("perfectionism")!==-1)dominantPattern="Perfectionist pressure — very high internal standards";
+  else if(patterns.indexOf("high_stress")!==-1)dominantPattern="High stress load — multiple areas feeling stretched";
+  else if(patterns.indexOf("all_or_nothing")!==-1)dominantPattern="All-or-nothing thinking — seeing things in extremes";
+  else if(patterns.indexOf("growth_mindset")!==-1)dominantPattern="Growth orientation — approaching challenges with curiosity";
+  else if(patterns.indexOf("resilient_week")!==-1)dominantPattern="Resilient week — navigating challenges effectively";
+  else dominantPattern="Steady week — maintaining baseline without major spikes";
+  let rootIssue;
+  if(worstIdx>=0&&qScores[worstIdx]<0){rootIssue="Strongest friction in "+areas[worstIdx];if(patterns.indexOf("perfectionism")!==-1)rootIssue+=" — possibly amplified by perfectionist expectations";else if(patterns.indexOf("all_or_nothing")!==-1)rootIssue+=" — all-or-nothing framing may be intensifying this";}
+  else{rootIssue=bestIdx>=0?"Strongest momentum in "+areas[bestIdx]:"No single dominant friction point this week";}
+  let insight;
+  if(patterns.indexOf("burnout_risk")!==-1)insight="Your language this week signals depletion across multiple areas. Burnout doesn't arrive suddenly — it builds through sustained output without adequate recovery. The fact that you're recognising it is the first and most important step. Your nervous system is asking for genuine rest, not just less work.";
+  else if(patterns.indexOf("perfectionism")!==-1)insight="There's a pattern of measuring your efforts against an ideal rather than a realistic baseline. Perfectionism often masquerades as high standards but functions as a stress amplifier — raising the bar each time you clear it. Progress over perfection is a skill worth practising deliberately this week.";
+  else if(patterns.indexOf("all_or_nothing")!==-1)insight="Your language this week leans toward absolutes (always/never/everything/nothing). This thinking pattern amplifies difficulty — one missed session becomes 'failing at fitness,' one hard day becomes 'a terrible week.' The reality almost always sits in the grey zone.";
+  else if(patterns.indexOf("high_stress")!==-1)insight="Multiple domains felt strained simultaneously this week. When stress shows up across academic, physical, and relational areas at once, it usually signals that recovery mechanisms need attention — sleep quality, micro-breaks, and brief transitions between tasks often matter more than you'd expect.";
+  else if(patterns.indexOf("growth_mindset")!==-1)insight="You approached challenges this week with curiosity rather than rigidity — looking at what to improve rather than cataloguing what went wrong. That orientation is a genuine psychological strength. It's the difference between feedback as information and feedback as verdict.";
+  else if(sentScore>=0.3)insight="This was a strong week. Take a moment to notice what conditions made that possible — specific habits, environments, or mindsets. Understanding what works is as valuable as diagnosing what doesn't, and most people skip this step.";
+  else insight="A stable week — not dramatic in either direction. These plateau periods are where consistent habits quietly build the foundations for future momentum. The absence of visible progress doesn't mean nothing is moving.";
+  let recommendation;
+  if(patterns.indexOf("burnout_risk")!==-1)recommendation="Prioritise one genuinely restorative activity this week — not productive rest, actual rest. Protect one block of time with no output requirement. Even 90 minutes of complete disconnection can meaningfully reset your baseline.";
+  else if(patterns.indexOf("perfectionism")!==-1)recommendation="Before your next major task, decide in advance what 'good enough' looks like and aim for that deliberately. Notice the difference in energy expenditure versus your usual standard.";
+  else if(patterns.indexOf("all_or_nothing")!==-1)recommendation="When you notice absolute language in your own thinking, pause and find one counter-example. One exception breaks the rule and restructures the framing entirely.";
+  else if(patterns.indexOf("high_stress")!==-1)recommendation="Identify the single highest-leverage action that would reduce your stress load most — not the most urgent task, but the one whose completion creates the most breathing room — and do that one first this week.";
+  else if(patterns.indexOf("growth_mindset")!==-1)recommendation="Channel this week's momentum into one specific commitment: pick the area with the most untapped potential from your reflection and schedule a deliberate block of time for it.";
+  else recommendation="Note down what made this week manageable — two or three specific conditions that were present. Keep these as a reference point when harder weeks arrive.";
+  let patternHistory="First reflection — patterns will emerge as you keep logging each week.";
+  if(history&&history.length>=2){
+    const prev=history.slice(-5);
+    const prevTexts=prev.map(function(r){return(r.answers||[]).map(function(a){return(a.a||a.answer||"");}).join(" ").toLowerCase();});
+    const stressWeeks=prevTexts.filter(function(t){return countHits(t,NEG)>countHits(t,POS);}).length;
+    const prevPats=history.slice(-4).filter(function(r){return r.analysis&&r.analysis.detectedPatterns;}).map(function(r){return r.analysis.detectedPatterns;}).flat();
+    const burnCount=prevPats.filter(function(p){return p==="burnout_risk";}).length;
+    const perfCount=prevPats.filter(function(p){return p==="perfectionism";}).length;
+    const stressCount=prevPats.filter(function(p){return p==="high_stress";}).length;
+    const total=prev.length;
+    if(burnCount>=2)patternHistory="Burnout risk has appeared in "+burnCount+" of your last "+Math.min(4,history.length)+" reflections. This is a recurring pattern that warrants real attention, not just a harder push.";
+    else if(perfCount>=2)patternHistory="Perfectionism has surfaced in "+perfCount+" of your last "+Math.min(4,history.length)+" reflections — a consistent internal pressure source rather than a one-off response.";
+    else if(stressCount>=2)patternHistory="High stress has been flagged in "+stressCount+" recent reflections. Worth asking: is this situational (exam period, busy work stretch) or a longer pattern?";
+    else if(stressWeeks>=Math.ceil(total*0.7))patternHistory="Stress has dominated "+stressWeeks+" of your last "+total+" reflections. Worth asking: is this environment, workload, or an internal pattern?";
+    else if(stressWeeks===0)patternHistory="Consistently positive tone across your last "+total+" reflections — you're tracking a meaningful stretch of stability and growth.";
+    else patternHistory="Mixed weeks across your last "+total+" reflections ("+stressWeeks+" higher-stress, "+(total-stressWeeks)+" more positive). No single dominant pattern yet — keep logging for clearer trends.";
+  } else if(history&&history.length===1){patternHistory="Second reflection logged. One more week of data needed before cross-week patterns can be identified.";}
+  return{emotionalState,dominantPattern,rootIssue,insight,recommendation,patternHistory,sentimentScore:sentScore,detectedPatterns:patterns};
+}
+
 // ── Rule-based check-in ────────────────────────────────────────────────────
 function generateCheckin(data){
   const blocks=[];
@@ -640,7 +730,7 @@ function FinanceSection({data,onUpdate,mob}){
 
 function App(){
   const [page,setPage]=useState("Dashboard");
-  const [data,setData]=useState(function(){try{const s=localStorage.getItem("dash_v1");if(!s)return INIT;const saved=JSON.parse(s);const fin=saved.finance||{};if(!fin.financeVersion||fin.financeVersion<2){return{...saved,finance:INIT.finance};}return saved;}catch(_){return INIT;}});
+  const [data,setData]=useState(function(){try{const s=localStorage.getItem("dash_v1");if(!s)return{...INIT,reflections:SEED_REFL};const saved=JSON.parse(s);const fin=saved.finance||{};let out=saved;if(!fin.financeVersion||fin.financeVersion<2){out={...out,finance:INIT.finance};}if(!out.reflections||out.reflections.length===0){out={...out,reflections:SEED_REFL};}return out;}catch(_){return{...INIT,reflections:SEED_REFL};}});
   const [wkOff,setWkOff]=useState(0);
   const [activeDay,setActiveDay]=useState(todayStr());
   const [checkinBlocks,setCheckinBlocks]=useState([]);
@@ -652,8 +742,7 @@ function App(){
   const [reflStep,setReflStep]=useState(0);
   const [reflAns,setReflAns]=useState([]);
   const [reflIn,setReflIn]=useState("");
-  const [reflQs,setReflQs]=useState(["What went well this week across uni, gym, and personal tasks?","What did you consistently avoid or push back on?","How did your gym sessions feel — are you progressing?","What's one thing you'd do differently next week?"]);
-  const [reflSum,setReflSum]=useState("");
+  const [reflAnalysis,setReflAnalysis]=useState(null);
   const [modal,setModal]=useState(null);
   const [mForm,setMForm]=useState({});
   const [docIn,setDocIn]=useState({title:"",tags:"",content:""});
@@ -695,7 +784,7 @@ function App(){
   function saveNextSess(){const rows=nxtRows.filter(function(r){return r.exercise&&r.weight;});if(rows.length===0)return;const name=nextRot?nextRot.name:"Next Session";const rotId=nextRot?nextRot.id:null;const wk={id:Date.now(),name:name,date:todayStr(),rotId:rotId,sets:rows.map(function(r,i){return{...r,id:i+1};})};setData(function(p){const rl=p.gym.rotation?p.gym.rotation.length:1;return{...p,gym:{...p.gym,workouts:(p.gym.workouts||[]).concat([wk]),rotIdx:((p.gym.rotIdx||0)+1)%Math.max(rl,1)}};});setNxtRows([{id:1,exercise:"",sets:"",reps:"",weight:""},{id:2,exercise:"",sets:"",reps:"",weight:""},{id:3,exercise:"",sets:"",reps:"",weight:""}]);}
   function saveModal(){if(modal==="add_subject")setData(function(p){return{...p,uni:{...p.uni,subjects:p.uni.subjects.concat([{id:Date.now(),name:mForm.name,progress:0}])}};});else if(modal==="add_exercise")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.concat([{id:Date.now(),name:mForm.name,logs:[]}])}};});else if(modal==="log_weight")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.map(function(ex){return ex.id===mForm.exId?{...ex,logs:ex.logs.concat([{date:todayStr(),weight:Number(mForm.weight)}])}:ex;})}};});else if(modal==="add_task")setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.concat([{id:Date.now(),name:mForm.name,cat:mForm.cat||"Errands",priority:mForm.priority||"normal",due:mForm.due,done:false,addedAt:todayStr(),editedAt:null}])}};});setModal(null);setMForm({});}
   function updateFinance(fin){setData(function(p){return{...p,finance:fin};});}
-  function submitRefl(){if(!reflIn.trim())return;const na=reflAns.concat([{q:reflQs[reflStep-1],a:reflIn}]);setReflAns(na);setReflIn("");if(reflStep<reflQs.length){setReflStep(reflStep+1);}else{const sum="Week "+new Date().toLocaleDateString("en-AU")+": "+na.map(function(qa){return qa.a.slice(0,40);}).join(" | ");setReflSum(sum);setData(function(p){return{...p,reflections:p.reflections.concat([{date:new Date().toISOString(),answers:na,summary:sum}])};});setReflStep(reflQs.length+1);}}
+  function submitRefl(){if(!reflIn.trim())return;const na=reflAns.concat([{q:REFL_QS[reflStep-1],a:reflIn}]);setReflAns(na);setReflIn("");if(reflStep<REFL_QS.length){setReflStep(reflStep+1);}else{const an=analyzeReflection(na,data.reflections);setReflAnalysis(an);setData(function(p){return{...p,reflections:p.reflections.concat([{id:Date.now(),date:new Date().toISOString(),answers:na.map(function(qa,i){return{question:qa.q,answer:qa.a,area:REFL_LABELS[i]};}),analysis:an}])};});setReflStep(REFL_QS.length+1);}}
 
   function renderWeek(){
     if(mob){
@@ -934,9 +1023,69 @@ function App(){
         {page==="Reflection"&&<div style={{maxWidth:600}}>
           <div style={card()}>
             <div style={sT}>Weekly Reflection</div>
-            {reflStep===0&&<div><div style={{fontSize:12,color:T.text2,marginBottom:14,lineHeight:1.6}}>5 minutes at end of week. Honest answers only.{data.reflections.length>0&&<div style={{marginTop:6,color:T.text3}}>Last: {new Date(data.reflections[data.reflections.length-1].date).toLocaleDateString("en-AU")}</div>}</div><button style={btnP} onClick={function(){setReflStep(1);setReflAns([]);setReflSum("");}}>Start this week's reflection</button>{data.reflections.length>0&&<div style={{marginTop:16}}><div style={{fontSize:12,fontWeight:500,marginBottom:8,color:T.text}}>Previous</div>{data.reflections.slice(-3).reverse().map(function(r,i){const sum=r.summary?r.summary.slice(0,120):"";return<div key={i} style={{fontSize:11,color:T.text2,marginBottom:6,padding:"8px 10px",background:T.bg3,borderRadius:6}}><div style={{fontWeight:500,marginBottom:3,color:T.text}}>{new Date(r.date).toLocaleDateString("en-AU")}</div>{sum}</div>;})}</div>}</div>}
-            {reflStep>0&&reflStep<=reflQs.length&&<div><div style={{fontSize:10,color:T.text3,marginBottom:6}}>Question {reflStep} of {reflQs.length}</div><div style={{fontSize:14,fontWeight:500,marginBottom:14,lineHeight:1.5,color:T.text}}>{reflQs[reflStep-1]}</div>{reflAns.map(function(qa,i){return<div key={i} style={{marginBottom:6,fontSize:11,color:T.text2,padding:"6px 10px",background:T.bg3,borderRadius:6}}><strong style={{color:T.text}}>{qa.q.slice(0,40)}...</strong><br/>{qa.a}</div>;})}<textarea value={reflIn} onChange={function(ev){setReflIn(ev.target.value);}} rows={4} style={{...inp,resize:"vertical",marginBottom:10}} placeholder="Your answer..."/><button style={btnP} onClick={submitRefl}>{reflStep<reflQs.length?"Next →":"Finish"}</button></div>}
-            {reflStep>reflQs.length&&reflQs.length>0&&<div><div style={{fontSize:12,fontWeight:500,marginBottom:10,color:T.success}}>✓ Reflection saved</div><div style={{fontSize:13,lineHeight:1.7,color:T.text,marginBottom:14}}>{reflSum}</div><button style={btn} onClick={function(){setReflStep(0);}}>Done</button></div>}
+            {reflStep===0&&<div>
+              <div style={{fontSize:12,color:T.text2,marginBottom:14,lineHeight:1.6}}>5 focused questions. ~5 minutes. Honest answers only.{data.reflections.length>0&&<span style={{marginLeft:8,color:T.text3}}>Last: {new Date(data.reflections[data.reflections.length-1].date).toLocaleDateString("en-AU")}</span>}</div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14}}>{REFL_LABELS.map(function(l,i){return<div key={i} style={{fontSize:10,padding:"3px 10px",borderRadius:99,background:T.accentBg,border:"0.5px solid rgba(199,125,255,0.25)",color:T.accent}}>{l}</div>;})}</div>
+              <button style={btnP} onClick={function(){setReflStep(1);setReflAns([]);setReflAnalysis(null);}}>Start this week's reflection →</button>
+              {data.reflections.length>0&&<div style={{marginTop:20}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.text3,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Previous Reflections</div>
+                {data.reflections.slice(-3).reverse().map(function(r,i){const a=r.analysis;const sc=a?a.sentimentScore:null;return<div key={i} style={{marginBottom:8,padding:"10px 12px",background:T.bg3,borderRadius:8,border:"0.5px solid "+T.border}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:a?5:0}}>
+                    <div style={{fontSize:11,fontWeight:600,color:T.text}}>{new Date(r.date).toLocaleDateString("en-AU")}</div>
+                    {sc!==null&&<div style={{fontSize:10,fontWeight:700,color:sc>=0.1?T.success:sc<=-0.1?T.danger:T.warn}}>{sc>=0.1?"↑ Positive":sc<=-0.1?"↓ Stressed":"→ Neutral"}</div>}
+                  </div>
+                  {a&&<div style={{fontSize:11,color:T.accent,marginBottom:3}}>{a.dominantPattern}</div>}
+                  {a&&<div style={{fontSize:11,color:T.text3,lineHeight:1.4}}>{a.insight.slice(0,110)}...</div>}
+                  {!a&&r.summary&&<div style={{fontSize:11,color:T.text2}}>{r.summary.slice(0,120)}</div>}
+                </div>;})}
+              </div>}
+            </div>}
+            {reflStep>0&&reflStep<=REFL_QS.length&&<div>
+              <div style={{display:"flex",gap:3,marginBottom:14}}>{REFL_QS.map(function(_,i){return<div key={i} style={{flex:1,height:3,borderRadius:2,background:i<reflStep?T.accent:"rgba(255,255,255,0.08)",transition:"background 0.3s"}}/>;})}</div>
+              <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:T.accent,background:T.accentBg,padding:"3px 10px",borderRadius:99,display:"inline-block",marginBottom:10}}>{REFL_LABELS[reflStep-1]} · {reflStep} of {REFL_QS.length}</div>
+              <div style={{fontSize:14,fontWeight:500,marginBottom:16,lineHeight:1.6,color:T.text}}>{REFL_QS[reflStep-1]}</div>
+              {reflAns.length>0&&<div style={{marginBottom:12}}>{reflAns.map(function(qa,i){return<div key={i} style={{marginBottom:4,fontSize:11,color:T.text3,padding:"5px 8px",background:T.bg3,borderRadius:6}}><span style={{color:T.text2,fontWeight:500}}>{REFL_LABELS[i]}: </span>{qa.a.slice(0,60)}{qa.a.length>60?"...":""}</div>;})}</div>}
+              <textarea value={reflIn} onChange={function(ev){setReflIn(ev.target.value);}} rows={5} style={{...inp,resize:"vertical",marginBottom:12,fontSize:13,lineHeight:1.6}} placeholder="Be honest — this is only visible to you..."/>
+              <div style={{display:"flex",gap:8}}>
+                {reflStep>1&&<button style={btn} onClick={function(){const prev=reflAns[reflStep-2]?reflAns[reflStep-2].a:"";setReflAns(reflAns.slice(0,reflStep-2));setReflIn(prev);setReflStep(reflStep-1);}}>← Back</button>}
+                <button style={btnP} onClick={submitRefl}>{reflStep<REFL_QS.length?"Next →":"Finish & Analyse"}</button>
+              </div>
+            </div>}
+            {reflStep>REFL_QS.length&&<div>
+              {reflAnalysis?(function(){const sc=reflAnalysis.sentimentScore;const sCo=sc>=0.1?T.success:sc<=-0.1?T.danger:T.warn;const sBg=sc>=0.1?"rgba(105,240,174,0.06)":sc<=-0.1?"rgba(255,107,107,0.06)":"rgba(255,209,102,0.06)";const sBr=sc>=0.1?"rgba(105,240,174,0.25)":sc<=-0.1?"rgba(255,107,107,0.25)":"rgba(255,209,102,0.25)";return<div>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"10px 12px",borderRadius:10,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.2)"}}>
+                  <span style={{fontSize:20}}>📊</span>
+                  <div><div style={{fontSize:13,fontWeight:700,color:T.text}}>Weekly Psychological Insight</div><div style={{fontSize:10,color:T.text3}}>Based on your answers and reflection history</div></div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+                  <div style={{padding:"10px 12px",borderRadius:10,background:sBg,border:"0.5px solid "+sBr}}>
+                    <div style={{fontSize:9,color:T.text3,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Emotional State</div>
+                    <div style={{fontSize:11,color:sCo,fontWeight:600,lineHeight:1.4}}>{reflAnalysis.emotionalState}</div>
+                  </div>
+                  <div style={{padding:"10px 12px",borderRadius:10,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.18)"}}>
+                    <div style={{fontSize:9,color:T.text3,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Dominant Pattern</div>
+                    <div style={{fontSize:11,color:T.accent,fontWeight:600,lineHeight:1.4}}>{reflAnalysis.dominantPattern}</div>
+                  </div>
+                </div>
+                <div style={{padding:"10px 12px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:10}}>
+                  <div style={{fontSize:9,color:T.text3,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Root Issue Identified</div>
+                  <div style={{fontSize:12,color:T.text,lineHeight:1.5}}>{reflAnalysis.rootIssue}</div>
+                </div>
+                <div style={{padding:"12px 14px",borderRadius:10,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.18)",marginBottom:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}><span style={{fontSize:14}}>🧠</span><div style={{fontSize:10,fontWeight:700,color:T.accent,textTransform:"uppercase",letterSpacing:0.5}}>Psychological Analysis</div></div>
+                  <div style={{fontSize:12,color:T.text2,lineHeight:1.8}}>{reflAnalysis.insight}</div>
+                </div>
+                <div style={{padding:"12px 14px",borderRadius:10,background:"rgba(105,240,174,0.06)",border:"0.5px solid rgba(105,240,174,0.2)",marginBottom:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}><span style={{fontSize:14}}>💡</span><div style={{fontSize:10,fontWeight:700,color:T.success,textTransform:"uppercase",letterSpacing:0.5}}>Recommendation</div></div>
+                  <div style={{fontSize:12,color:T.text2,lineHeight:1.8}}>{reflAnalysis.recommendation}</div>
+                </div>
+                <div style={{padding:"12px 14px",borderRadius:10,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:16}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}><span style={{fontSize:14}}>📈</span><div style={{fontSize:10,fontWeight:700,color:T.text2,textTransform:"uppercase",letterSpacing:0.5}}>Pattern History</div></div>
+                  <div style={{fontSize:12,color:T.text2,lineHeight:1.7}}>{reflAnalysis.patternHistory}</div>
+                </div>
+                <button style={btn} onClick={function(){setReflStep(0);setReflAnalysis(null);}}>Done</button>
+              </div>;})()):(<div><div style={{fontSize:12,color:T.success,marginBottom:10}}>✓ Reflection saved</div><button style={btn} onClick={function(){setReflStep(0);}}>Done</button></div>)}
+            </div>}
           </div>
         </div>}
       </div>
