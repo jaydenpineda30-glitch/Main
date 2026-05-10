@@ -768,12 +768,12 @@ function App(){
     <div style={{fontFamily:"system-ui,sans-serif",minHeight:"100vh",background:"transparent",color:T.text,position:"relative"}}>
       {/* Animated glass background */}
       <div className="glass-bg" id="glassBg"><div className="streak s1"/><div className="streak s2"/><div className="streak s3"/><div className="streak s4"/></div>
-      {!mob&&<nav style={{display:"flex",gap:4,padding:"10px 16px",background:"rgba(5,7,26,0.7)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"0.5px solid rgba(199,125,255,0.2)",overflowX:"auto",alignItems:"center",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 20px rgba(0,0,0,0.4)"}}>
-        <div style={{fontSize:13,fontWeight:700,color:T.accent,marginRight:14,textShadow:"0 0 12px rgba(199,125,255,0.6)"}}>Jayden</div>
-        {["Dashboard","Uni","Work","Gym","Personal","Finance","Reflection"].map(function(s){return<button key={s} style={navBtn(page===s)} onClick={function(){setPage(s);}}>{s}</button>;})}
-        <div style={{marginLeft:"auto",paddingLeft:10}}>
-          <button onClick={function(){setForceMob(true);}} style={{padding:"5px 10px",borderRadius:8,border:"0.5px solid rgba(199,125,255,0.3)",background:"rgba(199,125,255,0.1)",color:T.accent,cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",gap:5}}>📱 Mobile view</button>
+      {!mob&&<nav style={{display:"flex",alignItems:"center",background:"rgba(5,7,26,0.7)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"0.5px solid rgba(199,125,255,0.2)",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 20px rgba(0,0,0,0.4)",padding:"0 16px"}}>
+        <div style={{fontSize:13,fontWeight:700,color:T.accent,marginRight:14,textShadow:"0 0 12px rgba(199,125,255,0.6)",flexShrink:0}}>Jayden</div>
+        <div style={{display:"flex",gap:4,overflowX:"auto",flex:1,padding:"10px 0"}}>
+          {["Dashboard","Uni","Work","Gym","Personal","Finance","Reflection"].map(function(s){return<button key={s} style={navBtn(page===s)} onClick={function(){setPage(s);}}>{s}</button>;})}
         </div>
+        <button onClick={function(){setForceMob(true);}} style={{flexShrink:0,marginLeft:10,padding:"5px 11px",borderRadius:8,border:"1px solid rgba(199,125,255,0.4)",background:"rgba(199,125,255,0.12)",color:T.accent,cursor:"pointer",fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>📱 Mobile</button>
       </nav>}
       {mob&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",background:"rgba(5,7,26,0.85)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"0.5px solid rgba(199,125,255,0.2)",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 20px rgba(0,0,0,0.4)"}}>
         <div style={{fontSize:13,fontWeight:700,color:T.accent,textShadow:"0 0 12px rgba(199,125,255,0.6)"}}>{page}</div>
