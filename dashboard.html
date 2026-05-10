@@ -36,6 +36,8 @@
   /* Particles */
   .glass-bg .p{position:absolute;border-radius:50%;animation:fp var(--dur) ease-in-out var(--delay) infinite;}
   @keyframes fp{0%{opacity:0;transform:translateY(0) scale(.5);}50%{opacity:.7;}100%{opacity:0;transform:translateY(-90px) scale(1.3);}}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:0.4;transform:scale(0.7);}}
 </style>
 </head>
 <body>
@@ -269,6 +271,10 @@ const TUC={red:T.danger,yellow:T.warn,orange:T.orange,urgent:T.danger,normal:T.t
 const TUB={red:T.dangerBg,yellow:T.warnBg,orange:T.orangeBg,urgent:T.dangerBg,normal:T.bg3,done:T.successBg};
 function taskLabel(t){if(t.done)return"done";const od=t.due?daysBetween(t.due)*-1:0;const ref=t.editedAt||t.addedAt||todayStr();const age=Math.floor((new Date()-new Date(ref))/864e5);if(od>0)return od+"d overdue";if(age>7)return"untouched "+age+"d";if(t.due)return"due "+fmtDate(t.due);return"";}
 
+// ── Ollama config ─────────────────────────────────────────────────────────
+const OLLAMA_MODEL="llama3.2";
+const OLLAMA_URL="http://localhost:11434/api/generate";
+
 // ── Reflection Engine ─────────────────────────────────────────────────────
 const REFL_QS=[
   "Which subject or concept felt most challenging this week? What specifically made it difficult?",
@@ -285,7 +291,7 @@ const SEED_REFL=[{id:1746835200000,date:"2026-05-10T02:00:00.000Z",answers:[
   {question:REFL_QS[3],answer:"Personal relationships have been neglected this week. I've been isolating to focus on assignments — haven't caught up with anyone outside of work. It's starting to feel a bit lonely even though I know it's temporary.",area:"Balance"},
   {question:REFL_QS[4],answer:"Want to improve my time management next week so assessments don't pile up at once. One win from this week is staying consistent with gym training despite the heavy assessment load — proving I can maintain good habits even when stressed.",area:"Growth & Wins"}
 ],analysis:{emotionalState:"Cautiously optimistic — mixed but moving forward",dominantPattern:"Growth orientation — approaching challenges with curiosity",rootIssue:"Strongest friction in your academic load — multiple assessments converging simultaneously",insight:"You approached challenges this week with curiosity rather than rigidity — looking at what to improve rather than cataloguing what went wrong. That orientation is a genuine psychological strength. It's the difference between feedback as information and feedback as verdict.",recommendation:"Channel this week's momentum into one specific commitment: pick the area with the most untapped potential from your reflection and schedule a deliberate block of time for it.",patternHistory:"First reflection — patterns will emerge as you keep logging each week.",sentimentScore:0.17,detectedPatterns:["growth_mindset"],sentColor:"#ffd166",sentBg:"rgba(255,209,102,0.06)",sentBorder:"rgba(255,209,102,0.25)"}}];
-function analyzeReflection(answers,history){
+function analyzeReflectionFallback(answers,history){
   const allText=answers.map(function(a){return a.a;}).join(" ").toLowerCase();
   const NEG=["overwhelm","stressed","stress","anxious","anxiety","tired","exhaust","frustrat","struggl","difficult","hard","fail","behind","worr","drain","burnout","burnt out","can't","couldn't","unable","avoid","procrastinat","miss","forgot","lonely","isolat","depress","hopeless","unmotivated","no motivation","falling behind"];
   const POS=["great","well","good","happy","proud","confident","motivat","focused","achiev","succeed","managed","improv","progress","excited","grateful","calm","balanced","productive","consistent","win","celebrat","better","strong","growth","learn","breakthrough","clarity","clear"];
@@ -359,8 +365,8 @@ function analyzeReflection(answers,history){
   return{emotionalState,dominantPattern,rootIssue,insight,recommendation,patternHistory,sentimentScore:sentScore,detectedPatterns:patterns,sentColor:sentScore>=0.1?"#69f0ae":sentScore<=-0.1?"#ff6b6b":"#ffd166",sentBg:sentScore>=0.1?"rgba(105,240,174,0.06)":sentScore<=-0.1?"rgba(255,107,107,0.06)":"rgba(255,209,102,0.06)",sentBorder:sentScore>=0.1?"rgba(105,240,174,0.25)":sentScore<=-0.1?"rgba(255,107,107,0.25)":"rgba(255,209,102,0.25)"};
 }
 
-// ── Rule-based check-in ────────────────────────────────────────────────────
-function generateCheckin(data){
+// ── Rule-based check-in (fallback) ────────────────────────────────────────
+function generateCheckinFallback(data){
   const blocks=[];
   const tUni=UNI_EVENTS.filter(function(ev){return ev.date===todayStr();});
   const tWork=WORK_EVENTS.filter(function(ev){return ev.date===todayStr();});
@@ -420,6 +426,60 @@ function generateCheckin(data){
   }
 
   return blocks;
+}
+
+// ── Ollama-powered AI functions ────────────────────────────────────────────
+async function analyzeReflection(answers,history){
+  try{
+    const reflText=answers.map(function(qa,i){return"Q"+(i+1)+" ("+REFL_LABELS[i]+"):\n"+qa.q+"\nA: "+qa.a;}).join("\n\n");
+    const histCtx=history&&history.length>0?"\n\nREFLECTION HISTORY (last "+Math.min(4,history.length)+" weeks):\n"+history.slice(-4).map(function(r){return"- "+(r.analysis&&r.analysis.emotionalState||"no analysis")+": \""+(r.answers[0]&&(r.answers[0].answer||r.answers[0].a)||"").slice(0,80)+"...\"";}).join("\n"):"";
+    const prompt="You are a psychological analyst providing deep, personalized feedback on weekly reflections.\n\nRead these reflection answers and provide genuine insights specific to what was written (NOT generic — make them specific to their actual words):\n\n"+reflText+histCtx+"\n\nRespond with ONLY a JSON object — no markdown, no explanation:\n{\n  \"emotionalState\": \"One phrase capturing their overall emotional state (specific to their words)\",\n  \"dominantPattern\": \"One phrase describing the main psychological pattern detected\",\n  \"rootIssue\": \"What is actually causing friction, specific to their answers\",\n  \"insight\": \"2-3 sentences of genuine insight about their mindset and patterns, specific to what they wrote\",\n  \"recommendation\": \"1-2 sentences of actionable advice specific to their situation this week\",\n  \"patternHistory\": \"Note any patterns across multiple weeks if history provided, otherwise note this is early data\",\n  \"detectedPatterns\": [\"array\",\"of\",\"pattern\",\"tags\"]\n}";
+    const resp=await fetch(OLLAMA_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:OLLAMA_MODEL,prompt:prompt,stream:false,temperature:0.7})});
+    if(!resp.ok)throw new Error("Ollama not available");
+    const json=await resp.json();
+    const match=json.response.trim().match(/\{[\s\S]*\}/);
+    if(!match)throw new Error("No JSON in response");
+    const ai=JSON.parse(match[0]);
+    const sentScore=ai.detectedPatterns&&ai.detectedPatterns.indexOf("burnout_risk")!==-1?-0.5:ai.detectedPatterns&&ai.detectedPatterns.indexOf("growth_mindset")!==-1?0.3:0;
+    ai.sentimentScore=sentScore;
+    ai.sentColor=sentScore>=0.1?"#69f0ae":sentScore<=-0.1?"#ff6b6b":"#ffd166";
+    ai.sentBg=sentScore>=0.1?"rgba(105,240,174,0.06)":sentScore<=-0.1?"rgba(255,107,107,0.06)":"rgba(255,209,102,0.06)";
+    ai.sentBorder=sentScore>=0.1?"rgba(105,240,174,0.25)":sentScore<=-0.1?"rgba(255,107,107,0.25)":"rgba(255,209,102,0.25)";
+    return ai;
+  }catch(e){
+    console.warn("Ollama unavailable, using fallback:",e.message);
+    return analyzeReflectionFallback(answers,history);
+  }
+}
+
+async function generateCheckin(data){
+  try{
+    const tUni=UNI_EVENTS.filter(function(ev){return ev.date===todayStr();});
+    const tWork=WORK_EVENTS.filter(function(ev){return ev.date===todayStr();});
+    const soon=UNI_EVENTS.filter(function(ev){return ev.assessment&&daysBetween(ev.date)>=0&&daysBetween(ev.date)<=5;});
+    const overdue=data.personal.tasks.filter(function(t){return !t.done&&t.due&&daysBetween(t.due)<0;});
+    const gymRot=data.gym.rotation||[];
+    const nextSess=gymRot.length>0?gymRot[(data.gym.rotIdx||0)%Math.max(gymRot.length,1)]:null;
+    const schedule=tUni.length>0?tUni.map(function(ev){return(SUBJECTS[ev.subject]||ev.subject)+" "+ev.time+(ev.assessment?" (Assessment)":"");}).join(", "):"No uni classes today";
+    const workToday=tWork.length>0?tWork.map(function(ev){return ev.title+" "+ev.time;}).join(", "):"No work today";
+    const assessments=soon.length>0?soon.map(function(ev){const d=daysBetween(ev.date);return(SUBJECTS[ev.subject]||ev.subject)+" — "+ev.title+" due "+(d===0?"today":d===1?"tomorrow":"in "+d+" days");}).join(", "):"None coming up";
+    const pending=data.personal.tasks.filter(function(t){return !t.done;}).slice(0,5).map(function(t){return t.name+(overdue.indexOf(t)!==-1?" (OVERDUE)":"");}).join(", ")||"No pending tasks";
+    const gymCtx=nextSess?"Next gym session: "+nextSess.name+(nextSess.focus?" ("+nextSess.focus+")":""):"No gym rotation set";
+    const prompt="You are a supportive coach helping Jayden start their day.\n\nTODAY'S CONTEXT:\nUni: "+schedule+"\nWork: "+workToday+"\nUpcoming assessments: "+assessments+"\nPending tasks: "+pending+"\nGym: "+gymCtx+"\n\nWrite a brief, warm check-in. Exactly 3 short lines:\nLine 1: Acknowledge the day ahead\nLine 2: One specific realistic suggestion\nLine 3: One reflection question based on what they're facing\n\nUnder 60 words total. Warm but not cheesy. Plain lines, no bullets or numbering.";
+    const resp=await fetch(OLLAMA_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:OLLAMA_MODEL,prompt:prompt,stream:false,temperature:0.7})});
+    if(!resp.ok)throw new Error("Ollama not available");
+    const json=await resp.json();
+    const lines=json.response.trim().split("\n").map(function(l){return l.replace(/^[\d\.\-\*]+\s*/,"").trim();}).filter(function(l){return l.length>0;});
+    if(lines.length===0)throw new Error("Empty response");
+    const blocks=[];
+    if(lines[0])blocks.push({header:"📅 Your Day Ahead",items:[lines[0]]});
+    if(lines[1])blocks.push({header:"💡 Suggestion",items:[lines[1]]});
+    if(lines[2])blocks.push({header:"❓ Check-in",items:[lines[2]]});
+    return blocks.length>0?blocks:generateCheckinFallback(data);
+  }catch(e){
+    console.warn("Ollama unavailable, using fallback:",e.message);
+    return generateCheckinFallback(data);
+  }
 }
 
 function Sparkline(props){
@@ -779,8 +839,12 @@ function App(){
   const [forceMob,setForceMob]=useState(false);
   const rawMob=useIsMob();
   const mob=forceMob||rawMob;
+  const [checkinLoading,setCheckinLoading]=useState(false);
+  const [reflAnalysisLoading,setReflAnalysisLoading]=useState(false);
+  const [ollamaAvailable,setOllamaAvailable]=useState(null);
 
   useEffect(function(){try{localStorage.setItem("dash_v1",JSON.stringify(data));}catch(_){};},[data]);
+  useEffect(function(){fetch("http://localhost:11434/api/tags").then(function(r){setOllamaAvailable(r.ok);}).catch(function(){setOllamaAvailable(false);});},[]);
 
   const baseDate=new Date();baseDate.setDate(baseDate.getDate()+wkOff*7);
   const weekDates=getWeekDates(baseDate);
@@ -803,7 +867,7 @@ function App(){
   const totPen=shifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.penaltyHrs:0);},0);
   const totEquiv=shifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.totalEquiv:0);},0);
 
-  function doCheckin(){setCheckinBlocks(generateCheckin(data));}
+  function doCheckin(){setCheckinLoading(true);setCheckinBlocks([]);generateCheckin(data).then(function(blocks){setCheckinBlocks(blocks);setCheckinLoading(false);}).catch(function(){setCheckinLoading(false);});}
   function toggleCalEv(id){setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
   function updateProg(id,val){setData(function(p){return{...p,uni:{...p.uni,subjects:p.uni.subjects.map(function(s){return s.id===id?{...s,progress:Number(val)}:s;})}}; });}
   function toggleTask(id){setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.map(function(t){return t.id===id?{...t,done:!t.done}:t;})}}; });}
@@ -814,7 +878,7 @@ function App(){
   function saveNextSess(){const rows=nxtRows.filter(function(r){return r.exercise&&r.weight;});if(rows.length===0)return;const name=nextRot?nextRot.name:"Next Session";const rotId=nextRot?nextRot.id:null;const wk={id:Date.now(),name:name,date:todayStr(),rotId:rotId,sets:rows.map(function(r,i){return{...r,id:i+1};})};setData(function(p){const rl=p.gym.rotation?p.gym.rotation.length:1;return{...p,gym:{...p.gym,workouts:(p.gym.workouts||[]).concat([wk]),rotIdx:((p.gym.rotIdx||0)+1)%Math.max(rl,1)}};});setNxtRows([{id:1,exercise:"",sets:"",reps:"",weight:""},{id:2,exercise:"",sets:"",reps:"",weight:""},{id:3,exercise:"",sets:"",reps:"",weight:""}]);}
   function saveModal(){if(modal==="add_subject")setData(function(p){return{...p,uni:{...p.uni,subjects:p.uni.subjects.concat([{id:Date.now(),name:mForm.name,progress:0}])}};});else if(modal==="add_exercise")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.concat([{id:Date.now(),name:mForm.name,logs:[]}])}};});else if(modal==="log_weight")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.map(function(ex){return ex.id===mForm.exId?{...ex,logs:ex.logs.concat([{date:todayStr(),weight:Number(mForm.weight)}])}:ex;})}};});else if(modal==="add_task")setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.concat([{id:Date.now(),name:mForm.name,cat:mForm.cat||"Errands",priority:mForm.priority||"normal",due:mForm.due,done:false,addedAt:todayStr(),editedAt:null}])}};});setModal(null);setMForm({});}
   function updateFinance(fin){setData(function(p){return{...p,finance:fin};});}
-  function submitRefl(){if(!reflIn.trim())return;const na=reflAns.concat([{q:REFL_QS[reflStep-1],a:reflIn}]);setReflAns(na);setReflIn("");if(reflStep<REFL_QS.length){setReflStep(reflStep+1);}else{const an=analyzeReflection(na,data.reflections);setReflAnalysis(an);setData(function(p){return{...p,reflections:p.reflections.concat([{id:Date.now(),date:new Date().toISOString(),answers:na.map(function(qa,i){return{question:qa.q,answer:qa.a,area:REFL_LABELS[i]};}),analysis:an}])};});setReflStep(REFL_QS.length+1);}}
+  function submitRefl(){if(!reflIn.trim())return;const na=reflAns.concat([{q:REFL_QS[reflStep-1],a:reflIn}]);setReflAns(na);setReflIn("");if(reflStep<REFL_QS.length){setReflStep(reflStep+1);}else{setReflStep(REFL_QS.length+1);setReflAnalysisLoading(true);analyzeReflection(na,data.reflections).then(function(an){setReflAnalysis(an);setReflAnalysisLoading(false);setData(function(p){return{...p,reflections:p.reflections.concat([{id:Date.now(),date:new Date().toISOString(),answers:na.map(function(qa,i){return{question:qa.q,answer:qa.a,area:REFL_LABELS[i]};}),analysis:an}])};});}).catch(function(){setReflAnalysisLoading(false);});}}
 
   function renderWeek(){
     if(mob){
@@ -940,7 +1004,7 @@ function App(){
               <div style={{fontSize:10,color:T.text3,display:"flex",alignItems:"center",gap:5}}><div style={{width:5,height:5,borderRadius:"50%",background:T.accent}}/>Daily Check-in · {new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long"})}</div>
               <button style={{...btn,fontSize:11}} onClick={doCheckin}>↻ Refresh</button>
             </div>
-            {checkinBlocks.length===0?<div style={{fontSize:12,color:T.text3}}>Press ↻ Refresh to generate today's check-in.</div>:checkinBlocks.map(function(block,bi){return(<div key={bi} style={{marginBottom:10}}>{block.header&&<div style={{fontSize:11,fontWeight:600,color:T.accent,marginBottom:4}}>{block.header}</div>}{block.items.map(function(item,ii){return<div key={ii} style={{fontSize:13,lineHeight:1.7,color:T.text}}>{item}</div>;})}</div>);})}
+            {checkinLoading?<div style={{fontSize:12,color:T.accent,display:"flex",alignItems:"center",gap:6}}><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:T.accent,animation:"pulse 1.2s ease-in-out infinite"}}/>AI is thinking...</div>:checkinBlocks.length===0?<div style={{fontSize:12,color:T.text3}}>Press ↻ Refresh to generate today's check-in.{ollamaAvailable===false&&<span style={{marginLeft:6,color:T.warn}}>(Ollama offline — will use smart fallback)</span>}</div>:checkinBlocks.map(function(block,bi){return(<div key={bi} style={{marginBottom:10}}>{block.header&&<div style={{fontSize:11,fontWeight:600,color:T.accent,marginBottom:4}}>{block.header}</div>}{block.items.map(function(item,ii){return<div key={ii} style={{fontSize:13,lineHeight:1.7,color:T.text}}>{item}</div>;})}</div>);})}
             {activeDayEvs.length>0&&<div style={{marginTop:12,paddingTop:10,borderTop:"0.5px solid "+T.border,display:"flex",gap:6,flexWrap:"wrap"}}>{activeDayEvs.map(function(ev){const isW=!!ev.type;const col=isW?wCol(ev.type):(SC[ev.subject]||"#888");const ce=data.uni.completedEvents||[];const done=!isW&&ce.indexOf(ev.id)!==-1;return(<div key={ev.id} onClick={function(){if(!isW)toggleCalEv(ev.id);}} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 9px",borderRadius:6,background:col+"18",border:"0.5px solid "+col+"40",cursor:isW?"default":"pointer",opacity:done?0.4:1,flexShrink:0}}>{!isW&&<input type="checkbox" checked={done} onChange={function(){toggleCalEv(ev.id);}} onClick={function(evn){evn.stopPropagation();}} style={{accentColor:col}}/>}<div><div style={{fontSize:10,fontWeight:600,color:col}}>{isW?"GoTab":ev.subject}<span style={{fontWeight:400,color:T.text3}}> · {ev.time}</span></div><div style={{fontSize:9,color:T.text2}}>{ev.title.slice(0,32)}{ev.assessment?" 📋":""}</div></div></div>);})}</div>}
           </div>
 
@@ -1082,7 +1146,8 @@ function App(){
               </div>
             </div>}
             {reflStep>REFL_QS.length&&<div>
-              {reflAnalysis&&<div>
+              {reflAnalysisLoading&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12,padding:"30px 0",color:T.text2}}><div style={{width:28,height:28,borderRadius:"50%",border:"2px solid "+T.accent,borderTopColor:"transparent",animation:"spin 0.9s linear infinite"}}/><div style={{fontSize:12}}>AI is analysing your reflection...</div></div>}
+              {reflAnalysis&&!reflAnalysisLoading&&<div>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"10px 12px",borderRadius:10,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.2)"}}>
                   <span style={{fontSize:20}}>📊</span>
                   <div><div style={{fontSize:13,fontWeight:700,color:T.text}}>Weekly Psychological Insight</div><div style={{fontSize:10,color:T.text3}}>Based on your answers and reflection history</div></div>
@@ -1115,7 +1180,7 @@ function App(){
                 </div>
                 <button style={btn} onClick={function(){setReflStep(0);setReflAnalysis(null);}}>Done</button>
               </div>}
-              {!reflAnalysis&&<div><div style={{fontSize:12,color:T.success,marginBottom:10}}>✓ Reflection saved</div><button style={btn} onClick={function(){setReflStep(0);}}>Done</button></div>}
+              {!reflAnalysis&&!reflAnalysisLoading&&<div><div style={{fontSize:12,color:T.success,marginBottom:10}}>✓ Reflection saved</div><button style={btn} onClick={function(){setReflStep(0);}}>Done</button></div>}
             </div>}
           </div>
         </div>}
