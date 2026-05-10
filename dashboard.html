@@ -7,6 +7,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<!-- Monitoring system — load before Babel bundle so globals are available -->
+<script src="error-handler.js"></script>
+<script src="network-monitor.js"></script>
+<script src="health-monitor.js"></script>
+<script src="error-boundary.js"></script>
+<script src="monitoring-dashboard.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
   body{
@@ -57,10 +63,12 @@ window.addEventListener('error', function(e) {
 </script>
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
-class ErrorBoundary extends React.Component {
+// Use the enhanced ErrorBoundary from error-boundary.js if it loaded, otherwise inline fallback
+const ErrorBoundary = window.ErrorBoundary || class extends React.Component {
   constructor(props) { super(props); this.state = { err: null }; }
   static getDerivedStateFromError(err) { return { err: err }; }
-  componentDidCatch(err) {
+  componentDidCatch(err, info) {
+    if (window.ErrorHandler) ErrorHandler.critical((err&&err.message)||'Component crash','error-boundary',{error:err,data:{componentStack:info&&info.componentStack}});
     var el = document.getElementById('app-error');
     if (el) {
       el.style.display = 'block';
@@ -73,7 +81,7 @@ class ErrorBoundary extends React.Component {
     if (this.state.err) return null;
     return this.props.children;
   }
-}
+};
 
 const T={bg:"#05071a",bg2:"rgba(255,255,255,0.07)",bg3:"rgba(255,255,255,0.04)",border:"rgba(255,255,255,0.09)",border2:"rgba(255,255,255,0.16)",text:"#e8eaf6",text2:"#9fa8c7",text3:"rgba(255,255,255,0.28)",accent:"#c77dff",accentBg:"rgba(199,125,255,0.15)",danger:"#ff6b6b",dangerBg:"rgba(255,107,107,0.15)",success:"#69f0ae",successBg:"rgba(105,240,174,0.15)",warn:"#ffd166",warnBg:"rgba(255,209,102,0.15)",orange:"#ff9a3c",orangeBg:"rgba(255,154,60,0.15)"};
 const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
@@ -842,9 +850,12 @@ function App(){
   const [checkinLoading,setCheckinLoading]=useState(false);
   const [reflAnalysisLoading,setReflAnalysisLoading]=useState(false);
   const [ollamaAvailable,setOllamaAvailable]=useState(null);
+  const [showMonitor,setShowMonitor]=useState(false);
 
   useEffect(function(){try{localStorage.setItem("dash_v1",JSON.stringify(data));}catch(_){};},[data]);
   useEffect(function(){fetch("http://localhost:11434/api/tags").then(function(r){setOllamaAvailable(r.ok);}).catch(function(){setOllamaAvailable(false);});},[]);
+  // Start health monitor (runs checks every 30s)
+  useEffect(function(){if(window.HealthMonitor){HealthMonitor.start();}return function(){if(window.HealthMonitor)HealthMonitor.stop();};},[]);
 
   const baseDate=new Date();baseDate.setDate(baseDate.getDate()+wkOff*7);
   const weekDates=getWeekDates(baseDate);
@@ -952,6 +963,10 @@ function App(){
     <div style={{fontFamily:"system-ui,sans-serif",minHeight:"100vh",background:"transparent",color:T.text,position:"relative"}}>
       {/* Animated glass background */}
       <div className="glass-bg" id="glassBg"><div className="streak s1"/><div className="streak s2"/><div className="streak s3"/><div className="streak s4"/></div>
+      {/* System status bar — shows health, online status, logs button */}
+      {window.StatusBar&&<StatusBar onOpenPanel={function(){setShowMonitor(true);}}/>}
+      {/* Full monitoring panel modal */}
+      {showMonitor&&window.MonitoringPanel&&<MonitoringPanel onClose={function(){setShowMonitor(false);}}/>}
       {!mob&&<nav style={{display:"flex",gap:4,padding:"10px 16px",background:"rgba(5,7,26,0.7)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"0.5px solid rgba(199,125,255,0.2)",overflowX:"auto",alignItems:"center",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 20px rgba(0,0,0,0.4)"}}>
         <div style={{fontSize:13,fontWeight:700,color:T.accent,marginRight:14,textShadow:"0 0 12px rgba(199,125,255,0.6)"}}>Jayden</div>
         {["Dashboard","Uni","Work","Gym","Personal","Finance","Reflection"].map(function(s){return<button key={s} style={navBtn(page===s)} onClick={function(){setPage(s);}}>{s}</button>;})}
@@ -962,7 +977,6 @@ function App(){
         {!rawMob&&<button onClick={function(){setForceMob(false);}} style={{padding:"5px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.06)",color:T.text2,cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",gap:5}}>🖥 Desktop view</button>}
       </div>}
       <div style={{padding:mob?"10px 12px":"12px 14px",maxWidth:mob?430:1100,margin:"0 auto",position:"relative",zIndex:1,paddingBottom:mob?80:undefined}}>
-
         {page==="Dashboard"&&<div>
           {/* Calendar + weather side by side */}
           <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 220px",gap:10,marginBottom:12,alignItems:"start"}}>
@@ -1099,7 +1113,7 @@ function App(){
           </div>
         </div>}
 
-        {page==="Gym"&&<GymSection mob={mob} gymData={data.gym} onAddEx={function(){setModal("add_exercise");setMForm({});}} onLogW={function(ex){setModal("log_weight");setMForm({exId:ex.id,exName:ex.name});}} onSave={function(wk){setData(function(p){const rl=p.gym.rotation?p.gym.rotation.length:1;return{...p,gym:{...p.gym,workouts:(p.gym.workouts||[]).concat([wk]),rotIdx:((p.gym.rotIdx||0)+1)%Math.max(rl,1)}};});}} onUpdateRot={function(rot,idx){setData(function(p){return{...p,gym:{...p.gym,rotation:rot,rotIdx:idx}};});}}/>}
+        {page==="Gym"&&<ErrorBoundary name="Gym"><GymSection mob={mob} gymData={data.gym} onAddEx={function(){setModal("add_exercise");setMForm({});}} onLogW={function(ex){setModal("log_weight");setMForm({exId:ex.id,exName:ex.name});}} onSave={function(wk){setData(function(p){const rl=p.gym.rotation?p.gym.rotation.length:1;return{...p,gym:{...p.gym,workouts:(p.gym.workouts||[]).concat([wk]),rotIdx:((p.gym.rotIdx||0)+1)%Math.max(rl,1)}};});}} onUpdateRot={function(rot,idx){setData(function(p){return{...p,gym:{...p.gym,rotation:rot,rotIdx:idx}};});}}/></ErrorBoundary>}
 
         {page==="Personal"&&<div style={{maxWidth:640}}>
           <div style={card()}>
@@ -1112,7 +1126,7 @@ function App(){
           <div style={card()}><div style={sT}>Knowledge base</div><div style={{fontSize:11,color:T.text2,marginBottom:10}}>Notes here feed your daily check-in context.</div>{(data.docs||[]).map(function(d){return(<div key={d.id} style={{marginBottom:8,padding:"8px 10px",background:T.bg3,borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><div style={{fontSize:12,fontWeight:500,color:T.text}}>{d.title}</div><div style={{fontSize:10,color:T.text3,marginTop:2}}>{d.content.slice(0,80)}...</div><div style={{marginTop:4,display:"flex",gap:4}}>{(d.tags||[]).map(function(tag){return<span key={tag} style={{fontSize:9,padding:"1px 6px",borderRadius:99,background:T.accentBg,color:T.accent}}>{tag}</span>;})}</div></div><button onClick={function(){setData(function(p){return{...p,docs:(p.docs||[]).filter(function(x){return x.id!==d.id;})};});}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,marginLeft:8}}>×</button></div>);})}<div style={{marginTop:12,display:"flex",flexDirection:"column",gap:6}}><input style={inp} placeholder="Title" value={docIn.title} onChange={function(ev){setDocIn(function(p){return{...p,title:ev.target.value};});}}/><input style={inp} placeholder="Tags (comma separated)" value={docIn.tags} onChange={function(ev){setDocIn(function(p){return{...p,tags:ev.target.value};});}}/><textarea style={{...inp,resize:"vertical"}} rows={3} placeholder="Content..." value={docIn.content} onChange={function(ev){setDocIn(function(p){return{...p,content:ev.target.value};});}}/><button style={btnP} onClick={function(){if(!docIn.title||!docIn.content)return;setData(function(p){return{...p,docs:(p.docs||[]).concat([{id:"doc"+Date.now(),title:docIn.title,tags:docIn.tags.split(",").map(function(t){return t.trim();}),content:docIn.content}])};});setDocIn({title:"",tags:"",content:""});}}>Add document</button></div></div>
         </div>}
 
-        {page==="Finance"&&<div style={{maxWidth:mob?undefined:900}}><FinanceSection mob={mob} data={data.finance||{}} onUpdate={updateFinance}/></div>}
+        {page==="Finance"&&<div style={{maxWidth:mob?undefined:900}}><ErrorBoundary name="Finance"><FinanceSection mob={mob} data={data.finance||{}} onUpdate={updateFinance}/></ErrorBoundary></div>}
 
         {page==="Reflection"&&<div style={{maxWidth:600}}>
           <div style={card()}>
