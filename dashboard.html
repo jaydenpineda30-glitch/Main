@@ -509,6 +509,81 @@ function Sparkline(props){
 
 function useIsMob(){const [m,setM]=useState(typeof window!=="undefined"&&window.innerWidth<768);useEffect(function(){function h(){setM(window.innerWidth<768);}window.addEventListener("resize",h);return function(){window.removeEventListener("resize",h);};},[]);return m;}
 
+// ── Weather widget ────────────────────────────────────────────────────────────
+// Fetches from Open-Meteo (free, no API key). Caches in IndexedDB so the data
+// survives page refreshes. Re-fetches automatically after 24 hours, and
+// retries immediately when the browser comes back online.
+const WX_MAP={0:["☀️","Sunny"],1:["🌤️","Mainly clear"],2:["⛅","Partly cloudy"],3:["☁️","Overcast"],45:["🌫️","Foggy"],48:["🌫️","Foggy"],51:["🌦️","Light drizzle"],53:["🌦️","Drizzle"],55:["🌧️","Heavy drizzle"],61:["🌧️","Light rain"],63:["🌧️","Rain"],65:["🌧️","Heavy rain"],71:["🌨️","Light snow"],73:["🌨️","Snow"],75:["❄️","Heavy snow"],80:["🌦️","Showers"],81:["🌧️","Heavy showers"],82:["⛈️","Violent showers"],95:["⛈️","Thunderstorm"],96:["⛈️","Thunderstorm"],99:["⛈️","Thunderstorm"]};
+const WX_STALE=24*60*60*1000; // 24 hours in ms
+const WX_URL="https://api.open-meteo.com/v1/forecast?latitude=-37.8136&longitude=144.9631&current=temperature_2m,weather_code,precipitation_probability&timezone=Australia/Melbourne&forecast_days=1";
+
+function wxOpenDB(){return new Promise(function(res,rej){const r=indexedDB.open("dash_weather",1);r.onupgradeneeded=function(e){e.target.result.createObjectStore("c",{keyPath:"k"});};r.onsuccess=function(e){res(e.target.result);};r.onerror=function(){rej(r.error);};});}
+function wxGet(db){return new Promise(function(res){const r=db.transaction("c","readonly").objectStore("c").get("wx");r.onsuccess=function(){res(r.result||null);};r.onerror=function(){res(null);};});}
+function wxPut(db,payload){return new Promise(function(res){const tx=db.transaction("c","readwrite");tx.objectStore("c").put({k:"wx",...payload});tx.oncomplete=res;tx.onerror=res;});}
+
+function WeatherWidget(){
+  const [wx,setWx]=useState(null);
+  const [status,setStatus]=useState("loading"); // "loading"|"ok"|"offline"|"error"
+
+  async function load(){
+    try{
+      const db=await wxOpenDB();
+      const cached=await wxGet(db);
+      const stale=!cached||(Date.now()-cached.fetchedAt)>WX_STALE;
+      if(cached)setWx(cached); // show cached immediately while we decide what to do
+      if(!navigator.onLine){setStatus(cached?"offline":"error");return;}
+      if(stale){
+        try{
+          const resp=await fetch(WX_URL);
+          if(!resp.ok)throw new Error("HTTP "+resp.status);
+          const json=await resp.json();
+          const c=json.current;
+          const fresh={temp:Math.round(c.temperature_2m),code:c.weather_code,rain:c.precipitation_probability,fetchedAt:Date.now()};
+          await wxPut(db,fresh);
+          setWx(fresh);setStatus("ok");
+        }catch(e){
+          if(window.ErrorHandler)ErrorHandler.log("Weather fetch failed: "+e.message,"error","weather");
+          setStatus(cached?"offline":"error");
+        }
+      }else{setStatus("ok");}
+    }catch(e){
+      if(window.ErrorHandler)ErrorHandler.log("WeatherWidget error: "+e.message,"error","weather");
+      setStatus("error");
+    }
+  }
+
+  useEffect(function(){
+    load();
+    const timer=setInterval(load,WX_STALE); // auto-refresh every 24h while tab stays open
+    window.addEventListener("online",load);  // retry immediately when network returns
+    return function(){clearInterval(timer);window.removeEventListener("online",load);};
+  },[]);
+
+  const [icon,desc]=wx?(WX_MAP[wx.code]||["🌡️","Unknown"]):["--","--"];
+  const ageMin=wx?Math.floor((Date.now()-wx.fetchedAt)/60000):null;
+  const ageStr=ageMin===null?null:ageMin<2?"just now":ageMin<60?ageMin+"m ago":Math.floor(ageMin/60)+"h ago";
+
+  return(
+    <div style={{background:T.bg2,border:"0.5px solid "+T.border,borderRadius:10,padding:"14px 16px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+        <div style={{fontSize:10,color:T.text3}}>Melbourne</div>
+        {status==="offline"&&<div style={{fontSize:9,padding:"1px 6px",borderRadius:99,background:T.warnBg,color:T.warn}}>cached</div>}
+        {status==="loading"&&!wx&&<div style={{fontSize:9,color:T.text3}}>loading...</div>}
+      </div>
+      {status==="error"&&!wx
+        ?<div style={{fontSize:11,color:T.text3,padding:"8px 0"}}>Weather unavailable</div>
+        :<>
+          <div style={{fontSize:28,lineHeight:1}}>{icon}</div>
+          <div style={{fontSize:24,fontWeight:700,color:T.text,marginTop:6}}>{wx?wx.temp+"°C":"--"}</div>
+          <div style={{fontSize:12,color:T.text2,marginTop:3}}>{desc}</div>
+          {wx&&wx.rain>0&&<div style={{fontSize:11,color:T.warn,marginTop:6}}>{wx.rain}% chance of rain</div>}
+          {ageStr&&<div style={{fontSize:9,color:T.text3,marginTop:8}}>Updated {ageStr}</div>}
+        </>
+      }
+    </div>
+  );
+}
+
 function GymSection(props){
   const gymData=props.gymData;const onAddEx=props.onAddEx;const onLogW=props.onLogW;const onSave=props.onSave;const onUpdateRot=props.onUpdateRot;const mob=props.mob||false;
   const [tab,setTab]=useState("progress");
@@ -1115,13 +1190,7 @@ function App(){
               </div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
-              <div style={{background:T.bg2,border:"0.5px solid "+T.border,borderRadius:10,padding:"14px 16px"}}>
-                <div style={{fontSize:10,color:T.text3,marginBottom:8}}>Melbourne</div>
-                <div style={{fontSize:28,lineHeight:1}}>☁️</div>
-                <div style={{fontSize:24,fontWeight:700,color:T.text,marginTop:6}}>12°C</div>
-                <div style={{fontSize:12,color:T.text2,marginTop:3}}>Cloudy</div>
-                <div style={{fontSize:11,color:T.warn,marginTop:6}}>55% chance of rain</div>
-              </div>
+              <WeatherWidget/>
               {nextRot&&<div style={{background:T.successBg,border:"0.5px solid "+T.success+"40",borderRadius:10,padding:"14px 16px",cursor:"pointer"}} onClick={function(){setPage("Gym");}}>
                 <div style={{fontSize:9,color:T.success,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Next session</div>
                 <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:3}}>{nextRot.name}</div>
