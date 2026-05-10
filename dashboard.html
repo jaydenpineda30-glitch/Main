@@ -24,6 +24,14 @@
   ::-webkit-scrollbar{width:4px;}
   ::-webkit-scrollbar-track{background:rgba(255,255,255,0.03);}
   ::-webkit-scrollbar-thumb{background:rgba(199,125,255,0.35);border-radius:2px;}
+  input,select,textarea,button{-webkit-tap-highlight-color:transparent;}
+  .desk-nav{display:flex;}
+  .mob-btm{display:none;position:fixed;bottom:0;left:0;right:0;z-index:100;}
+  @media(max-width:767px){
+    .desk-nav{display:none!important;}
+    .mob-btm{display:flex!important;}
+    .mob-pb{padding-bottom:74px!important;}
+  }
   /* Animated background streaks */
   .glass-bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;}
   .glass-bg .streak{position:absolute;border-radius:999px;height:2px;opacity:0;}
@@ -315,8 +323,11 @@ function Sparkline(props){
   );
 }
 
+function useIsMob(){const [m,setM]=useState(typeof window!=="undefined"&&window.innerWidth<768);useEffect(function(){function h(){setM(window.innerWidth<768);}window.addEventListener("resize",h);return function(){window.removeEventListener("resize",h);};},[]);return m;}
+
 function GymSection(props){
   const gymData=props.gymData;const onAddEx=props.onAddEx;const onLogW=props.onLogW;const onSave=props.onSave;const onUpdateRot=props.onUpdateRot;
+  const mob=useIsMob();
   const [tab,setTab]=useState("progress");
   const [wkt,setWkt]=useState({name:"",date:todayStr(),sets:[]});
   const [row,setRow]=useState({exercise:"",sets:"",reps:"",weight:""});
@@ -337,7 +348,7 @@ function GymSection(props){
       {tab==="progress"&&<div>
         <div style={gs.card}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:13,fontWeight:500,color:T.text}}>Body weight trend</div><span style={{fontSize:10,color:T.text3}}>Logged weekly</span></div>
-          <Sparkline data={gymData.bodyWeight||[]} color={T.accent} width={360} height={60}/>
+          <Sparkline data={gymData.bodyWeight||[]} color={T.accent} width={mob?280:360} height={60}/>
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>{(gymData.bodyWeight||[]).slice(-6).map(function(l,i){return<div key={i} style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.bg3,color:T.text2}}>{fmtDate(l.date)}: {l.weight}kg</div>;})}</div>
         </div>
         <div style={gs.card}>
@@ -348,7 +359,7 @@ function GymSection(props){
                 <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontWeight:600,fontSize:14,color:T.text}}>{ex.name}</span>{last&&<span style={{fontSize:12,color:T.text2}}>Last: {last.weight}kg</span>}{trend&&<span style={{fontSize:16,color:tCol}}>{trend}</span>}</div>
                 <button style={gs.btn} onClick={function(){if(onLogW)onLogW(ex);}}>Log weight</button>
               </div>
-              <Sparkline data={logs} color="#378ADD" width={360} height={44}/>
+              <Sparkline data={logs} color="#378ADD" width={mob?280:360} height={44}/>
               <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>{logs.slice(-5).map(function(l,i){return<div key={i} style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.bg3,color:T.text2}}>{fmtDate(l.date)}: {l.weight}kg</div>;})}</div>
             </div>);
           })}
@@ -367,14 +378,24 @@ function GymSection(props){
             <input style={gs.inp} placeholder={nextSess?nextSess.name:"Workout name"} value={wkt.name} onChange={function(ev){setWkt(function(w){return{...w,name:ev.target.value};});}}/>
             <input style={gs.inp} type="date" value={wkt.date} onChange={function(ev){setWkt(function(w){return{...w,date:ev.target.value};});}}/>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 55px 55px 70px 44px",gap:6,marginBottom:4}}>{["Exercise","Sets","Reps","kg",""].map(function(h,i){return<div key={i} style={{fontSize:9,color:T.text3}}>{h}</div>;})}</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 55px 55px 70px 44px",gap:6,marginBottom:8}}>
-            <input style={gs.inp} placeholder="e.g. Squat" value={row.exercise} onChange={function(ev){setRow(function(r){return{...r,exercise:ev.target.value};});}}/>
-            <input style={gs.inp} type="number" placeholder="4" value={row.sets} onChange={function(ev){setRow(function(r){return{...r,sets:ev.target.value};});}}/>
-            <input style={gs.inp} type="number" placeholder="8" value={row.reps} onChange={function(ev){setRow(function(r){return{...r,reps:ev.target.value};});}}/>
-            <input style={gs.inp} type="number" placeholder="80" value={row.weight} onChange={function(ev){setRow(function(r){return{...r,weight:ev.target.value};});}}/>
-            <button style={gs.btnP} onClick={addRow}>+</button>
-          </div>
+          {mob?(<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10}}>
+            <input style={{...gs.inp,padding:"10px 12px",fontSize:14}} placeholder="Exercise (e.g. Squat)" value={row.exercise} onChange={function(ev){setRow(function(r){return{...r,exercise:ev.target.value};});}}/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              <input style={{...gs.inp,padding:"10px 12px",fontSize:14}} type="number" placeholder="Sets" value={row.sets} onChange={function(ev){setRow(function(r){return{...r,sets:ev.target.value};});}}/>
+              <input style={{...gs.inp,padding:"10px 12px",fontSize:14}} type="number" placeholder="Reps" value={row.reps} onChange={function(ev){setRow(function(r){return{...r,reps:ev.target.value};});}}/>
+              <input style={{...gs.inp,padding:"10px 12px",fontSize:14}} type="number" placeholder="kg" value={row.weight} onChange={function(ev){setRow(function(r){return{...r,weight:ev.target.value};});}}/>
+            </div>
+            <button style={{...gs.btnP,padding:"10px",fontSize:14,borderRadius:10}} onClick={addRow}>+ Add set</button>
+          </div>):(<div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 55px 55px 70px 44px",gap:6,marginBottom:4}}>{["Exercise","Sets","Reps","kg",""].map(function(h,i){return<div key={i} style={{fontSize:9,color:T.text3}}>{h}</div>;})}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 55px 55px 70px 44px",gap:6,marginBottom:8}}>
+              <input style={gs.inp} placeholder="e.g. Squat" value={row.exercise} onChange={function(ev){setRow(function(r){return{...r,exercise:ev.target.value};});}}/>
+              <input style={gs.inp} type="number" placeholder="4" value={row.sets} onChange={function(ev){setRow(function(r){return{...r,sets:ev.target.value};});}}/>
+              <input style={gs.inp} type="number" placeholder="8" value={row.reps} onChange={function(ev){setRow(function(r){return{...r,reps:ev.target.value};});}}/>
+              <input style={gs.inp} type="number" placeholder="80" value={row.weight} onChange={function(ev){setRow(function(r){return{...r,weight:ev.target.value};});}}/>
+              <button style={gs.btnP} onClick={addRow}>+</button>
+            </div>
+          </div>)}
           {wkt.sets.length>0&&<div style={{marginBottom:12}}>{wkt.sets.map(function(ws,wi){return(<div key={ws.id||wi} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"5px 8px",background:T.bg3,borderRadius:6,marginBottom:4}}><span style={{color:T.text}}>{ws.exercise}</span><span style={{color:T.text2}}>{ws.sets}×{ws.reps} @ {ws.weight}kg</span><button onClick={function(){removeRow(wi);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:14}}>×</button></div>);})}</div>}
           <button style={gs.btnP} onClick={saveWkt}>Save & advance rotation →</button>
         </div>
@@ -390,9 +411,9 @@ function GymSection(props){
         </div>);})}
         <div style={{marginTop:14,paddingTop:12,borderTop:"0.5px solid "+T.border}}>
           <div style={{fontSize:11,color:T.text2,marginBottom:8}}>Add to rotation</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
-            <input style={gs.inp} placeholder="Session name" value={rName} onChange={function(ev){setRName(ev.target.value);}}/>
-            <input style={gs.inp} placeholder="Focus muscles" value={rFocus} onChange={function(ev){setRFocus(ev.target.value);}}/>
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:6}}>
+            <input style={mob?{...gs.inp,padding:"10px 12px",fontSize:14}:gs.inp} placeholder="Session name" value={rName} onChange={function(ev){setRName(ev.target.value);}}/>
+            <input style={mob?{...gs.inp,padding:"10px 12px",fontSize:14}:gs.inp} placeholder="Focus muscles" value={rFocus} onChange={function(ev){setRFocus(ev.target.value);}}/>
           </div>
           <button style={gs.btnP} onClick={addRotItem}>Add session</button>
         </div>
@@ -405,6 +426,7 @@ function GymSection(props){
 }
 
 function FinanceSection({data,onUpdate}){
+  const mob=useIsMob();
   const [month,setMonth]=useState(todayStr().slice(0,7));
   const [expForm,setExpForm]=useState({name:"",amount:"",cat:"Other"});
   const [editExpId,setEditExpId]=useState(null);
@@ -470,7 +492,7 @@ function FinanceSection({data,onUpdate}){
       <div style={{display:"grid",gridTemplateColumns:budgetLeft!==null?"repeat(4,1fr)":"repeat(3,1fr)",gap:10,marginBottom:12}}>
         {[{label:"Income",value:"$"+totalIncome.toFixed(2),color:T.success},{label:"Expenses",value:"$"+totalExpenses.toFixed(2),color:T.danger},{label:"Net",value:(net>=0?"+":"")+net.toFixed(2),color:net>=0?T.success:T.danger}].concat(budgetLeft!==null?[{label:"Budget left",value:(budgetLeft>=0?"$":"−$")+Math.abs(budgetLeft).toFixed(2),color:budgetLeft>=0?T.warn:T.danger}]:[]).map(function(s){return(<div key={s.label} style={{...fCard(),marginBottom:0,textAlign:"center"}}><div style={{fontSize:10,color:T.text3,marginBottom:4}}>{s.label}</div><div style={{fontSize:budgetLeft!==null?18:22,fontWeight:700,color:s.color}}>{s.value}</div></div>);})}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+      <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10,marginBottom:10}}>
         <div style={fCard()}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>Income Sources</div><button style={fBtn} onClick={function(){setEditSrc(function(s){return !s;});}}>{editSrc?"Done":"Edit"}</button></div>
           {sources.map(function(s){const val=srcAmounts[s.id]!==undefined?srcAmounts[s.id]:(s.amount||"");return(<div key={s.id} style={{marginBottom:10}}>{editSrc&&<input style={{...fInp,marginBottom:4}} placeholder={"Source "+s.id} value={s.name} onChange={function(ev){updateSourceName(s.id,ev.target.value);}}/>}{!editSrc&&<div style={{fontSize:11,color:T.text2,marginBottom:4}}>{s.name||"Source "+s.id}</div>}<input style={fInp} type="number" step="0.01" placeholder="0.00" value={val} onChange={function(ev){updateSourceIncome(s.id,ev.target.value);}}/></div>);})}
@@ -482,7 +504,7 @@ function FinanceSection({data,onUpdate}){
           <div style={{borderTop:"0.5px solid "+T.border,paddingTop:8,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:T.text2}}>Total expenses</span><span style={{fontSize:13,fontWeight:700,color:T.danger}}>${totalExpenses.toFixed(2)}</span></div>
         </div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+      <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10,marginBottom:10}}>
         <div style={fCard()}>
           <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:2}}>Weekly Budget</div>
           <div style={{fontSize:10,color:T.text3,marginBottom:12}}>GoTab income this month ÷ 4 weeks</div>
@@ -522,7 +544,7 @@ function FinanceSection({data,onUpdate}){
           </div>}
         </div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+      <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10,marginBottom:10}}>
         <div style={fCard()}>
           <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:6}}>Monthly Budget</div>
           <div style={{fontSize:10,color:T.text3,marginBottom:8}}>Set a spending limit to see how much you have left</div>
@@ -546,12 +568,19 @@ function FinanceSection({data,onUpdate}){
         </div>
         <div style={{marginTop:12,marginBottom:14,padding:"10px 12px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"0.5px solid rgba(255,255,255,0.07)"}}>
           <div style={{fontSize:10,color:T.text3,marginBottom:8,fontWeight:600,textTransform:"uppercase",letterSpacing:0.4}}>Add one-off expense</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 90px 105px 44px",gap:6,alignItems:"center"}}>
+          {mob?(<div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <input style={{...fInp,padding:"10px 12px",fontSize:14}} placeholder="e.g. KFC Brimbank" value={expForm.name} onChange={function(ev){setExpForm(function(f){return{...f,name:ev.target.value};});}}/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <input style={{...fInp,padding:"10px 12px",fontSize:14}} type="number" step="0.01" placeholder="Amount $" value={expForm.amount} onChange={function(ev){setExpForm(function(f){return{...f,amount:ev.target.value};});}}/>
+              <select style={{...fInp,padding:"10px 12px",fontSize:14}} value={expForm.cat} onChange={function(ev){setExpForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select>
+            </div>
+            <button style={{...fBtnP,padding:"11px",fontSize:14,borderRadius:10}} onClick={addExpense}>+ Add expense</button>
+          </div>):(<div style={{display:"grid",gridTemplateColumns:"1fr 90px 105px 44px",gap:6,alignItems:"center"}}>
             <input style={fInp} placeholder="e.g. KFC Brimbank" value={expForm.name} onChange={function(ev){setExpForm(function(f){return{...f,name:ev.target.value};});}}/>
             <input style={fInp} type="number" step="0.01" placeholder="Amount" value={expForm.amount} onChange={function(ev){setExpForm(function(f){return{...f,amount:ev.target.value};});}}/>
             <select style={fInp} value={expForm.cat} onChange={function(ev){setExpForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select>
             <button style={fBtnP} onClick={addExpense}>+</button>
-          </div>
+          </div>)}
         </div>
         {skippedThisMonth.length>0&&<div style={{marginBottom:10,padding:"6px 10px",borderRadius:8,background:"rgba(255,255,255,0.03)",border:"0.5px solid rgba(255,255,255,0.07)"}}><div style={{fontSize:9,color:T.text3,marginBottom:6}}>SKIPPED THIS MONTH — click to restore</div>{skippedThisMonth.map(function(t){return(<button key={t.id} onClick={function(){restoreRecurring(t.id);}} style={{...fBtn,marginRight:4,marginBottom:4,fontSize:10,textDecoration:"line-through",color:T.text3}}>{t.name}</button>);})}</div>}
         {recurringThisMonth.length>0&&<div style={{marginBottom:14}}>
@@ -571,7 +600,17 @@ function FinanceSection({data,onUpdate}){
           <div style={{fontSize:10,fontWeight:700,color:T.warn,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>One-off Spending</div>
           {oneOffThisMonth.length===0&&<div style={{fontSize:11,color:T.text3,padding:"8px 0"}}>No one-off expenses added yet — use the form above</div>}
           {oneOffThisMonth.map(function(e){
-            if(editExpId===e.id){return(<div key={e.id} style={{display:"grid",gridTemplateColumns:"1fr 90px 105px 44px 36px",gap:5,marginBottom:6,alignItems:"center"}}>
+            if(editExpId===e.id){return mob?(<div key={e.id} style={{display:"flex",flexDirection:"column",gap:8,marginBottom:8,padding:"10px 12px",borderRadius:10,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.25)"}}>
+              <input style={{...fInp,padding:"10px 12px",fontSize:14}} value={editExpForm.name} onChange={function(ev){setEditExpForm(function(f){return{...f,name:ev.target.value};});}}/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <input style={{...fInp,padding:"10px 12px",fontSize:14}} type="number" step="0.01" value={editExpForm.amount} onChange={function(ev){setEditExpForm(function(f){return{...f,amount:ev.target.value};});}}/>
+                <select style={{...fInp,padding:"10px 12px",fontSize:14}} value={editExpForm.cat} onChange={function(ev){setEditExpForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <button style={{...fBtnP,padding:"10px",fontSize:14,borderRadius:10}} onClick={saveEditExp}>Save ✓</button>
+                <button style={{...fBtn,padding:"10px",fontSize:14,borderRadius:10,textAlign:"center"}} onClick={function(){setEditExpId(null);}}>Cancel</button>
+              </div>
+            </div>):(<div key={e.id} style={{display:"grid",gridTemplateColumns:"1fr 90px 105px 44px 36px",gap:5,marginBottom:6,alignItems:"center"}}>
               <input style={fInp} value={editExpForm.name} onChange={function(ev){setEditExpForm(function(f){return{...f,name:ev.target.value};});}}/>
               <input style={fInp} type="number" step="0.01" value={editExpForm.amount} onChange={function(ev){setEditExpForm(function(f){return{...f,amount:ev.target.value};});}}/>
               <select style={fInp} value={editExpForm.cat} onChange={function(ev){setEditExpForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select>
@@ -598,7 +637,7 @@ function FinanceSection({data,onUpdate}){
       <div style={fCard()}>
         <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:4}}>6-Month Forecast</div>
         <div style={{fontSize:10,color:T.text3,marginBottom:12}}>Based on current income & average of past 3 months' spending</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
+        <div style={{display:"grid",gridTemplateColumns:mob?"repeat(3,1fr)":"repeat(6,1fr)",gap:6}}>
           {forecast.map(function(f,i){return(<div key={i} style={{textAlign:"center",padding:"10px 6px",borderRadius:10,background:f.net>=0?"rgba(105,240,174,0.08)":"rgba(255,107,107,0.08)",border:"0.5px solid "+(f.net>=0?"rgba(105,240,174,0.2)":"rgba(255,107,107,0.2)")}}><div style={{fontSize:9,color:T.text3,marginBottom:4}}>{fmtShortM(f.month)}</div><div style={{fontSize:10,color:T.success,marginBottom:1}}>+${f.income.toFixed(0)}</div><div style={{fontSize:10,color:T.danger,marginBottom:4}}>-${f.expenses.toFixed(0)}</div><div style={{fontSize:12,fontWeight:700,color:f.net>=0?T.success:T.danger}}>{f.net>=0?"+":""}{f.net.toFixed(0)}</div></div>);})}
         </div>
       </div>
@@ -625,6 +664,7 @@ function App(){
   const [modal,setModal]=useState(null);
   const [mForm,setMForm]=useState({});
   const [docIn,setDocIn]=useState({title:"",tags:"",content:""});
+  const mob=useIsMob();
 
   useEffect(function(){try{localStorage.setItem("dash_v1",JSON.stringify(data));}catch(_){};},[data]);
 
@@ -663,6 +703,33 @@ function App(){
   function submitRefl(){if(!reflIn.trim())return;const na=reflAns.concat([{q:reflQs[reflStep-1],a:reflIn}]);setReflAns(na);setReflIn("");if(reflStep<reflQs.length){setReflStep(reflStep+1);}else{const sum="Week "+new Date().toLocaleDateString("en-AU")+": "+na.map(function(qa){return qa.a.slice(0,40);}).join(" | ");setReflSum(sum);setData(function(p){return{...p,reflections:p.reflections.concat([{date:new Date().toISOString(),answers:na,summary:sum}])};});setReflStep(reflQs.length+1);}}
 
   function renderWeek(){
+    if(mob){
+      const dayEvs=UNI_EVENTS.filter(function(ev){return ev.date===activeDay;}).concat(WORK_EVENTS.filter(function(ev){return ev.date===activeDay;})).sort(function(a,b){return(a.time||"").localeCompare(b.time||"");});
+      return(
+        <div>
+          <div style={{display:"flex",gap:4,overflowX:"auto",paddingBottom:6,marginBottom:10}}>
+            {weekDates.map(function(d,di){const ds=dStr(d);const isTdy=ds===todayStr();const isActive=ds===activeDay;return(
+              <button key={di} onClick={function(){setActiveDay(ds);}} style={{flex:"0 0 auto",minWidth:42,padding:"7px 6px",borderRadius:10,border:isActive?"1px solid "+T.accent:"0.5px solid "+T.border,background:isActive?T.accentBg:"rgba(255,255,255,0.03)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                <span style={{fontSize:9,color:isTdy?T.accent:T.text3,fontWeight:600}}>{DAYS[di]}</span>
+                <span style={{fontSize:15,fontWeight:isTdy?700:500,color:isTdy?T.accent:isActive?T.text:T.text2}}>{d.getDate()}</span>
+                {UNI_EVENTS.concat(WORK_EVENTS).some(function(ev){return ev.date===ds;})&&<div style={{width:4,height:4,borderRadius:"50%",background:isActive?T.accent:T.text3}}/>}
+              </button>
+            );})}
+          </div>
+          {dayEvs.length===0?<div style={{fontSize:12,color:T.text3,padding:"12px 0",textAlign:"center"}}>No events today</div>:dayEvs.map(function(ev){const isW=!!ev.type;const col=isW?wCol(ev.type):(SC[ev.subject]||"#888");const ce=data.uni.completedEvents||[];const done=!isW&&ce.indexOf(ev.id)!==-1;return(
+            <div key={ev.id} onClick={function(){if(!isW)toggleCalEv(ev.id);}} style={{display:"flex",gap:10,padding:"10px 12px",borderRadius:10,background:col+"14",border:"0.5px solid "+col+"35",marginBottom:8,cursor:isW?"default":"pointer",opacity:done?0.5:1,alignItems:"flex-start"}}>
+              <div style={{width:3,background:col,borderRadius:2,alignSelf:"stretch",minHeight:28,flexShrink:0,marginTop:2}}/>
+              <div style={{flex:1}}>
+                <div style={{fontSize:11,fontWeight:700,color:col}}>{isW?"Work":(SUBJECTS[ev.subject]||ev.subject)}{ev.assessment?" 📋":""}</div>
+                <div style={{fontSize:13,color:T.text,marginTop:2,lineHeight:1.4}}>{ev.title}</div>
+                <div style={{fontSize:10,color:T.text3,marginTop:3}}>{ev.time}</div>
+              </div>
+              {!isW&&<input type="checkbox" checked={done} onChange={function(){toggleCalEv(ev.id);}} style={{accentColor:col,width:18,height:18,flexShrink:0}} onClick={function(e){e.stopPropagation();}}/>}
+            </div>
+          );})}
+        </div>
+      );
+    }
     const PPM=0.26;
     const allEvs=[];weekDates.forEach(function(d){UNI_EVENTS.filter(function(ev){return ev.date===dStr(d);}).forEach(function(ev){allEvs.push(ev);});WORK_EVENTS.filter(function(ev){return ev.date===dStr(d);}).forEach(function(ev){allEvs.push(ev);});});
     const allT=allEvs.length>0?allEvs.map(function(ev){return parseTimes(ev.time);}):[];
@@ -707,15 +774,15 @@ function App(){
     <div style={{fontFamily:"system-ui,sans-serif",minHeight:"100vh",background:"transparent",color:T.text,position:"relative"}}>
       {/* Animated glass background */}
       <div className="glass-bg" id="glassBg"><div className="streak s1"/><div className="streak s2"/><div className="streak s3"/><div className="streak s4"/></div>
-      <nav style={{display:"flex",gap:4,padding:"10px 16px",background:"rgba(5,7,26,0.7)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"0.5px solid rgba(199,125,255,0.2)",overflowX:"auto",alignItems:"center",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 20px rgba(0,0,0,0.4)"}}>
+      <nav className="desk-nav" style={{gap:4,padding:"10px 16px",background:"rgba(5,7,26,0.7)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"0.5px solid rgba(199,125,255,0.2)",overflowX:"auto",alignItems:"center",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 20px rgba(0,0,0,0.4)"}}>
         <div style={{fontSize:13,fontWeight:700,color:T.accent,marginRight:14,textShadow:"0 0 12px rgba(199,125,255,0.6)"}}>Jayden</div>
         {["Dashboard","Uni","Work","Gym","Personal","Finance","Reflection"].map(function(s){return<button key={s} style={navBtn(page===s)} onClick={function(){setPage(s);}}>{s}</button>;})}
       </nav>
-      <div style={{padding:"12px 14px",maxWidth:1100,margin:"0 auto",position:"relative",zIndex:1}}>
+      <div className="mob-pb" style={{padding:"12px 14px",maxWidth:1100,margin:"0 auto",position:"relative",zIndex:1}}>
 
         {page==="Dashboard"&&<div>
           {/* Calendar + weather side by side */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 220px",gap:10,marginBottom:12,alignItems:"start"}}>
+          <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 220px",gap:10,marginBottom:12,alignItems:"start"}}>
             <div style={card({marginBottom:0})}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
                 <div style={{fontSize:11,fontWeight:500,color:T.text}}>Week of {fmtDate(dStr(weekDates[0]))} — {fmtDate(dStr(weekDates[6]))}</div>
@@ -759,7 +826,7 @@ function App(){
           </div>
 
           {/* 3-col */}
-          <div style={{display:"grid",gridTemplateColumns:"220px 1fr 220px",gap:10}}>
+          <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"220px 1fr 220px",gap:10}}>
             <div style={card()}>
               <div style={sT}>Upcoming assessments</div>
               {upcoming.length===0?<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>:upcoming.map(function(a){const days=daysBetween(a.date);return(<div key={a.id} style={{marginBottom:10,paddingBottom:10,borderBottom:"0.5px solid "+T.border,cursor:"pointer"}} onClick={function(){setPage("Uni");}}>
@@ -772,6 +839,13 @@ function App(){
               <div style={card()}>
                 <div style={sT}>Next session — pre-fill weights</div>
                 <div style={{fontSize:11,color:T.text2,marginBottom:8}}>{nextRot?<span>Next up: <strong style={{color:T.success}}>{nextRot.name}</strong> — {nextRot.focus}</span>:"Set up your rotation in the Gym tab."}</div>
+                {mob?nxtRows.map(function(row,i){return(<div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 52px 52px 64px",gap:5,marginBottom:6}}>
+                  <input style={{...inp,padding:"8px 8px",fontSize:12}} placeholder={["Bench Press","Squat","OHP"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
+                  <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="Sets" value={row.sets} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,sets:ev.target.value}:x;});});}}/>
+                  <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="Reps" value={row.reps} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,reps:ev.target.value}:x;});});}}/>
+                  <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="kg" value={row.weight} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,weight:ev.target.value}:x;});});}}/>
+                </div>);}):(
+                <div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 50px 50px 60px",gap:6,marginBottom:4}}>{["Exercise","Sets","Reps","kg"].map(function(h){return<div key={h} style={{fontSize:9,color:T.text3}}>{h}</div>;})}</div>
                 {nxtRows.map(function(row,i){return(<div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 50px 50px 60px",gap:6,marginBottom:6}}>
                   <input style={inp} placeholder={["Bench Press","Squat","Overhead Press"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
@@ -779,6 +853,7 @@ function App(){
                   <input style={inp} type="number" placeholder="8" value={row.reps} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,reps:ev.target.value}:x;});});}}/>
                   <input style={inp} type="number" placeholder="80" value={row.weight} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,weight:ev.target.value}:x;});});}}/>
                 </div>);})}
+                </div>)}
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4}}>
                   <button style={btn} onClick={function(){setNxtRows(function(r){return r.concat([{id:Date.now(),exercise:"",sets:"",reps:"",weight:""}]);});}}>+ Row</button>
                   <button style={btnP} onClick={saveNextSess}>Save to Gym →</button>
@@ -805,7 +880,7 @@ function App(){
         {page==="Uni"&&<div>
           <div style={card()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={sT}>Subject progress</div><button style={btn} onClick={function(){setModal("add_subject");setMForm({});}}>+ Subject</button></div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>{data.uni.subjects.map(function(s){return(<div key={s.id}><div style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:3}}><span style={{fontWeight:600,color:SC[s.name]||T.text}}>{SUBJECTS[s.name]||s.name}</span><span style={{color:T.text2}}>{s.progress}%</span></div><input type="range" min={0} max={100} value={s.progress} onChange={function(ev){updateProg(s.id,ev.target.value);}} style={{width:"100%"}}/><div style={{height:3,borderRadius:2,background:T.bg3,overflow:"hidden"}}><div style={{width:s.progress+"%",height:"100%",background:SC[s.name]||T.accent,borderRadius:2,transition:"width 0.3s"}}/></div></div>);})}</div>
+            <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14}}>{data.uni.subjects.map(function(s){return(<div key={s.id}><div style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:3}}><span style={{fontWeight:600,color:SC[s.name]||T.text}}>{SUBJECTS[s.name]||s.name}</span><span style={{color:T.text2}}>{s.progress}%</span></div><input type="range" min={0} max={100} value={s.progress} onChange={function(ev){updateProg(s.id,ev.target.value);}} style={{width:"100%"}}/><div style={{height:3,borderRadius:2,background:T.bg3,overflow:"hidden"}}><div style={{width:s.progress+"%",height:"100%",background:SC[s.name]||T.accent,borderRadius:2,transition:"width 0.3s"}}/></div></div>);})}</div>
           </div>
           <div style={card()}>
             <div style={sT}>Classes this week</div>
@@ -834,7 +909,7 @@ function App(){
         {page==="Personal"&&<div style={{maxWidth:640}}>
           <div style={card()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={sT}>Tasks</div><div style={{display:"flex",gap:6}}>{doneTasks.length>0&&<button style={{...btn,color:T.success,borderColor:T.success+"50"}} onClick={archiveDone}>Archive done</button>}<button style={btn} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+ Task</button></div></div>
-            {editTaskId&&<div style={{marginBottom:14,padding:"10px 12px",background:T.bg3,borderRadius:8,border:"0.5px solid "+T.accent+"40"}}><div style={{fontSize:11,color:T.accent,marginBottom:8,fontWeight:500}}>Editing task</div><div style={{display:"flex",flexDirection:"column",gap:6}}><input style={inp} value={editTaskForm.name||""} onChange={function(ev){setEditTaskForm(function(f){return{...f,name:ev.target.value};});}} placeholder="Task name"/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}><select style={inp} value={editTaskForm.cat||"Errands"} onChange={function(ev){setEditTaskForm(function(f){return{...f,cat:ev.target.value};});}}>{TASK_CATS.map(function(c){return<option key={c}>{c}</option>;})}</select><select style={inp} value={editTaskForm.priority||"normal"} onChange={function(ev){setEditTaskForm(function(f){return{...f,priority:ev.target.value};});}}><option value="normal">Normal</option><option value="urgent">Urgent</option></select><input type="date" style={inp} value={editTaskForm.due||""} onChange={function(ev){setEditTaskForm(function(f){return{...f,due:ev.target.value};});}}/></div><div style={{display:"flex",gap:6,justifyContent:"flex-end"}}><button style={btn} onClick={function(){setEditTaskId(null);}}>Cancel</button><button style={btnP} onClick={saveEditTask}>Save</button></div></div></div>}
+            {editTaskId&&<div style={{marginBottom:14,padding:"10px 12px",background:T.bg3,borderRadius:8,border:"0.5px solid "+T.accent+"40"}}><div style={{fontSize:11,color:T.accent,marginBottom:8,fontWeight:500}}>Editing task</div><div style={{display:"flex",flexDirection:"column",gap:6}}><input style={inp} value={editTaskForm.name||""} onChange={function(ev){setEditTaskForm(function(f){return{...f,name:ev.target.value};});}} placeholder="Task name"/><div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:6}}><select style={inp} value={editTaskForm.cat||"Errands"} onChange={function(ev){setEditTaskForm(function(f){return{...f,cat:ev.target.value};});}}>{TASK_CATS.map(function(c){return<option key={c}>{c}</option>;})}</select><select style={inp} value={editTaskForm.priority||"normal"} onChange={function(ev){setEditTaskForm(function(f){return{...f,priority:ev.target.value};});}}><option value="normal">Normal</option><option value="urgent">Urgent</option></select><input type="date" style={inp} value={editTaskForm.due||""} onChange={function(ev){setEditTaskForm(function(f){return{...f,due:ev.target.value};});}}/></div><div style={{display:"flex",gap:6,justifyContent:"flex-end"}}><button style={btn} onClick={function(){setEditTaskId(null);}}>Cancel</button><button style={btnP} onClick={saveEditTask}>Save</button></div></div></div>}
             {data.personal.tasks.length===0&&<div style={{fontSize:12,color:T.text2}}>No tasks yet.</div>}
             {["urgent","normal"].map(function(pri){const tasks=data.personal.tasks.filter(function(t){return t.priority===pri;}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});if(tasks.length===0)return null;return(<div key={pri} style={{marginBottom:14}}><div style={{fontSize:9,fontWeight:700,color:pri==="urgent"?T.danger:T.text3,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>{pri}</div>{tasks.map(function(t){const urg=taskUrg(t);const col=TUC[urg];const bg=TUB[urg];return(<div key={t.id} style={{display:"flex",alignItems:"flex-start",gap:8,marginBottom:8,padding:"8px 10px",borderRadius:7,background:bg,border:"0.5px solid "+col+"30"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:10,color:col,marginTop:1}}>{t.cat} · {taskLabel(t)}</div></div><button onClick={function(){setEditTaskId(t.id);setEditTaskForm({name:t.name,cat:t.cat,priority:t.priority,due:t.due});}} style={{...btn,fontSize:10,padding:"2px 7px"}}>Edit</button></div>);})}</div>);})}
           </div>
@@ -854,15 +929,29 @@ function App(){
         </div>}
       </div>
 
-      {modal&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.75)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100}} onClick={function(){setModal(null);}}>
-        <div style={{background:"rgba(255,255,255,0.09)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:16,padding:22,width:320,border:"0.5px solid rgba(199,125,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.1)"}} onClick={function(ev){ev.stopPropagation();}}>
-          <div style={{fontSize:14,fontWeight:500,marginBottom:14,color:T.text}}>{modal==="add_subject"&&"Add subject"}{modal==="add_exercise"&&"Add exercise"}{modal==="log_weight"&&"Log weight — "+(mForm.exName||"")}{modal==="add_task"&&"Add task"}</div>
-          {(modal==="add_subject"||modal==="add_exercise"||modal==="add_task")&&<div style={{marginBottom:10}}><div style={{fontSize:11,color:T.text2,marginBottom:4}}>Name</div><input style={inp} value={mForm.name||""} onChange={function(ev){setMForm(function(f){return{...f,name:ev.target.value};});}} placeholder="Enter name..."/></div>}
-          {modal==="log_weight"&&<div style={{marginBottom:10}}><div style={{fontSize:11,color:T.text2,marginBottom:4}}>Weight (kg)</div><input type="number" step="0.5" style={inp} value={mForm.weight||""} onChange={function(ev){setMForm(function(f){return{...f,weight:ev.target.value};});}} placeholder="e.g. 85"/></div>}
-          {modal==="add_task"&&<div><div style={{marginBottom:10}}><div style={{fontSize:11,color:T.text2,marginBottom:4}}>Category</div><select style={inp} value={mForm.cat||"Errands"} onChange={function(ev){setMForm(function(f){return{...f,cat:ev.target.value};});}}>{TASK_CATS.map(function(c){return<option key={c}>{c}</option>;})}</select></div><div style={{marginBottom:10}}><div style={{fontSize:11,color:T.text2,marginBottom:4}}>Priority</div><select style={inp} value={mForm.priority||"normal"} onChange={function(ev){setMForm(function(f){return{...f,priority:ev.target.value};});}}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></div><div style={{marginBottom:10}}><div style={{fontSize:11,color:T.text2,marginBottom:4}}>Due date</div><input type="date" style={inp} value={mForm.due||""} onChange={function(ev){setMForm(function(f){return{...f,due:ev.target.value};});}}/></div></div>}
-          <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}><button style={btn} onClick={function(){setModal(null);}}>Cancel</button><button style={btnP} onClick={saveModal}>Save</button></div>
+      {modal&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.82)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:200,padding:mob?"0":"16px"}} onClick={function(){setModal(null);}}>
+        <div style={{background:"rgba(14,16,40,0.97)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 32px":"22px",width:mob?"100%":"340px",maxWidth:"100%",border:"0.5px solid rgba(199,125,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.1)"}} onClick={function(ev){ev.stopPropagation();}}>
+          {mob&&<div style={{width:36,height:4,borderRadius:2,background:"rgba(255,255,255,0.2)",margin:"0 auto 20px"}}/>}
+          <div style={{fontSize:15,fontWeight:600,marginBottom:16,color:T.text}}>{modal==="add_subject"&&"Add subject"}{modal==="add_exercise"&&"Add exercise"}{modal==="log_weight"&&"Log weight — "+(mForm.exName||"")}{modal==="add_task"&&"Add task"}</div>
+          {(modal==="add_subject"||modal==="add_exercise"||modal==="add_task")&&<div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Name</div><input style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.name||""} onChange={function(ev){setMForm(function(f){return{...f,name:ev.target.value};});}} placeholder="Enter name..."/></div>}
+          {modal==="log_weight"&&<div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Weight (kg)</div><input type="number" step="0.5" style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.weight||""} onChange={function(ev){setMForm(function(f){return{...f,weight:ev.target.value};});}} placeholder="e.g. 85"/></div>}
+          {modal==="add_task"&&<div><div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Category</div><select style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.cat||"Errands"} onChange={function(ev){setMForm(function(f){return{...f,cat:ev.target.value};});}}>{TASK_CATS.map(function(c){return<option key={c}>{c}</option>;})}</select></div><div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Priority</div><select style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.priority||"normal"} onChange={function(ev){setMForm(function(f){return{...f,priority:ev.target.value};});}}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></div><div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Due date</div><input type="date" style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.due||""} onChange={function(ev){setMForm(function(f){return{...f,due:ev.target.value};});}}/></div></div>}
+          <div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
+            {mob?<button style={{...btnP,padding:"13px",fontSize:14,width:"100%",borderRadius:10}} onClick={saveModal}>Save</button>:<button style={btnP} onClick={saveModal}>Save</button>}
+            <button style={{...(mob?{...btn,padding:"11px",fontSize:13,width:"100%",borderRadius:10,textAlign:"center"}:btn)}} onClick={function(){setModal(null);}}>Cancel</button>
+          </div>
         </div>
       </div>}
+
+      <nav className="mob-btm" style={{background:"rgba(5,7,26,0.97)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"0.5px solid rgba(199,125,255,0.18)",justifyContent:"space-around",alignItems:"stretch",boxShadow:"0 -4px 24px rgba(0,0,0,0.5)"}}>
+        {[{name:"Dashboard",icon:"⊞"},{name:"Uni",icon:"📚"},{name:"Work",icon:"💼"},{name:"Gym",icon:"💪"},{name:"Personal",icon:"✓"},{name:"Finance",icon:"$"},{name:"Reflection",icon:"◎"}].map(function(item){const active=page===item.name;return(
+          <button key={item.name} onClick={function(){setPage(item.name);}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,padding:"8px 4px",color:active?T.accent:T.text3,flex:1,minHeight:54,position:"relative"}}>
+            {active&&<div style={{position:"absolute",top:0,left:"50%",transform:"translateX(-50%)",width:24,height:2,borderRadius:1,background:T.accent}}/>}
+            <span style={{fontSize:17,lineHeight:1}}>{item.icon}</span>
+            <span style={{fontSize:9,fontWeight:active?700:400,letterSpacing:0.2}}>{item.name}</span>
+          </button>
+        );})}
+      </nav>
     </div>
   );
 }
