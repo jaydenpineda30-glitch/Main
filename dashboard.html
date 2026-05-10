@@ -14,6 +14,7 @@
 <script src="data-validator.js"></script>
 <script src="error-boundary.js"></script>
 <script src="monitoring-dashboard.js"></script>
+<script src="ollama-service.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
   body{
@@ -281,7 +282,7 @@ const TUB={red:T.dangerBg,yellow:T.warnBg,orange:T.orangeBg,urgent:T.dangerBg,no
 function taskLabel(t){if(t.done)return"done";const od=t.due?daysBetween(t.due)*-1:0;const ref=t.editedAt||t.addedAt||todayStr();const age=Math.floor((new Date()-new Date(ref))/864e5);if(od>0)return od+"d overdue";if(age>7)return"untouched "+age+"d";if(t.due)return"due "+fmtDate(t.due);return"";}
 
 // ── Ollama config ─────────────────────────────────────────────────────────
-const OLLAMA_MODEL="llama3.2";
+const OLLAMA_MODEL="llama2";
 const OLLAMA_URL="http://localhost:11434/api/generate";
 
 // ── Reflection Engine ─────────────────────────────────────────────────────
