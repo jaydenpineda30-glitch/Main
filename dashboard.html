@@ -40,8 +40,38 @@
 </head>
 <body>
 <div id="root"></div>
+<div id="app-error" style="display:none;padding:32px 24px;font-family:system-ui;background:#05071a;color:#ff6b6b;min-height:100vh;position:fixed;inset:0;z-index:9999;overflow:auto;"></div>
+<script>
+window.addEventListener('error', function(e) {
+  var el = document.getElementById('app-error');
+  if (el) {
+    el.style.display = 'block';
+    el.innerHTML = '<h2 style="color:#ff6b6b;margin-bottom:16px">Dashboard Error</h2>' +
+      '<p style="color:#e8eaf6;margin-bottom:8px;font-size:13px">Please report this to your developer:</p>' +
+      '<pre style="background:rgba(255,255,255,0.05);padding:12px;border-radius:8px;font-size:12px;white-space:pre-wrap;color:#ffd166">' +
+      (e.message || 'Unknown error') + '\n\n' + (e.filename || '') + ':' + (e.lineno || '') + '</pre>';
+  }
+});
+</script>
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err: err }; }
+  componentDidCatch(err) {
+    var el = document.getElementById('app-error');
+    if (el) {
+      el.style.display = 'block';
+      el.innerHTML = '<h2 style="color:#ff6b6b;margin-bottom:16px">Render Error</h2>' +
+        '<pre style="background:rgba(255,255,255,0.05);padding:12px;border-radius:8px;font-size:12px;white-space:pre-wrap;color:#ffd166">' +
+        (err ? err.message : 'Unknown') + '</pre>';
+    }
+  }
+  render() {
+    if (this.state.err) return null;
+    return this.props.children;
+  }
+}
 
 const T={bg:"#05071a",bg2:"rgba(255,255,255,0.07)",bg3:"rgba(255,255,255,0.04)",border:"rgba(255,255,255,0.09)",border2:"rgba(255,255,255,0.16)",text:"#e8eaf6",text2:"#9fa8c7",text3:"rgba(255,255,255,0.28)",accent:"#c77dff",accentBg:"rgba(199,125,255,0.15)",danger:"#ff6b6b",dangerBg:"rgba(255,107,107,0.15)",success:"#69f0ae",successBg:"rgba(105,240,174,0.15)",warn:"#ffd166",warnBg:"rgba(255,209,102,0.15)",orange:"#ff9a3c",orangeBg:"rgba(255,154,60,0.15)"};
 const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
@@ -314,7 +344,7 @@ function analyzeReflection(answers,history){
     const prev=history.slice(-5);
     const prevTexts=prev.map(function(r){return(r.answers||[]).map(function(a){return(a.a||a.answer||"");}).join(" ").toLowerCase();});
     const stressWeeks=prevTexts.filter(function(t){return countHits(t,NEG)>countHits(t,POS);}).length;
-    const prevPats=history.slice(-4).filter(function(r){return r.analysis&&r.analysis.detectedPatterns;}).map(function(r){return r.analysis.detectedPatterns;}).flat();
+    const prevPats=[].concat.apply([],history.slice(-4).filter(function(r){return r.analysis&&r.analysis.detectedPatterns;}).map(function(r){return r.analysis.detectedPatterns;}));
     const burnCount=prevPats.filter(function(p){return p==="burnout_risk";}).length;
     const perfCount=prevPats.filter(function(p){return p==="perfectionism";}).length;
     const stressCount=prevPats.filter(function(p){return p==="high_stress";}).length;
@@ -1119,7 +1149,7 @@ function App(){
 }
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(React.createElement(App));
+root.render(React.createElement(ErrorBoundary, null, React.createElement(App)));
 </script>
 <script>
 // Inject floating particles into the glass background
