@@ -519,7 +519,18 @@ function GymSection(props){
   const gs={card:{background:T.bg2,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",border:"0.5px solid "+T.border2,borderRadius:12,padding:"14px 16px",marginBottom:10,boxShadow:"0 4px 24px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.08)"},btn:{padding:"5px 11px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text2,cursor:"pointer",fontSize:12},btnP:{padding:"6px 13px",borderRadius:8,border:"1px solid rgba(199,125,255,0.45)",background:"rgba(199,125,255,0.15)",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,boxShadow:"0 0 10px rgba(199,125,255,0.2)"},inp:{width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"}};
   function addRow(){if(!row.exercise)return;setWkt(function(w){return{...w,sets:[...w.sets,{...row,id:Date.now()}]};});setRow({exercise:"",sets:"",reps:"",weight:""});}
   function removeRow(i){setWkt(function(w){return{...w,sets:w.sets.filter(function(_,j){return j!==i;})};});}
-  function saveWkt(){if(wkt.sets.length===0)return;const name=wkt.name||(nextSess?nextSess.name:"Workout");const rotId=nextSess?nextSess.id:null;if(onSave)onSave({...wkt,name:name,id:Date.now(),rotId:rotId});setWkt({name:"",date:todayStr(),sets:[]});}
+  function saveWkt(){
+    if(window.DataValidator){
+      const name=wkt.name||(nextSess?nextSess.name:"Workout");
+      const r=DataValidator.validate("gymWorkout",{name:name,date:wkt.date||todayStr(),sets:wkt.sets});
+      if(!r.valid){if(window.showToast)window.showToast(r.firstError);else alert(r.firstError);return;}
+    }else if(wkt.sets.length===0)return;
+    const name=wkt.name||(nextSess?nextSess.name:"Workout");
+    const rotId=nextSess?nextSess.id:null;
+    if(onSave)onSave({...wkt,name:name,id:Date.now(),rotId:rotId});
+    setWkt({name:"",date:todayStr(),sets:[]});
+    if(window.showToast)window.showToast("Workout saved!","success");
+  }
   function addRotItem(){if(!rName)return;const nr=rotation.concat([{id:Date.now(),name:rName,focus:rFocus}]);if(onUpdateRot)onUpdateRot(nr,rotIdx);setRName("");setRFocus("");}
   function removeRotItem(id){const nr=rotation.filter(function(r){return r.id!==id;});if(onUpdateRot)onUpdateRot(nr,Math.min(rotIdx,Math.max(0,nr.length-1)));}
   const tabs=["progress","workout","rotation","archive"];
@@ -654,13 +665,29 @@ function FinanceSection({data,onUpdate,mob}){
   const curDate=new Date(month+"-15");
   const futureMonthsInYear=11-curDate.getMonth();
   const eoyNet=net+futureMonthsInYear*(totalIncome-avgE);
-  function addExpense(){if(!expForm.name||!expForm.amount)return;onUpdate({...data,expenses:allExpenses.concat([{id:Date.now(),name:expForm.name,amount:Number(expForm.amount),cat:expForm.cat,month:month}])});setExpForm({name:"",amount:"",cat:"Other"});}
+  function addExpense(){
+    if(window.DataValidator){
+      const r=DataValidator.validate("financeEntry",{amount:Number(expForm.amount),category:expForm.cat||"Other",date:month+"-01"});
+      if(!r.valid){if(window.showToast)showToast(r.firstError);else alert(r.firstError);return;}
+    }else if(!expForm.name||!expForm.amount)return;
+    onUpdate({...data,expenses:allExpenses.concat([{id:Date.now(),name:expForm.name,amount:Number(expForm.amount),cat:expForm.cat,month:month}])});
+    setExpForm({name:"",amount:"",cat:"Other"});
+    if(window.showToast)showToast("Expense added!","success");
+  }
   function removeOneOff(id){onUpdate({...data,expenses:allExpenses.filter(function(e){return e.id!==id;})});}
   function saveEditExp(){if(!editExpForm.name||!editExpForm.amount)return;onUpdate({...data,expenses:allExpenses.map(function(e){return e.id===editExpId?{...e,name:editExpForm.name,amount:Number(editExpForm.amount),cat:editExpForm.cat}:e;})});setEditExpId(null);}
   function skipRecurring(tId){const mo={...monthOverrides,[tId]:{...(monthOverrides[tId]||{}),excluded:true}};onUpdate({...data,monthlyRecurringOverrides:{...monthlyRecurringOverrides,[month]:mo}});}
   function restoreRecurring(tId){const mo={...monthOverrides};if(mo[tId]){const n={...mo[tId]};delete n.excluded;mo[tId]=n;}onUpdate({...data,monthlyRecurringOverrides:{...monthlyRecurringOverrides,[month]:mo}});}
   function deleteTemplate(tId){onUpdate({...data,recurringTemplates:recurringTemplates.filter(function(t){return t.id!==tId;})});}
-  function addRecurring(){if(!recForm.name||!recForm.amount)return;onUpdate({...data,recurringTemplates:recurringTemplates.concat([{id:"r"+Date.now(),name:recForm.name,amount:Number(recForm.amount),cat:recForm.cat}])});setRecForm({name:"",amount:"",cat:"Bills"});}
+  function addRecurring(){
+    if(window.DataValidator){
+      const r=DataValidator.validate("financeEntry",{amount:Number(recForm.amount),category:recForm.cat||"Bills",date:month+"-01"});
+      if(!r.valid){if(window.showToast)showToast(r.firstError);else alert(r.firstError);return;}
+    }else if(!recForm.name||!recForm.amount)return;
+    onUpdate({...data,recurringTemplates:recurringTemplates.concat([{id:"r"+Date.now(),name:recForm.name,amount:Number(recForm.amount),cat:recForm.cat}])});
+    setRecForm({name:"",amount:"",cat:"Bills"});
+    if(window.showToast)showToast("Recurring entry added!","success");
+  }
   function updateSourceIncome(srcId,val){const mi={...monthlyIncome,[month]:{...(monthlyIncome[month]||{}),[srcId]:Number(val)}};onUpdate({...data,monthlyIncome:mi});}
   function updateSourceName(id,val){onUpdate({...data,sources:sources.map(function(s){return s.id===id?{...s,name:val}:s;})});}
   function updateBudget(val){onUpdate({...data,monthlyBudget:Number(val)});}
@@ -852,6 +879,17 @@ function App(){
   const [reflAnalysisLoading,setReflAnalysisLoading]=useState(false);
   const [ollamaAvailable,setOllamaAvailable]=useState(null);
   const [showMonitor,setShowMonitor]=useState(false);
+  const [toast,setToast]=useState(null); // {msg,type:'error'|'success'|'warn'}
+
+  // Call this anywhere in App to show a brief auto-dismissing notification.
+  // Child components can call window.showToast() which is wired up below.
+  function showToast(msg,type){
+    setToast({msg:msg,type:type||"error"});
+    clearTimeout(window._toastTimer);
+    window._toastTimer=setTimeout(function(){setToast(null);},3500);
+  }
+  // Expose globally so FinanceSection and GymSection can reach it without prop drilling
+  useEffect(function(){window.showToast=showToast;return function(){window.showToast=null;};},[]);
 
   useEffect(function(){try{localStorage.setItem("dash_v1",JSON.stringify(data));}catch(_){};},[data]);
   useEffect(function(){fetch("http://localhost:11434/api/tags").then(function(r){setOllamaAvailable(r.ok);}).catch(function(){setOllamaAvailable(false);});},[]);
@@ -885,12 +923,85 @@ function App(){
   function toggleTask(id){setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.map(function(t){return t.id===id?{...t,done:!t.done}:t;})}}; });}
   function archiveDone(){setData(function(p){const done=p.personal.tasks.filter(function(t){return t.done;}).map(function(t){return{...t,archivedAt:todayStr()};});return{...p,personal:{...p.personal,tasks:p.personal.tasks.filter(function(t){return !t.done;}),archived:(p.personal.archived||[]).concat(done)}};});}
   function restoreTask(id){setData(function(p){const arch=p.personal.archived||[];const match=arch.filter(function(t){return t.id===id;});if(match.length===0)return p;return{...p,personal:{...p.personal,tasks:p.personal.tasks.concat([{...match[0],done:false,archivedAt:undefined}]),archived:arch.filter(function(x){return x.id!==id;})}};});}
-  function saveEditTask(){setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.map(function(t){return t.id===editTaskId?{...t,...editTaskForm,editedAt:todayStr()}:t;})}}; });setEditTaskId(null);setEditTaskForm({});}
-  function logBW(){if(!bwIn)return;setData(function(p){return{...p,gym:{...p.gym,bodyWeight:(p.gym.bodyWeight||[]).concat([{date:todayStr(),weight:Number(bwIn)}]),lastBWWeek:thisWeek}};});setBwIn("");}
-  function saveNextSess(){const rows=nxtRows.filter(function(r){return r.exercise&&r.weight;});if(rows.length===0)return;const name=nextRot?nextRot.name:"Next Session";const rotId=nextRot?nextRot.id:null;const wk={id:Date.now(),name:name,date:todayStr(),rotId:rotId,sets:rows.map(function(r,i){return{...r,id:i+1};})};setData(function(p){const rl=p.gym.rotation?p.gym.rotation.length:1;return{...p,gym:{...p.gym,workouts:(p.gym.workouts||[]).concat([wk]),rotIdx:((p.gym.rotIdx||0)+1)%Math.max(rl,1)}};});setNxtRows([{id:1,exercise:"",sets:"",reps:"",weight:""},{id:2,exercise:"",sets:"",reps:"",weight:""},{id:3,exercise:"",sets:"",reps:"",weight:""}]);}
-  function saveModal(){if(modal==="add_subject")setData(function(p){return{...p,uni:{...p.uni,subjects:p.uni.subjects.concat([{id:Date.now(),name:mForm.name,progress:0}])}};});else if(modal==="add_exercise")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.concat([{id:Date.now(),name:mForm.name,logs:[]}])}};});else if(modal==="log_weight")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.map(function(ex){return ex.id===mForm.exId?{...ex,logs:ex.logs.concat([{date:todayStr(),weight:Number(mForm.weight)}])}:ex;})}};});else if(modal==="add_task")setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.concat([{id:Date.now(),name:mForm.name,cat:mForm.cat||"Errands",priority:mForm.priority||"normal",due:mForm.due,done:false,addedAt:todayStr(),editedAt:null}])}};});setModal(null);setMForm({});}
+  function saveEditTask(){
+    if(window.DataValidator){
+      const r=DataValidator.validate("task",{name:editTaskForm.name,priority:editTaskForm.priority||"normal",due:editTaskForm.due||null,cat:editTaskForm.cat});
+      if(!r.valid){showToast(r.firstError);return;}
+    }
+    setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.map(function(t){return t.id===editTaskId?{...t,...editTaskForm,editedAt:todayStr()}:t;})}}; });
+    setEditTaskId(null);setEditTaskForm({});
+    showToast("Task updated!","success");
+  }
+  function logBW(){
+    if(!bwIn)return;
+    if(window.DataValidator){
+      const r=DataValidator.validate("bodyWeight",{weight:Number(bwIn),date:todayStr()});
+      if(!r.valid){showToast(r.firstError);return;}
+    }
+    setData(function(p){return{...p,gym:{...p.gym,bodyWeight:(p.gym.bodyWeight||[]).concat([{date:todayStr(),weight:Number(bwIn)}]),lastBWWeek:thisWeek}};});
+    setBwIn("");
+    showToast("Body weight logged!","success");
+  }
+  function saveNextSess(){
+    const rows=nxtRows.filter(function(r){return r.exercise&&r.weight;});
+    if(rows.length===0){showToast("Add at least one exercise with a weight.");return;}
+    if(window.DataValidator){
+      const r=DataValidator.validate("gymWorkout",{name:nextRot?nextRot.name:"Next Session",date:todayStr(),sets:rows});
+      if(!r.valid){showToast(r.firstError);return;}
+    }
+    const name=nextRot?nextRot.name:"Next Session";
+    const rotId=nextRot?nextRot.id:null;
+    const wk={id:Date.now(),name:name,date:todayStr(),rotId:rotId,sets:rows.map(function(r,i){return{...r,id:i+1};})};
+    setData(function(p){const rl=p.gym.rotation?p.gym.rotation.length:1;return{...p,gym:{...p.gym,workouts:(p.gym.workouts||[]).concat([wk]),rotIdx:((p.gym.rotIdx||0)+1)%Math.max(rl,1)}};});
+    setNxtRows([{id:1,exercise:"",sets:"",reps:"",weight:""},{id:2,exercise:"",sets:"",reps:"",weight:""},{id:3,exercise:"",sets:"",reps:"",weight:""}]);
+    showToast("Session saved!","success");
+  }
+  function saveModal(){
+    // Validate before saving — validator returns user-friendly messages
+    if(window.DataValidator){
+      if(modal==="add_task"){
+        const r=DataValidator.validate("task",{name:mForm.name,priority:mForm.priority||"normal",due:mForm.due||null,cat:mForm.cat||"Errands"});
+        if(!r.valid){showToast(r.firstError);return;}
+      }
+      if(modal==="add_subject"){
+        if(!mForm.name||!mForm.name.trim()){showToast("Subject name can't be empty.");return;}
+      }
+      if(modal==="add_exercise"){
+        if(!mForm.name||!mForm.name.trim()){showToast("Exercise name can't be empty.");return;}
+      }
+      if(modal==="log_weight"){
+        const r=DataValidator.validate("exerciseLog",{weight:Number(mForm.weight),date:todayStr()});
+        if(!r.valid){showToast(r.firstError);return;}
+      }
+    }
+    if(modal==="add_subject")setData(function(p){return{...p,uni:{...p.uni,subjects:p.uni.subjects.concat([{id:Date.now(),name:mForm.name,progress:0}])}};});
+    else if(modal==="add_exercise")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.concat([{id:Date.now(),name:mForm.name,logs:[]}])}};});
+    else if(modal==="log_weight")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.map(function(ex){return ex.id===mForm.exId?{...ex,logs:ex.logs.concat([{date:todayStr(),weight:Number(mForm.weight)}])}:ex;})}};});
+    else if(modal==="add_task")setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.concat([{id:Date.now(),name:mForm.name,cat:mForm.cat||"Errands",priority:mForm.priority||"normal",due:mForm.due,done:false,addedAt:todayStr(),editedAt:null}])}};});
+    setModal(null);setMForm({});
+    showToast("Saved!","success");
+  }
   function updateFinance(fin){setData(function(p){return{...p,finance:fin};});}
-  function submitRefl(){if(!reflIn.trim())return;const na=reflAns.concat([{q:REFL_QS[reflStep-1],a:reflIn}]);setReflAns(na);setReflIn("");if(reflStep<REFL_QS.length){setReflStep(reflStep+1);}else{setReflStep(REFL_QS.length+1);setReflAnalysisLoading(true);analyzeReflection(na,data.reflections).then(function(an){setReflAnalysis(an);setReflAnalysisLoading(false);setData(function(p){return{...p,reflections:p.reflections.concat([{id:Date.now(),date:new Date().toISOString(),answers:na.map(function(qa,i){return{question:qa.q,answer:qa.a,area:REFL_LABELS[i]};}),analysis:an}])};});}).catch(function(){setReflAnalysisLoading(false);});}}
+  function submitRefl(){
+    if(!reflIn.trim()){showToast("Write something before continuing.");return;}
+    const na=reflAns.concat([{q:REFL_QS[reflStep-1],a:reflIn}]);
+    setReflAns(na);setReflIn("");
+    if(reflStep<REFL_QS.length){
+      setReflStep(reflStep+1);
+    }else{
+      // Final step — validate the full answer set before analysing
+      if(window.DataValidator){
+        const r=DataValidator.validate("reflection",{answers:na});
+        if(!r.valid){showToast(r.firstError);return;}
+      }
+      setReflStep(REFL_QS.length+1);
+      setReflAnalysisLoading(true);
+      analyzeReflection(na,data.reflections).then(function(an){
+        setReflAnalysis(an);setReflAnalysisLoading(false);
+        setData(function(p){return{...p,reflections:p.reflections.concat([{id:Date.now(),date:new Date().toISOString(),answers:na.map(function(qa,i){return{question:qa.q,answer:qa.a,area:REFL_LABELS[i]};}),analysis:an}])};});
+      }).catch(function(){setReflAnalysisLoading(false);showToast("Analysis failed — reflection was still saved.","warn");});
+    }
+  }
 
   function renderWeek(){
     if(mob){
@@ -968,6 +1079,12 @@ function App(){
       {window.StatusBar&&<StatusBar onOpenPanel={function(){setShowMonitor(true);}}/>}
       {/* Full monitoring panel modal */}
       {showMonitor&&window.MonitoringPanel&&<MonitoringPanel onClose={function(){setShowMonitor(false);}}/>}
+      {/* Toast notification — auto-dismisses after 3.5s, never blocks interaction */}
+      {toast&&<div style={{position:"fixed",bottom:mob?90:28,left:"50%",transform:"translateX(-50%)",
+        background:toast.type==="success"?"rgba(105,240,174,0.97)":toast.type==="warn"?"rgba(255,209,102,0.97)":"rgba(255,107,107,0.97)",
+        color:"#05071a",padding:"10px 20px",borderRadius:10,fontSize:13,fontWeight:600,
+        zIndex:500,boxShadow:"0 4px 24px rgba(0,0,0,0.5)",maxWidth:320,textAlign:"center",
+        pointerEvents:"none",whiteSpace:"pre-line"}}>{toast.msg}</div>}
       {!mob&&<nav style={{display:"flex",gap:4,padding:"10px 16px",background:"rgba(5,7,26,0.7)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"0.5px solid rgba(199,125,255,0.2)",overflowX:"auto",alignItems:"center",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 20px rgba(0,0,0,0.4)"}}>
         <div style={{fontSize:13,fontWeight:700,color:T.accent,marginRight:14,textShadow:"0 0 12px rgba(199,125,255,0.6)"}}>Jayden</div>
         {["Dashboard","Uni","Work","Gym","Personal","Finance","Reflection"].map(function(s){return<button key={s} style={navBtn(page===s)} onClick={function(){setPage(s);}}>{s}</button>;})}
