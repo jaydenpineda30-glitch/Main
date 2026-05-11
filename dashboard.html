@@ -17,6 +17,7 @@
 <script src="ollama-service.js"></script>
 <!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script>
   var _fbApp = firebase.initializeApp({
@@ -27,8 +28,12 @@
     messagingSenderId: "134399742010",
     appId: "1:134399742010:web:ed56b8b9d5e426d03ca503"
   });
+  var _auth = firebase.auth();
   var _db = firebase.firestore();
-  var DASH_DOC = _db.collection('dashboards').doc('jayden');
+  var _googleProvider = new firebase.auth.GoogleAuthProvider();
+  window._currentUser = null;
+  // DASH_DOC is set after login using the authenticated uid
+  window.DASH_DOC = null;
 </script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -963,6 +968,8 @@ function App(){
   const [modal,setModal]=useState(null);
   const [mForm,setMForm]=useState({});
   const [syncStatus,setSyncStatus]=useState("loading");
+  const [authUser,setAuthUser]=useState(null);
+  const [authLoading,setAuthLoading]=useState(true);
   const _fbReady=useRef(false);
   const _saveTimer=useRef(null);
   const [docIn,setDocIn]=useState({title:"",tags:"",content:""});
@@ -985,9 +992,25 @@ function App(){
   // Expose globally so FinanceSection and GymSection can reach it without prop drilling
   useEffect(function(){window.showToast=showToast;return function(){window.showToast=null;};},[]);
 
-  // Load from Firestore on mount — overrides localStorage if cloud data exists
+  // Listen for auth state — sets DASH_DOC to users/{uid} once signed in
   useEffect(function(){
-    if(!window.DASH_DOC){setSyncStatus("offline");return;}
+    var unsub=_auth.onAuthStateChanged(function(user){
+      window._currentUser=user;
+      if(user){
+        window.DASH_DOC=_db.collection('users').doc(user.uid);
+        setAuthUser(user);
+      }else{
+        window.DASH_DOC=null;
+        setAuthUser(null);
+      }
+      setAuthLoading(false);
+    });
+    return unsub;
+  },[]);
+  // Load from Firestore once auth user is known
+  useEffect(function(){
+    if(!authUser||!window.DASH_DOC){if(!authLoading)setSyncStatus("offline");return;}
+    _fbReady.current=false;
     window.DASH_DOC.get().then(function(doc){
       if(doc.exists){
         var cloud=doc.data().dashData;
@@ -1004,7 +1027,7 @@ function App(){
       _fbReady.current=true;
       setSyncStatus("offline");
     });
-  },[]);
+  },[authUser]);
   // Save to localStorage immediately + Firestore (debounced 2s)
   useEffect(function(){
     try{localStorage.setItem("dash_v1",JSON.stringify(data));}catch(_){}
@@ -1194,6 +1217,31 @@ function App(){
   function navBtn(a){return{padding:"6px 13px",borderRadius:8,border:a?"1px solid rgba(199,125,255,0.5)":"0.5px solid rgba(255,255,255,0.1)",background:a?"rgba(199,125,255,0.15)":"rgba(255,255,255,0.04)",color:a?T.accent:T.text2,cursor:"pointer",fontSize:12,fontWeight:a?600:400,whiteSpace:"nowrap",boxShadow:a?"0 0 10px rgba(199,125,255,0.25)":"none",backdropFilter:"blur(8px)",transition:"all 0.2s"};}
   function bdg(type){const m={urgent:{bg:T.dangerBg,c:T.danger},normal:{bg:T.bg3,c:T.text2},success:{bg:T.successBg,c:T.success}};const col=m[type]||m.normal;return{display:"inline-block",fontSize:9,padding:"1px 6px",borderRadius:99,background:col.bg,color:col.c,fontWeight:600};}
 
+  // Auth loading spinner
+  if(authLoading){return(
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#05071a"}}>
+      <div style={{width:10,height:10,borderRadius:"50%",background:T.accent,animation:"pulse 1.2s ease-in-out infinite"}}/>
+    </div>
+  );}
+
+  // Login screen — shown until Google sign-in completes
+  if(!authUser){return(
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"radial-gradient(ellipse 80% 55% at 15% 85%,rgba(255,80,0,0.28) 0%,transparent 55%),radial-gradient(ellipse 65% 65% at 85% 10%,rgba(90,0,255,0.38) 0%,transparent 55%),#05071a",fontFamily:"system-ui,sans-serif"}}>
+      <div style={{background:"rgba(255,255,255,0.07)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:"0.5px solid rgba(255,255,255,0.16)",borderRadius:20,padding:"40px 36px",textAlign:"center",maxWidth:340,width:"90%",boxShadow:"0 8px 40px rgba(0,0,0,0.5)"}}>
+        <div style={{fontSize:28,marginBottom:8}}>✦</div>
+        <div style={{fontSize:20,fontWeight:700,color:T.text,marginBottom:6}}>Jayden's Dashboard</div>
+        <div style={{fontSize:13,color:T.text2,marginBottom:28,lineHeight:1.6}}>Sign in with Google to access your dashboard and sync your data across devices.</div>
+        <button onClick={function(){_auth.signInWithPopup(_googleProvider).catch(function(e){if(window.ErrorHandler)ErrorHandler.warn("Sign-in failed: "+e.message,"auth");});}} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,width:"100%",padding:"13px 20px",borderRadius:12,border:"1px solid rgba(255,255,255,0.2)",background:"rgba(255,255,255,0.1)",color:T.text,fontSize:14,fontWeight:600,cursor:"pointer",transition:"background 0.2s"}}
+          onMouseOver={function(e){e.currentTarget.style.background="rgba(255,255,255,0.18)";}}
+          onMouseOut={function(e){e.currentTarget.style.background="rgba(255,255,255,0.1)";}}
+        >
+          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.7 2.5 30.2 0 24 0 14.8 0 6.9 5.4 3 13.3l7.8 6C12.7 13 18 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4 7.1-10 7.1-17z"/><path fill="#FBBC05" d="M10.8 28.7A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.2.8-4.7l-7.8-6A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.5 10.8l8.3-6.1z"/><path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.5-5.8c-2 1.4-4.6 2.3-7.7 2.3-6 0-11.1-4-12.9-9.4l-8.3 6.1C6.9 42.6 14.8 48 24 48z"/></svg>
+          Sign in with Google
+        </button>
+      </div>
+    </div>
+  );}
+
   return(
     <div style={{fontFamily:"system-ui,sans-serif",minHeight:"100vh",background:"transparent",color:T.text,position:"relative"}}>
       {/* Animated glass background */}
@@ -1212,6 +1260,10 @@ function App(){
         <div style={{display:"flex",alignItems:"center",gap:8,marginRight:14}}>
           <div style={{fontSize:13,fontWeight:700,color:T.accent,textShadow:"0 0 12px rgba(199,125,255,0.6)"}}>Jayden</div>
           <div title={syncStatus==="synced"?"Synced to cloud":syncStatus==="syncing"?"Saving...":syncStatus==="loading"?"Connecting...":"Offline — saved locally"} style={{width:7,height:7,borderRadius:"50%",background:syncStatus==="synced"?T.success:syncStatus==="syncing"?T.warn:syncStatus==="loading"?T.text3:T.danger,boxShadow:syncStatus==="synced"?"0 0 6px "+T.success:syncStatus==="syncing"?"0 0 6px "+T.warn:"none",transition:"background 0.4s"}}/>
+        </div>
+        <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
+          {authUser&&authUser.photoURL&&<img src={authUser.photoURL} alt="" style={{width:22,height:22,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.2)"}}/>}
+          <button onClick={function(){_auth.signOut();}} style={{padding:"3px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text3,cursor:"pointer",fontSize:11}}>Sign out</button>
         </div>
         {["Dashboard","Uni","Work","Gym","Personal","Finance","Reflection"].map(function(s){return<button key={s} style={navBtn(page===s)} onClick={function(){setPage(s);}}>{s}</button>;})}
       </nav>}
