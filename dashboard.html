@@ -15,6 +15,21 @@
 <script src="error-boundary.js"></script>
 <script src="monitoring-dashboard.js"></script>
 <script src="ollama-service.js"></script>
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+  var _fbApp = firebase.initializeApp({
+    apiKey: "AIzaSyDfQz6iOilzEdZHhE3VrL2NVVZAw6_ARSE",
+    authDomain: "personal-dashboard-53b0d.firebaseapp.com",
+    projectId: "personal-dashboard-53b0d",
+    storageBucket: "personal-dashboard-53b0d.firebasestorage.app",
+    messagingSenderId: "134399742010",
+    appId: "1:134399742010:web:ed56b8b9d5e426d03ca503"
+  });
+  var _db = firebase.firestore();
+  var DASH_DOC = _db.collection('dashboards').doc('jayden');
+</script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
   body{
@@ -947,6 +962,9 @@ function App(){
   const [reflAnalysis,setReflAnalysis]=useState(null);
   const [modal,setModal]=useState(null);
   const [mForm,setMForm]=useState({});
+  const [syncStatus,setSyncStatus]=useState("loading");
+  const _fbReady=useRef(false);
+  const _saveTimer=useRef(null);
   const [docIn,setDocIn]=useState({title:"",tags:"",content:""});
   const [forceMob,setForceMob]=useState(false);
   const rawMob=useIsMob();
@@ -967,7 +985,36 @@ function App(){
   // Expose globally so FinanceSection and GymSection can reach it without prop drilling
   useEffect(function(){window.showToast=showToast;return function(){window.showToast=null;};},[]);
 
-  useEffect(function(){try{localStorage.setItem("dash_v1",JSON.stringify(data));}catch(_){};},[data]);
+  // Load from Firestore on mount — overrides localStorage if cloud data exists
+  useEffect(function(){
+    if(!window.DASH_DOC){setSyncStatus("offline");return;}
+    window.DASH_DOC.get().then(function(doc){
+      if(doc.exists){
+        var cloud=doc.data().dashData;
+        if(cloud){
+          var fin=cloud.finance||{};
+          if(!fin.financeVersion||fin.financeVersion<2)cloud={...cloud,finance:INIT.finance};
+          if(!cloud.reflections||cloud.reflections.length===0)cloud={...cloud,reflections:SEED_REFL};
+          setData(cloud);
+        }
+      }
+      _fbReady.current=true;
+      setSyncStatus("synced");
+    }).catch(function(){
+      _fbReady.current=true;
+      setSyncStatus("offline");
+    });
+  },[]);
+  // Save to localStorage immediately + Firestore (debounced 2s)
+  useEffect(function(){
+    try{localStorage.setItem("dash_v1",JSON.stringify(data));}catch(_){}
+    if(!_fbReady.current||!window.DASH_DOC)return;
+    setSyncStatus("syncing");
+    if(_saveTimer.current)clearTimeout(_saveTimer.current);
+    _saveTimer.current=setTimeout(function(){
+      window.DASH_DOC.set({dashData:data}).then(function(){setSyncStatus("synced");}).catch(function(){setSyncStatus("offline");});
+    },2000);
+  },[data]);
   useEffect(function(){fetch("http://localhost:11434/api/tags").then(function(r){setOllamaAvailable(r.ok);}).catch(function(){setOllamaAvailable(false);});},[]);
   // Start health monitor (runs checks every 30s)
   useEffect(function(){if(window.HealthMonitor){HealthMonitor.start();}return function(){if(window.HealthMonitor)HealthMonitor.stop();};},[]);
@@ -1162,7 +1209,10 @@ function App(){
         zIndex:500,boxShadow:"0 4px 24px rgba(0,0,0,0.5)",maxWidth:320,textAlign:"center",
         pointerEvents:"none",whiteSpace:"pre-line"}}>{toast.msg}</div>}
       {!mob&&<nav style={{display:"flex",gap:4,padding:"10px 16px",background:"rgba(5,7,26,0.7)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"0.5px solid rgba(199,125,255,0.2)",overflowX:"auto",alignItems:"center",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 20px rgba(0,0,0,0.4)"}}>
-        <div style={{fontSize:13,fontWeight:700,color:T.accent,marginRight:14,textShadow:"0 0 12px rgba(199,125,255,0.6)"}}>Jayden</div>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginRight:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.accent,textShadow:"0 0 12px rgba(199,125,255,0.6)"}}>Jayden</div>
+          <div title={syncStatus==="synced"?"Synced to cloud":syncStatus==="syncing"?"Saving...":syncStatus==="loading"?"Connecting...":"Offline — saved locally"} style={{width:7,height:7,borderRadius:"50%",background:syncStatus==="synced"?T.success:syncStatus==="syncing"?T.warn:syncStatus==="loading"?T.text3:T.danger,boxShadow:syncStatus==="synced"?"0 0 6px "+T.success:syncStatus==="syncing"?"0 0 6px "+T.warn:"none",transition:"background 0.4s"}}/>
+        </div>
         {["Dashboard","Uni","Work","Gym","Personal","Finance","Reflection"].map(function(s){return<button key={s} style={navBtn(page===s)} onClick={function(){setPage(s);}}>{s}</button>;})}
       </nav>}
       {!mob&&<button onClick={function(){setForceMob(true);}} style={{position:"fixed",bottom:24,right:24,zIndex:200,padding:"10px 16px",borderRadius:99,border:"1px solid rgba(199,125,255,0.5)",background:"rgba(14,16,40,0.95)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:700,boxShadow:"0 4px 20px rgba(199,125,255,0.3)",display:"flex",alignItems:"center",gap:6}}>📱 Mobile view</button>}
