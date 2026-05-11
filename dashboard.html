@@ -4,9 +4,9 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Jayden's Dashboard</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js" crossorigin="anonymous"></script>
 <!-- Monitoring system — load before Babel bundle so globals are available -->
 <script src="error-handler.js"></script>
 <script src="network-monitor.js"></script>
@@ -16,9 +16,32 @@
 <script src="monitoring-dashboard.js"></script>
 <script src="ollama-service.js"></script>
 <!-- Firebase -->
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js" crossorigin="anonymous"></script>
+<!-- Global error capture — runs before Babel so it catches ALL errors including cross-origin -->
+<script>
+(function(){
+  function addErr(entry){
+    if(window.__dashAddError)window.__dashAddError(entry);
+    else{var q=window.__dashErrQueue=window.__dashErrQueue||[];q.push(entry);}
+  }
+  var _prev=window.onerror;
+  window.onerror=function(msg,src,line,col,err){
+    var e={id:Date.now(),time:new Date().toLocaleTimeString(),fn:"global ["+(src||"").split("/").pop()+":"+(line||"?")+"]",msg:(err&&err.message)?err.message:String(msg),stack:(err&&err.stack)?err.stack:""};
+    console.error("[Dashboard] Uncaught:",e.fn,e.msg);
+    addErr(e);
+    if(_prev)_prev.apply(this,arguments);
+    return false;
+  };
+  window.addEventListener("unhandledrejection",function(ev){
+    var err=ev.reason;
+    var e={id:Date.now(),time:new Date().toLocaleTimeString(),fn:"promise",msg:(err&&err.message)?err.message:String(err),stack:(err&&err.stack)?err.stack:""};
+    console.error("[Dashboard] Unhandled rejection:",e.msg);
+    addErr(e);
+  });
+})();
+</script>
 <script>
   var _fbApp = firebase.initializeApp({
     apiKey: "AIzaSyDfQz6iOilzEdZHhE3VrL2NVVZAw6_ARSE",
@@ -285,6 +308,30 @@ const INIT={
   },
 };
 
+// Merge cloud/localStorage data with INIT defaults so no field is ever undefined
+function mergeWithDefaults(cloud){
+  if(!cloud||typeof cloud!=="object")return{...INIT,reflections:SEED_REFL};
+  var g=cloud.gym||{};var p=cloud.personal||{};var u=cloud.uni||{};
+  return{
+    ...INIT,...cloud,
+    personal:{...INIT.personal,...p,
+      tasks:Array.isArray(p.tasks)?p.tasks:(INIT.personal.tasks||[]),
+      archived:Array.isArray(p.archived)?p.archived:[],
+    },
+    gym:{...INIT.gym,...g,
+      exercises:Array.isArray(g.exercises)?g.exercises:INIT.gym.exercises,
+      bodyWeight:Array.isArray(g.bodyWeight)?g.bodyWeight:[],
+      workouts:Array.isArray(g.workouts)?g.workouts:[],
+      rotation:Array.isArray(g.rotation)?g.rotation:INIT.gym.rotation,
+      rotIdx:typeof g.rotIdx==="number"?g.rotIdx:0,
+    },
+    uni:{...INIT.uni,...u,
+      subjects:Array.isArray(u.subjects)?u.subjects:INIT.uni.subjects,
+      completedEvents:Array.isArray(u.completedEvents)?u.completedEvents:[],
+    },
+    reflections:(Array.isArray(cloud.reflections)&&cloud.reflections.length>0)?cloud.reflections:SEED_REFL,
+  };
+}
 function localDateStr(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 function todayStr(){return localDateStr(new Date());}
 function weekMonday(){const n=new Date();const d=n.getDay();const off=d===0?-6:1-d;const m=new Date(n);m.setDate(n.getDate()+off);return localDateStr(m);}
@@ -1003,7 +1050,7 @@ function FinanceSection({data,onUpdate,mob}){
 
 function App(){
   const [page,setPage]=useState("Dashboard");
-  const [data,setData]=useState(function(){try{const s=localStorage.getItem("dash_v1");if(!s)return{...INIT,reflections:SEED_REFL};const saved=JSON.parse(s);const fin=saved.finance||{};let out=saved;if(!fin.financeVersion||fin.financeVersion<2){out={...out,finance:INIT.finance};}if(!out.reflections||out.reflections.length===0){out={...out,reflections:SEED_REFL};}return out;}catch(_){return{...INIT,reflections:SEED_REFL};}});
+  const [data,setData]=useState(function(){try{const s=localStorage.getItem("dash_v1");if(!s)return mergeWithDefaults({...INIT,reflections:SEED_REFL});const saved=JSON.parse(s);const fin=saved.finance||{};let out=saved;if(!fin.financeVersion||fin.financeVersion<2){out={...out,finance:INIT.finance};}return mergeWithDefaults(out);}catch(_){return mergeWithDefaults({...INIT,reflections:SEED_REFL});}});
   const [wkOff,setWkOff]=useState(0);
   const [activeDay,setActiveDay]=useState(todayStr());
   const [checkinBlocks,setCheckinBlocks]=useState([]);
@@ -1039,6 +1086,8 @@ function App(){
   const [ollamaAvailable,setOllamaAvailable]=useState(null);
   const [showMonitor,setShowMonitor]=useState(false);
   const [toast,setToast]=useState(null); // {msg,type:'error'|'success'|'warn'}
+  const [errLog,setErrLog]=useState([]);
+  const [showErrPanel,setShowErrPanel]=useState(false);
 
   // Call this anywhere in App to show a brief auto-dismissing notification.
   // Child components can call window.showToast() which is wired up below.
@@ -1049,6 +1098,25 @@ function App(){
   }
   // Expose globally so FinanceSection and GymSection can reach it without prop drilling
   useEffect(function(){window.showToast=showToast;return function(){window.showToast=null;};},[]);
+
+  // Capture an error: log to console, add to errLog, show toast
+  function captureError(err,fnName){
+    var entry={id:Date.now(),time:new Date().toLocaleTimeString(),fn:fnName||"unknown",
+      msg:(err&&err.message)?err.message:String(err),
+      stack:(err&&err.stack)?err.stack.split("\n").slice(0,6).join("\n"):""};
+    console.error("[Dashboard] Error in "+entry.fn+": "+entry.msg);
+    if(err&&err.stack)console.error(err.stack);
+    setErrLog(function(prev){return[entry].concat(prev).slice(0,20);});
+    setShowErrPanel(true);
+    showToast("Error in "+entry.fn+": "+entry.msg.slice(0,80),"error");
+  }
+  // Wire the global pre-React onerror/unhandledrejection to our errLog state
+  useEffect(function(){
+    window.__dashAddError=function(entry){setErrLog(function(p){return[entry].concat(p).slice(0,20);});setShowErrPanel(true);showToast("Error in "+entry.fn+": "+entry.msg.slice(0,80),"error");};
+    // Flush any errors that fired before React mounted
+    var q=window.__dashErrQueue||[];q.forEach(function(e){window.__dashAddError(e);});window.__dashErrQueue=[];
+    return function(){window.__dashAddError=null;};
+  },[]);
 
   // Listen for auth state — sets DASH_DOC to users/{uid} once signed in
   useEffect(function(){
@@ -1081,13 +1149,13 @@ function App(){
           if(cloud){
             var fin=cloud.finance||{};
             if(!fin.financeVersion||fin.financeVersion<2)cloud={...cloud,finance:INIT.finance};
-            if(!cloud.reflections||cloud.reflections.length===0)cloud={...cloud,reflections:SEED_REFL};
-            setData(cloud);
+            setData(mergeWithDefaults(cloud));
           }
         }
         _fbReady.current=true;
         setSyncStatus("synced");
-      }).catch(function(){
+      }).catch(function(err){
+        console.error("[Firestore] Load failed:",err);
         _fbReady.current=true;
         setSyncStatus("offline");
       });
@@ -1124,7 +1192,7 @@ function App(){
         showToast("Migration complete! Your data is now synced.","success");
         _fbReady.current=true;
         setSyncStatus("synced");
-        setData(parsed);
+        setData(mergeWithDefaults(parsed));
       }).catch(function(err){
         console.error("[Migration] Upload failed:",err);
         showToast("Migration failed — your data is still saved locally.","error");
@@ -1173,15 +1241,15 @@ function App(){
   function doCheckin(){setCheckinLoading(true);setCheckinBlocks([]);generateCheckin(data).then(function(blocks){setCheckinBlocks(blocks);setCheckinLoading(false);}).catch(function(){setCheckinLoading(false);});}
   function toggleCalEv(id){setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
   function updateProg(id,val){setData(function(p){return{...p,uni:{...p.uni,subjects:p.uni.subjects.map(function(s){return s.id===id?{...s,progress:Number(val)}:s;})}}; });}
-  function toggleTask(id){setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.map(function(t){return t.id===id?{...t,done:!t.done}:t;})}}; });}
-  function archiveDone(){setData(function(p){const done=p.personal.tasks.filter(function(t){return t.done;}).map(function(t){return{...t,archivedAt:todayStr()};});return{...p,personal:{...p.personal,tasks:p.personal.tasks.filter(function(t){return !t.done;}),archived:(p.personal.archived||[]).concat(done)}};});}
-  function restoreTask(id){setData(function(p){const arch=p.personal.archived||[];const match=arch.filter(function(t){return t.id===id;});if(match.length===0)return p;return{...p,personal:{...p.personal,tasks:p.personal.tasks.concat([{...match[0],done:false,archivedAt:undefined}]),archived:arch.filter(function(x){return x.id!==id;})}};});}
+  function toggleTask(id){setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.map(function(t){return t.id===id?{...t,done:!t.done}:t;})}}; });}
+  function archiveDone(){setData(function(p){const ts=p.personal.tasks||[];const done=ts.filter(function(t){return t.done;}).map(function(t){return{...t,archivedAt:todayStr()};});return{...p,personal:{...p.personal,tasks:ts.filter(function(t){return !t.done;}),archived:(p.personal.archived||[]).concat(done)}};});}
+  function restoreTask(id){setData(function(p){const arch=p.personal.archived||[];const match=arch.filter(function(t){return t.id===id;});if(match.length===0)return p;const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.concat([{...match[0],done:false,archivedAt:undefined}]),archived:arch.filter(function(x){return x.id!==id;})}};});}
   function saveEditTask(){
     if(window.DataValidator){
       const r=DataValidator.validate("task",{name:editTaskForm.name,priority:editTaskForm.priority||"normal",due:editTaskForm.due||null,cat:editTaskForm.cat});
       if(!r.valid){showToast(r.firstError);return;}
     }
-    setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.map(function(t){return t.id===editTaskId?{...t,...editTaskForm,editedAt:todayStr()}:t;})}}; });
+    setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.map(function(t){return t.id===editTaskId?{...t,...editTaskForm,editedAt:todayStr()}:t;})}}; });
     setEditTaskId(null);setEditTaskForm({});
     showToast("Task updated!","success");
   }
@@ -1210,6 +1278,7 @@ function App(){
     showToast("Session saved!","success");
   }
   function saveModal(){
+   try{
     // Validate before saving — validator returns user-friendly messages
     if(window.DataValidator){
       if(modal==="add_task"){
@@ -1230,7 +1299,7 @@ function App(){
     if(modal==="add_subject")setData(function(p){return{...p,uni:{...p.uni,subjects:p.uni.subjects.concat([{id:Date.now(),name:mForm.name,progress:0}])}};});
     else if(modal==="add_exercise")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.concat([{id:Date.now(),name:mForm.name,logs:[]}])}};});
     else if(modal==="log_weight")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.map(function(ex){return ex.id===mForm.exId?{...ex,logs:ex.logs.concat([{date:todayStr(),weight:Number(mForm.weight)}])}:ex;})}};});
-    else if(modal==="add_task")setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.concat([{id:Date.now(),name:mForm.name,cat:mForm.cat||"Errands",priority:mForm.priority||"normal",due:mForm.due,done:false,addedAt:todayStr(),editedAt:null}])}};});
+    else if(modal==="add_task")setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.concat([{id:Date.now(),name:mForm.name,cat:mForm.cat||"Errands",priority:mForm.priority||"normal",due:mForm.due,done:false,addedAt:todayStr(),editedAt:null}])}};});
     else if(modal==="edit_rotation"){
       var ri=mForm.rotIdx;
       setData(function(p){
@@ -1243,6 +1312,7 @@ function App(){
     }
     setModal(null);setMForm({});
     showToast("Saved!","success");
+   }catch(err){captureError(err,"saveModal");}
   }
   function updateFinance(fin){setData(function(p){return{...p,finance:fin};});}
   function submitRefl(){
@@ -1373,6 +1443,22 @@ function App(){
         color:"#05071a",padding:"10px 20px",borderRadius:10,fontSize:13,fontWeight:600,
         zIndex:500,boxShadow:"0 4px 24px rgba(0,0,0,0.5)",maxWidth:320,textAlign:"center",
         pointerEvents:"none",whiteSpace:"pre-line"}}>{toast.msg}</div>}
+      {/* Error log panel */}
+      {errLog.length>0&&!showErrPanel&&<button onClick={function(){setShowErrPanel(true);}} style={{position:"fixed",bottom:mob?160:80,right:16,zIndex:498,background:"rgba(255,107,107,0.92)",border:"none",borderRadius:8,padding:"5px 10px",cursor:"pointer",fontSize:11,fontWeight:700,color:"#fff",boxShadow:"0 4px 16px rgba(255,107,107,0.5)"}}>⚠ {errLog.length} error{errLog.length!==1?"s":""}</button>}
+      {showErrPanel&&<div style={{position:"fixed",bottom:mob?170:80,right:16,zIndex:499,width:Math.min(400,window.innerWidth-32),maxHeight:"60vh",overflowY:"auto",background:"rgba(10,5,5,0.98)",border:"1px solid rgba(255,107,107,0.5)",borderRadius:12,padding:"12px 14px",boxShadow:"0 8px 32px rgba(0,0,0,0.7)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <span style={{fontSize:11,fontWeight:700,color:"#ff6b6b"}}>⚠ Error log ({errLog.length})</span>
+          <div style={{display:"flex",gap:6}}>
+            <button style={{padding:"1px 7px",borderRadius:5,border:"0.5px solid rgba(255,107,107,0.4)",background:"transparent",color:"#ff6b6b",cursor:"pointer",fontSize:10}} onClick={function(){setErrLog([]);setShowErrPanel(false);}}>Clear all</button>
+            <button style={{padding:"1px 7px",borderRadius:5,border:"0.5px solid rgba(255,255,255,0.12)",background:"transparent",color:"#aaa",cursor:"pointer",fontSize:10}} onClick={function(){setShowErrPanel(false);}}>Hide</button>
+          </div>
+        </div>
+        {errLog.map(function(e){return(<div key={e.id} style={{marginBottom:10,paddingBottom:10,borderBottom:"0.5px solid rgba(255,107,107,0.12)"}}>
+          <div style={{fontSize:10,fontWeight:600,color:"#ff6b6b",marginBottom:2}}>{e.time} · in <code style={{background:"rgba(255,107,107,0.15)",padding:"0 4px",borderRadius:3}}>{e.fn}</code></div>
+          <div style={{fontSize:11,color:"#ffcdd2",marginBottom:e.stack?4:0,wordBreak:"break-word"}}>{e.msg}</div>
+          {e.stack&&<pre style={{fontSize:9,color:"rgba(255,255,255,0.3)",whiteSpace:"pre-wrap",wordBreak:"break-word",margin:0,lineHeight:1.4}}>{e.stack}</pre>}
+        </div>);})}
+      </div>}
       {!mob&&<nav style={{display:"flex",gap:4,padding:"10px 16px",background:"rgba(5,7,26,0.7)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"0.5px solid rgba(199,125,255,0.2)",overflowX:"auto",alignItems:"center",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 20px rgba(0,0,0,0.4)"}}>
         <div style={{display:"flex",alignItems:"center",gap:8,marginRight:14}}>
           <div style={{fontSize:13,fontWeight:700,color:T.accent,textShadow:"0 0 12px rgba(199,125,255,0.6)"}}>Jayden</div>
