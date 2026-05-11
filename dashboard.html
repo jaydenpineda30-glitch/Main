@@ -577,40 +577,48 @@ function Sparkline(props){
 function useIsMob(){const [m,setM]=useState(typeof window!=="undefined"&&window.innerWidth<768);useEffect(function(){function h(){setM(window.innerWidth<768);}window.addEventListener("resize",h);return function(){window.removeEventListener("resize",h);};},[]);return m;}
 
 // ── Weather widget ────────────────────────────────────────────────────────────
-// Fetches from Open-Meteo (free, no API key). Caches in IndexedDB so the data
-// survives page refreshes. Re-fetches automatically after 24 hours, and
-// retries immediately when the browser comes back online.
-const WX_MAP={0:["☀️","Sunny"],1:["🌤️","Mainly clear"],2:["⛅","Partly cloudy"],3:["☁️","Overcast"],45:["🌫️","Foggy"],48:["🌫️","Foggy"],51:["🌦️","Light drizzle"],53:["🌦️","Drizzle"],55:["🌧️","Heavy drizzle"],61:["🌧️","Light rain"],63:["🌧️","Rain"],65:["🌧️","Heavy rain"],71:["🌨️","Light snow"],73:["🌨️","Snow"],75:["❄️","Heavy snow"],80:["🌦️","Showers"],81:["🌧️","Heavy showers"],82:["⛈️","Violent showers"],95:["⛈️","Thunderstorm"],96:["⛈️","Thunderstorm"],99:["⛈️","Thunderstorm"]};
-const WX_STALE=24*60*60*1000; // 24 hours in ms
-const WX_URL="https://api.open-meteo.com/v1/forecast?latitude=-37.8136&longitude=144.9631&current=temperature_2m,weather_code,precipitation_probability&timezone=Australia/Melbourne&forecast_days=1";
+const WX_MAP={0:["☀️","Sunny"],1:["🌤️","Mainly clear"],2:["⛅","Partly cloudy"],3:["☁️","Overcast"],45:["🌫️","Foggy"],48:["🌫️","Icy fog"],51:["🌦️","Light drizzle"],53:["🌦️","Drizzle"],55:["🌧️","Heavy drizzle"],61:["🌧️","Light rain"],63:["🌧️","Rain"],65:["🌧️","Heavy rain"],71:["🌨️","Light snow"],73:["🌨️","Snow"],75:["❄️","Heavy snow"],80:["🌦️","Showers"],81:["🌧️","Heavy showers"],82:["⛈️","Violent showers"],95:["⛈️","Thunderstorm"],96:["⛈️","Thunderstorm"],99:["⛈️","Thunderstorm"]};
+const WX_STALE=30*60*1000; // 30 minutes
+const WX_URL="https://api.open-meteo.com/v1/forecast?latitude=-37.8136&longitude=144.9631&current=temperature_2m,apparent_temperature,weather_code,precipitation_probability,relative_humidity_2m,wind_speed_10m&hourly=temperature_2m,weather_code,precipitation_probability&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max&timezone=Australia/Melbourne&forecast_days=8";
+const WX_DAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
-function wxOpenDB(){return new Promise(function(res,rej){const r=indexedDB.open("dash_weather",1);r.onupgradeneeded=function(e){e.target.result.createObjectStore("c",{keyPath:"k"});};r.onsuccess=function(e){res(e.target.result);};r.onerror=function(){rej(r.error);};});}
+function wxOpenDB(){return new Promise(function(res,rej){const r=indexedDB.open("dash_weather",1);r.onupgradeneeded=function(e){const db=e.target.result;if(!db.objectStoreNames.contains("c"))db.createObjectStore("c",{keyPath:"k"});};r.onsuccess=function(e){res(e.target.result);};r.onerror=function(){rej(r.error);};});}
 function wxGet(db){return new Promise(function(res){const r=db.transaction("c","readonly").objectStore("c").get("wx");r.onsuccess=function(){res(r.result||null);};r.onerror=function(){res(null);};});}
 function wxPut(db,payload){return new Promise(function(res){const tx=db.transaction("c","readwrite");tx.objectStore("c").put({k:"wx",...payload});tx.oncomplete=res;tx.onerror=res;});}
 
-function WeatherWidget(){
+function WeatherWidget(props){
+  const mob=props.mob||false;
   const [wx,setWx]=useState(null);
-  const [status,setStatus]=useState("loading"); // "loading"|"ok"|"offline"|"error"
+  const [status,setStatus]=useState("loading");
+  const [open,setOpen]=useState(false);
+  const [selDay,setSelDay]=useState(null);
 
   async function load(){
     try{
       const db=await wxOpenDB();
       const cached=await wxGet(db);
-      const stale=!cached||(Date.now()-cached.fetchedAt)>WX_STALE;
-      if(cached)setWx(cached); // show cached immediately while we decide what to do
-      if(!navigator.onLine){setStatus(cached?"offline":"error");return;}
+      const stale=!cached||!cached.current||(Date.now()-cached.fetchedAt)>WX_STALE;
+      if(cached&&cached.current)setWx(cached);
+      if(!navigator.onLine){setStatus(cached&&cached.current?"offline":"error");return;}
       if(stale){
         try{
           const resp=await fetch(WX_URL);
           if(!resp.ok)throw new Error("HTTP "+resp.status);
           const json=await resp.json();
           const c=json.current;
-          const fresh={temp:Math.round(c.temperature_2m),code:c.weather_code,rain:c.precipitation_probability,fetchedAt:Date.now()};
+          const pad=function(n){return String(n).padStart(2,"0");};
+          const now=new Date();
+          const curKey=now.getFullYear()+"-"+pad(now.getMonth()+1)+"-"+pad(now.getDate())+"T"+pad(now.getHours())+":00";
+          let hStart=json.hourly.time.indexOf(curKey);
+          if(hStart<0)hStart=0;
+          const hourly=json.hourly.time.slice(hStart,hStart+25).map(function(t,i){return{time:t,temp:Math.round(json.hourly.temperature_2m[hStart+i]),code:json.hourly.weather_code[hStart+i]||0,rain:json.hourly.precipitation_probability[hStart+i]||0};});
+          const daily=json.daily.time.map(function(date,i){return{date,high:Math.round(json.daily.temperature_2m_max[i]),low:Math.round(json.daily.temperature_2m_min[i]),code:json.daily.weather_code[i]||0,rain:json.daily.precipitation_probability_max[i]||0};});
+          const fresh={current:{temp:Math.round(c.temperature_2m),feelsLike:Math.round(c.apparent_temperature),code:c.weather_code,rain:c.precipitation_probability||0,humidity:c.relative_humidity_2m,wind:Math.round(c.wind_speed_10m)},hourly,daily,fetchedAt:Date.now()};
           await wxPut(db,fresh);
           setWx(fresh);setStatus("ok");
         }catch(e){
           if(window.ErrorHandler)ErrorHandler.log("Weather fetch failed: "+e.message,"error","weather");
-          setStatus(cached?"offline":"error");
+          setStatus(cached&&cached.current?"offline":"error");
         }
       }else{setStatus("ok");}
     }catch(e){
@@ -621,33 +629,133 @@ function WeatherWidget(){
 
   useEffect(function(){
     load();
-    const timer=setInterval(load,WX_STALE); // auto-refresh every 24h while tab stays open
-    window.addEventListener("online",load);  // retry immediately when network returns
+    const timer=setInterval(load,WX_STALE);
+    window.addEventListener("online",load);
     return function(){clearInterval(timer);window.removeEventListener("online",load);};
   },[]);
 
-  const [icon,desc]=wx?(WX_MAP[wx.code]||["🌡️","Unknown"]):["--","--"];
+  const cur=wx&&wx.current;
+  const [icon,desc]=cur?(WX_MAP[cur.code]||["🌡️","Unknown"]):["--","--"];
   const ageMin=wx?Math.floor((Date.now()-wx.fetchedAt)/60000):null;
   const ageStr=ageMin===null?null:ageMin<2?"just now":ageMin<60?ageMin+"m ago":Math.floor(ageMin/60)+"h ago";
 
+  function fmtHour(t){const h=parseInt((t||"T0").split("T")[1]);return h===0?"12am":h<12?h+"am":h===12?"12pm":(h-12)+"pm";}
+  function fmtDayLabel(dateStr,i){if(i===0)return"Today";if(i===1)return"Tomorrow";const d=new Date(dateStr+"T00:00");return WX_DAYS[d.getDay()];}
+  function fmtFullDate(dateStr){const d=new Date(dateStr+"T00:00");return WX_DAYS[d.getDay()]+" "+d.getDate()+" "+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()];}
+
   return(
-    <div style={{background:T.bg2,border:"0.5px solid "+T.border,borderRadius:10,padding:"14px 16px"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-        <div style={{fontSize:10,color:T.text3}}>Melbourne</div>
-        {status==="offline"&&<div style={{fontSize:9,padding:"1px 6px",borderRadius:99,background:T.warnBg,color:T.warn}}>cached</div>}
-        {status==="loading"&&!wx&&<div style={{fontSize:9,color:T.text3}}>loading...</div>}
+    <>
+      {/* ── Compact dashboard widget ── */}
+      <div style={{background:T.bg2,border:"0.5px solid "+T.border,borderRadius:10,padding:"14px 16px",cursor:"pointer"}} onClick={function(){setOpen(true);}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontSize:10,color:T.text3}}>Melbourne</div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            {status==="offline"&&<div style={{fontSize:9,padding:"1px 6px",borderRadius:99,background:T.warnBg,color:T.warn}}>cached</div>}
+            {status==="loading"&&!wx&&<div style={{fontSize:9,color:T.text3}}>loading...</div>}
+            <div style={{fontSize:9,color:T.accent,fontWeight:600}}>▸ forecast</div>
+          </div>
+        </div>
+        {status==="error"&&!cur
+          ?<div style={{fontSize:11,color:T.text3,padding:"8px 0"}}>Weather unavailable</div>
+          :<>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{fontSize:30,lineHeight:1}}>{icon}</div>
+              <div>
+                <div style={{fontSize:26,fontWeight:700,color:T.text,lineHeight:1}}>{cur?cur.temp+"°":"--"}</div>
+                <div style={{fontSize:11,color:T.text2,marginTop:3}}>{desc}</div>
+              </div>
+            </div>
+            {cur&&cur.rain>0&&<div style={{fontSize:11,color:T.warn,marginTop:6}}>{cur.rain}% rain</div>}
+            {ageStr&&<div style={{fontSize:9,color:T.text3,marginTop:6}}>Updated {ageStr}</div>}
+          </>
+        }
       </div>
-      {status==="error"&&!wx
-        ?<div style={{fontSize:11,color:T.text3,padding:"8px 0"}}>Weather unavailable</div>
-        :<>
-          <div style={{fontSize:28,lineHeight:1}}>{icon}</div>
-          <div style={{fontSize:24,fontWeight:700,color:T.text,marginTop:6}}>{wx?wx.temp+"°C":"--"}</div>
-          <div style={{fontSize:12,color:T.text2,marginTop:3}}>{desc}</div>
-          {wx&&wx.rain>0&&<div style={{fontSize:11,color:T.warn,marginTop:6}}>{wx.rain}% chance of rain</div>}
-          {ageStr&&<div style={{fontSize:9,color:T.text3,marginTop:8}}>Updated {ageStr}</div>}
-        </>
-      }
-    </div>
+
+      {/* ── Full detail modal ── */}
+      {open&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.9)",backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",zIndex:300,overflowY:"auto",padding:mob?"0":"20px"}} onClick={function(){setOpen(false);setSelDay(null);}}>
+        <div style={{maxWidth:700,margin:mob?"56px auto 0":"24px auto",background:"rgba(11,14,40,0.99)",borderRadius:mob?"16px 16px 0 0":"20px",border:"0.5px solid rgba(199,125,255,0.3)",boxShadow:"0 20px 60px rgba(0,0,0,0.85)",overflow:"hidden",minHeight:mob?"calc(100vh - 56px)":"auto"}} onClick={function(e){e.stopPropagation();}}>
+
+          {/* Header */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"20px 22px 0"}}>
+            <div>
+              <div style={{fontSize:20,fontWeight:700,color:T.text}}>Melbourne</div>
+              <div style={{fontSize:11,color:T.text3,marginTop:1}}>Victoria, Australia{ageStr?" · Updated "+ageStr:""}</div>
+            </div>
+            <button style={{background:"rgba(255,255,255,0.07)",border:"0.5px solid "+T.border,borderRadius:8,color:T.text2,cursor:"pointer",fontSize:15,padding:"5px 11px",lineHeight:1}} onClick={function(){setOpen(false);setSelDay(null);}}>✕</button>
+          </div>
+
+          {/* Current conditions */}
+          {cur&&<div style={{padding:"18px 22px 20px",borderBottom:"0.5px solid "+T.border}}>
+            <div style={{display:"flex",alignItems:"flex-end",gap:18,marginBottom:18}}>
+              <div style={{fontSize:72,lineHeight:1}}>{icon}</div>
+              <div>
+                <div style={{fontSize:60,fontWeight:800,color:T.text,lineHeight:1,letterSpacing:"-2px"}}>{cur.temp}°</div>
+                <div style={{fontSize:17,color:T.text2,marginTop:6}}>{desc}</div>
+                <div style={{fontSize:12,color:T.text3,marginTop:3}}>Feels like {cur.feelsLike}°C</div>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+              {[["💧","Humidity",cur.humidity+"%"],["💨","Wind",cur.wind+" km/h"],["🌧️","Rain chance",cur.rain+"%"]].map(function(row){return(
+                <div key={row[1]} style={{background:"rgba(255,255,255,0.04)",borderRadius:12,padding:"12px 14px",border:"0.5px solid "+T.border,textAlign:"center"}}>
+                  <div style={{fontSize:22,marginBottom:5}}>{row[0]}</div>
+                  <div style={{fontSize:10,color:T.text3,marginBottom:3}}>{row[1]}</div>
+                  <div style={{fontSize:16,fontWeight:700,color:T.text}}>{row[2]}</div>
+                </div>
+              );})}
+            </div>
+          </div>}
+
+          {/* 24-hour timeline */}
+          {wx&&wx.hourly&&wx.hourly.length>0&&<div style={{padding:"18px 22px 20px",borderBottom:"0.5px solid "+T.border}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.text2,marginBottom:12,textTransform:"uppercase",letterSpacing:0.8}}>24-Hour Forecast</div>
+            <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}}>
+              {wx.hourly.map(function(h,i){const [hIcon]=WX_MAP[h.code]||["🌡️"];const isNow=i===0;return(
+                <div key={h.time} style={{flexShrink:0,textAlign:"center",padding:"12px 8px",borderRadius:12,background:isNow?"rgba(199,125,255,0.18)":"rgba(255,255,255,0.03)",border:"0.5px solid "+(isNow?T.accent+"":(T.border)),minWidth:64,position:"relative"}}>
+                  {isNow&&<div style={{position:"absolute",top:0,left:"50%",transform:"translateX(-50%)",width:24,height:2,borderRadius:1,background:T.accent}}/>}
+                  <div style={{fontSize:10,color:isNow?T.accent:T.text3,fontWeight:isNow?700:400,marginBottom:6}}>{isNow?"Now":fmtHour(h.time)}</div>
+                  <div style={{fontSize:22,marginBottom:6}}>{hIcon}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:T.text}}>{h.temp}°</div>
+                  {h.rain>0&&<div style={{fontSize:10,color:T.warn,marginTop:4,fontWeight:600}}>{h.rain}%</div>}
+                </div>
+              );})}
+            </div>
+          </div>}
+
+          {/* 7-day forecast */}
+          {wx&&wx.daily&&wx.daily.length>0&&<div style={{padding:"18px 22px 24px"}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.text2,marginBottom:12,textTransform:"uppercase",letterSpacing:0.8}}>7-Day Forecast</div>
+            {wx.daily.slice(0,7).map(function(d,i){const [dIcon,dDesc]=WX_MAP[d.code]||["🌡️","Unknown"];const isSel=selDay===i;return(
+              <React.Fragment key={d.date}>
+                <div onClick={function(){setSelDay(isSel?null:i);}} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:12,background:isSel?"rgba(199,125,255,0.1)":"rgba(255,255,255,0.02)",border:"0.5px solid "+(isSel?T.accent:T.border),cursor:"pointer",marginBottom:6,transition:"background 0.12s,border 0.12s"}}>
+                  <div style={{width:80,fontSize:13,fontWeight:i===0?700:400,color:i===0?T.accent:T.text}}>{fmtDayLabel(d.date,i)}</div>
+                  <div style={{fontSize:22,flexShrink:0}}>{dIcon}</div>
+                  <div style={{flex:1,fontSize:12,color:T.text2}}>{dDesc}</div>
+                  {d.rain>0&&<div style={{fontSize:11,color:T.warn,fontWeight:600,minWidth:34,textAlign:"right"}}>{d.rain}%</div>}
+                  <div style={{display:"flex",gap:8,alignItems:"center",minWidth:70,justifyContent:"flex-end"}}>
+                    <span style={{fontSize:13,fontWeight:700,color:T.text}}>{d.high}°</span>
+                    <span style={{fontSize:11,color:T.text3}}>{d.low}°</span>
+                  </div>
+                  <div style={{fontSize:12,color:T.text3,marginLeft:2}}>{isSel?"▴":"▾"}</div>
+                </div>
+                {isSel&&<div style={{padding:"14px 16px",marginBottom:6,borderRadius:10,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.2)"}}>
+                  <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:10}}>{fmtFullDate(d.date)}</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+                    {[["🌡️","High",d.high+"°C"],["🌡️","Low",d.low+"°C"],["🌧️","Rain",d.rain+"%"]].map(function(row){return(
+                      <div key={row[1]} style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 12px",border:"0.5px solid "+T.border,textAlign:"center"}}>
+                        <div style={{fontSize:18,marginBottom:4}}>{row[0]}</div>
+                        <div style={{fontSize:9,color:T.text3,marginBottom:2}}>{row[1]}</div>
+                        <div style={{fontSize:14,fontWeight:700,color:T.text}}>{row[2]}</div>
+                      </div>
+                    );})}
+                  </div>
+                </div>}
+              </React.Fragment>
+            );})}
+          </div>}
+
+        </div>
+      </div>}
+    </>
   );
 }
 
@@ -1495,7 +1603,7 @@ function App(){
               </div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
-              <WeatherWidget/>
+              <WeatherWidget mob={mob}/>
               {nextRot&&<div style={{background:T.successBg,border:"0.5px solid "+T.success+"40",borderRadius:10,padding:"14px 16px"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
                   <div style={{fontSize:9,color:T.success,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>Next session</div>
