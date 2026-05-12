@@ -53,7 +53,7 @@
     } else {
       var sd = new Date(start.dateTime);
       var ed = new Date(end ? end.dateTime : start.dateTime);
-      date = sd.toISOString().slice(0, 10);
+      date = start.dateTime.slice(0, 10);
       time = pad(sd.getHours()) + ':' + pad(sd.getMinutes()) +
              '–' + pad(ed.getHours()) + ':' + pad(ed.getMinutes());
     }

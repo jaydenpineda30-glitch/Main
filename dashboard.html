@@ -152,23 +152,30 @@ const SC={"WIA&B":"#BA7517","POB":"#D85A30","BAS/IAS":"#7F77DD","FinStmts NRE":"
 // ── Hardcoded semester assessments (parsed from syllabuses) ──────────────────
 // Semester start: Monday 20 April 2026. Payroll AT1 confirmed Thursday class.
 const SYLLABUS_ASSESSMENTS=[
+  // WIA&B — Monday class
   {id:"wiab-at1",subject:"WIA&B",name:"Assessment 1",type:"SUBMISSION",date:"2026-05-18",done:false},
   {id:"wiab-at2",subject:"WIA&B",name:"Assessment 2",type:"SUBMISSION",date:"2026-06-08",done:false},
+  // POB — Monday class
   {id:"pob-at1",subject:"POB",name:"Assessment 1",type:"SUBMISSION",date:"2026-05-11",done:false},
   {id:"pob-at2a",subject:"POB",name:"Assessment 2 — Part A",type:"SUBMISSION",date:"2026-05-18",done:false},
   {id:"pob-at2b",subject:"POB",name:"Assessment 2 — Part B",type:"SUBMISSION",date:"2026-06-01",done:false},
-  {id:"bas-at1",subject:"BAS/IAS",name:"AT1 — IAS & BAS Preparation (Supervised)",type:"IN-CLASS",date:"2026-05-25",done:false},
-  {id:"bas-at2",subject:"BAS/IAS",name:"AT2 — Xero Case Study",type:"SUBMISSION",date:"2026-06-01",done:false},
-  {id:"fin-at1",subject:"FinStmts NRE",name:"Assignment 1",type:"SUBMISSION",date:"2026-05-18",done:false},
-  {id:"fin-at2",subject:"FinStmts NRE",name:"Assessment 2",type:"SUBMISSION",date:"2026-06-01",done:false},
-  {id:"law-at1",subject:"Law",name:"Assessment 1",type:"SUBMISSION",date:"2026-05-18",done:false},
-  {id:"law-at2a",subject:"Law",name:"Assessment 2 — Part A",type:"SUBMISSION",date:"2026-06-01",done:false},
-  {id:"law-at2b",subject:"Law",name:"Assessment 2 — Part B (Compliance)",type:"SUBMISSION",date:"2026-06-08",done:false},
+  // BAS/IAS — Tuesday class
+  {id:"bas-at1",subject:"BAS/IAS",name:"AT1 — IAS & BAS Preparation (Supervised)",type:"IN-CLASS",date:"2026-05-26",done:false},
+  {id:"bas-at2",subject:"BAS/IAS",name:"AT2 — Xero Case Study",type:"SUBMISSION",date:"2026-06-02",done:false},
+  // FinStmts NRE — Tuesday class
+  {id:"fin-at1",subject:"FinStmts NRE",name:"Assignment 1",type:"SUBMISSION",date:"2026-05-19",done:false},
+  {id:"fin-at2",subject:"FinStmts NRE",name:"Assessment 2",type:"SUBMISSION",date:"2026-06-02",done:false},
+  // Law — Wednesday class
+  {id:"law-at1",subject:"Law",name:"Assessment 1",type:"SUBMISSION",date:"2026-05-20",done:false},
+  {id:"law-at2a",subject:"Law",name:"Assessment 2 — Part A",type:"SUBMISSION",date:"2026-06-03",done:false},
+  {id:"law-at2b",subject:"Law",name:"Assessment 2 — Part B (Compliance)",type:"SUBMISSION",date:"2026-06-10",done:false},
+  // Payroll — Thursday class
   {id:"pay-at1",subject:"Payroll",name:"AT1 — In-Class Manual Payroll (Supervised)",type:"IN-CLASS",date:"2026-05-14",done:false},
-  {id:"pay-at2",subject:"Payroll",name:"AT2 — Xero Case Study",type:"SUBMISSION",date:"2026-06-01",done:false},
-  {id:"pay-at1-resit",subject:"Payroll",name:"AT1 Resit",type:"IN-CLASS",date:"2026-06-08",done:false},
-  {id:"pfr-at1",subject:"PFR",name:"Assessment 1",type:"SUBMISSION",date:"2026-05-11",done:false},
-  {id:"pfr-at2",subject:"PFR",name:"Assessment 2",type:"SUBMISSION",date:"2026-06-01",done:false},
+  {id:"pay-at2",subject:"Payroll",name:"AT2 — Xero Case Study",type:"SUBMISSION",date:"2026-06-04",done:false},
+  {id:"pay-at1-resit",subject:"Payroll",name:"AT1 Resit",type:"IN-CLASS",date:"2026-06-11",done:false},
+  // PFR — Thursday class
+  {id:"pfr-at1",subject:"PFR",name:"Assessment 1",type:"SUBMISSION",date:"2026-05-14",done:false},
+  {id:"pfr-at2",subject:"PFR",name:"Assessment 2",type:"SUBMISSION",date:"2026-06-04",done:false},
 ];
 
 const INIT={
@@ -211,6 +218,18 @@ function stripUndefined(v){
   if(v&&typeof v==="object"){var o={};Object.keys(v).forEach(function(k){if(v[k]!==undefined)o[k]=stripUndefined(v[k]);});return o;}
   return v;
 }
+// Reconcile saved assessments with the latest SYLLABUS_ASSESSMENTS defaults.
+// Always uses the canonical date from defaults; preserves done status and custom entries.
+function reconcileAssessments(saved,defaults){
+  var defMap={};defaults.forEach(function(a){defMap[a.id]=a;});
+  var result=defaults.map(function(a){
+    var s=saved.filter(function(x){return x.id===a.id;})[0];
+    return s?{...a,done:!!s.done}:{...a};
+  });
+  saved.forEach(function(s){if(!defMap[s.id])result.push(s);});
+  return result;
+}
+
 // Merge cloud/localStorage data with INIT defaults so no field is ever undefined
 function mergeWithDefaults(cloud){
   if(!cloud||typeof cloud!=="object")return{...INIT,reflections:SEED_REFL};
@@ -231,7 +250,7 @@ function mergeWithDefaults(cloud){
     uni:{...INIT.uni,...u,
       subjects:Array.isArray(u.subjects)?u.subjects:INIT.uni.subjects,
       completedEvents:Array.isArray(u.completedEvents)?u.completedEvents:[],
-      assessments:Array.isArray(u.assessments)&&u.assessments.length>0?u.assessments:SYLLABUS_ASSESSMENTS.map(function(a){return{...a};}),
+      assessments:Array.isArray(u.assessments)&&u.assessments.length>0?reconcileAssessments(u.assessments,SYLLABUS_ASSESSMENTS):SYLLABUS_ASSESSMENTS.map(function(a){return{...a};}),
     },
     reflections:(Array.isArray(cloud.reflections)&&cloud.reflections.length>0)?cloud.reflections:SEED_REFL,
   };
@@ -1743,8 +1762,8 @@ function App(){
             const totalA=assessments.length;const doneA=assessments.filter(function(a){return a.done;}).length;
             const UNI_KEYS=["uni","tafe","rmit","university","curtin","monash","deakin","uts","usyd","uq","uwa","anu","unsw","federation"];
             function isUniCalEv(ev){return ev.calName&&UNI_KEYS.some(function(k){return ev.calName.toLowerCase().includes(k);});}
-            const wd2=getWeekDates();const ws2=dStr(wd2[0]);const we2=dStr(wd2[6]);
-            const thisWeekClasses=dedupedEvents.filter(function(ev){return isUniCalEv(ev)&&!isAssessmentEvent(ev)&&!ev.allDay&&ev.date>=ws2&&ev.date<=we2;}).sort(function(a,b){return a.date.localeCompare(b.date)||(a.time||"").localeCompare(b.time||"");});
+            const uc28=new Date();uc28.setDate(uc28.getDate()+28);const ucEnd=dStr(uc28);
+            const upcomingClasses=dedupedEvents.filter(function(ev){return isUniCalEv(ev)&&!isAssessmentEvent(ev)&&!ev.allDay&&ev.date>=todayStr()&&ev.date<=ucEnd;}).sort(function(a,b){return a.date.localeCompare(b.date)||(a.time||"").localeCompare(b.time||"");});
             return(<React.Fragment>
               {/* ── Assessment Hub ── */}
               <div style={card()}>
@@ -1799,10 +1818,13 @@ function App(){
                 {/* any custom assessments not in SUBJECTS */}
                 {(function(){const custom=assessments.filter(function(a){return !SUBJECTS[a.subject];});if(custom.length===0)return null;return(<div style={{marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:T.text3,marginBottom:6}}>Other</div>{custom.map(function(a){const days=daysBetween(a.date);const isPast=!a.done&&days<0;return(<div key={a.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 8px",borderRadius:7,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:4,opacity:a.done?0.55:1}}><div style={{width:16,height:16,borderRadius:4,border:"1.5px solid "+(a.done?T.success:T.border2),background:a.done?T.success:"transparent",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={function(){toggleAssessmentDone(a.id);}}>{a.done&&<span style={{fontSize:9,color:"#05071a",fontWeight:700}}>✓</span>}</div><div style={{flex:1}}><div style={{fontSize:11,color:T.text,textDecoration:a.done?"line-through":"none"}}>{a.name}</div><div style={{fontSize:9,color:T.text3}}>{a.subject} · {fmtDate(a.date)}</div></div><span style={{fontSize:9,color:isPast&&!a.done?T.danger:T.text3,fontWeight:600}}>{days===0?"today":days===1?"tmrw":isPast?Math.abs(days)+"d overdue":days+"d"}</span><button style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:12,opacity:0.4}} onClick={function(){removeAssessment(a.id);}}>×</button></div>);})}</div>);})()}
               </div>
-              {/* ── This Week's Classes ── */}
+              {/* ── Upcoming Classes ── */}
               <div style={card()}>
-                <div style={sT}>This Week's Classes</div>
-                {thisWeekClasses.length===0?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No classes this week.":"Connect Google Calendar to see your schedule."}</div>:(function(){let lastDate2="";return thisWeekClasses.map(function(ev){const isPast=ev.date<todayStr();const showDate=ev.date!==lastDate2;lastDate2=ev.date;const col=evColor(ev);return(<div key={ev.id}>{showDate&&<div style={{fontSize:10,fontWeight:600,color:isPast?T.text3:T.text2,marginTop:10,marginBottom:6,paddingTop:8,borderTop:"0.5px solid "+T.border}}>{new Date(ev.date+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"short"})}{isPast&&<span style={{marginLeft:6,fontSize:9,color:T.text3,fontWeight:400}}>passed</span>}</div>}<div style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start",opacity:isPast?0.55:1}}><div style={{width:2,borderRadius:2,background:col,alignSelf:"stretch",minHeight:28,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:col,marginBottom:1}}>{evLabel(ev)}</div><div style={{fontSize:12,color:isPast?T.text2:T.text,lineHeight:1.5}}>{ev.title}</div>{ev.description&&<div style={{fontSize:10,color:T.text3,marginTop:2,lineHeight:1.4}}>{ev.description.slice(0,120)}{ev.description.length>120?"…":""}</div>}<div style={{fontSize:10,color:T.text3,marginTop:2}}>{ev.time}</div></div></div></div>);});}())}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <div style={sT}>Upcoming Classes</div>
+                  <div style={{fontSize:9,color:T.text3}}>next 28 days</div>
+                </div>
+                {upcomingClasses.length===0?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No upcoming classes in the next 28 days.":"Connect Google Calendar to see your schedule."}</div>:(function(){let lastDate2="";return upcomingClasses.map(function(ev){const showDate=ev.date!==lastDate2;lastDate2=ev.date;const col=evColor(ev);const isToday=ev.date===todayStr();return(<div key={ev.id}>{showDate&&<div style={{fontSize:10,fontWeight:600,color:isToday?T.accent:T.text2,marginTop:10,marginBottom:6,paddingTop:8,borderTop:"0.5px solid "+T.border}}>{isToday?"Today — ":""}{new Date(ev.date+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"short"})}</div>}<div style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start"}}><div style={{width:2,borderRadius:2,background:col,alignSelf:"stretch",minHeight:28,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:col,marginBottom:1}}>{evLabel(ev)}</div><div style={{fontSize:12,color:T.text,lineHeight:1.5}}>{ev.title}</div>{ev.description&&<div style={{fontSize:10,color:T.text3,marginTop:2,lineHeight:1.4}}>{ev.description.slice(0,120)}{ev.description.length>120?"…":""}</div>}<div style={{fontSize:10,color:T.text3,marginTop:2}}>{ev.time}</div></div></div></div>);});}())}
               </div>
             </React.Fragment>);
           })()}
