@@ -149,8 +149,30 @@ const SUBJECTS={"WIA&B":"WORK IN ACCOUNTING & BOOKKEEPING INDUSTRY","POB":"PREPA
 const SC={"WIA&B":"#BA7517","POB":"#D85A30","BAS/IAS":"#7F77DD","FinStmts NRE":"#D4537E","Payroll":"#378ADD","PFR":"#1D9E75","Law":"#639922"};
 
 
+// ── Hardcoded semester assessments (parsed from syllabuses) ──────────────────
+// Semester start: Monday 20 April 2026. Payroll AT1 confirmed Thursday class.
+const SYLLABUS_ASSESSMENTS=[
+  {id:"wiab-at1",subject:"WIA&B",name:"Assessment 1",type:"SUBMISSION",date:"2026-05-18",done:false},
+  {id:"wiab-at2",subject:"WIA&B",name:"Assessment 2",type:"SUBMISSION",date:"2026-06-08",done:false},
+  {id:"pob-at1",subject:"POB",name:"Assessment 1",type:"SUBMISSION",date:"2026-05-11",done:false},
+  {id:"pob-at2a",subject:"POB",name:"Assessment 2 — Part A",type:"SUBMISSION",date:"2026-05-18",done:false},
+  {id:"pob-at2b",subject:"POB",name:"Assessment 2 — Part B",type:"SUBMISSION",date:"2026-06-01",done:false},
+  {id:"bas-at1",subject:"BAS/IAS",name:"AT1 — IAS & BAS Preparation (Supervised)",type:"IN-CLASS",date:"2026-05-25",done:false},
+  {id:"bas-at2",subject:"BAS/IAS",name:"AT2 — Xero Case Study",type:"SUBMISSION",date:"2026-06-01",done:false},
+  {id:"fin-at1",subject:"FinStmts NRE",name:"Assignment 1",type:"SUBMISSION",date:"2026-05-18",done:false},
+  {id:"fin-at2",subject:"FinStmts NRE",name:"Assessment 2",type:"SUBMISSION",date:"2026-06-01",done:false},
+  {id:"law-at1",subject:"Law",name:"Assessment 1",type:"SUBMISSION",date:"2026-05-18",done:false},
+  {id:"law-at2a",subject:"Law",name:"Assessment 2 — Part A",type:"SUBMISSION",date:"2026-06-01",done:false},
+  {id:"law-at2b",subject:"Law",name:"Assessment 2 — Part B (Compliance)",type:"SUBMISSION",date:"2026-06-08",done:false},
+  {id:"pay-at1",subject:"Payroll",name:"AT1 — In-Class Manual Payroll (Supervised)",type:"IN-CLASS",date:"2026-05-14",done:false},
+  {id:"pay-at2",subject:"Payroll",name:"AT2 — Xero Case Study",type:"SUBMISSION",date:"2026-06-01",done:false},
+  {id:"pay-at1-resit",subject:"Payroll",name:"AT1 Resit",type:"IN-CLASS",date:"2026-06-08",done:false},
+  {id:"pfr-at1",subject:"PFR",name:"Assessment 1",type:"SUBMISSION",date:"2026-05-11",done:false},
+  {id:"pfr-at2",subject:"PFR",name:"Assessment 2",type:"SUBMISSION",date:"2026-06-01",done:false},
+];
+
 const INIT={
-  uni:{subjects:Object.keys(SUBJECTS).map(function(k,i){return{id:i+1,name:k,progress:0};}),completedEvents:[]},
+  uni:{subjects:Object.keys(SUBJECTS).map(function(k,i){return{id:i+1,name:k,progress:0};}),completedEvents:[],assessments:SYLLABUS_ASSESSMENTS.map(function(a){return{...a};})},
   gym:{
     exercises:[],
     bodyWeight:[],
@@ -209,6 +231,7 @@ function mergeWithDefaults(cloud){
     uni:{...INIT.uni,...u,
       subjects:Array.isArray(u.subjects)?u.subjects:INIT.uni.subjects,
       completedEvents:Array.isArray(u.completedEvents)?u.completedEvents:[],
+      assessments:Array.isArray(u.assessments)&&u.assessments.length>0?u.assessments:SYLLABUS_ASSESSMENTS.map(function(a){return{...a};}),
     },
     reflections:(Array.isArray(cloud.reflections)&&cloud.reflections.length>0)?cloud.reflections:SEED_REFL,
   };
@@ -1118,6 +1141,15 @@ function App(){
   const [gcalSelectedIds,setGcalSelectedIds]=useState(function(){try{var s=localStorage.getItem('__gcal_selected__');return s?JSON.parse(s):[];}catch(_){return [];}});
   const [gcalReady,setGcalReady]=useState(false);
   const [showCalPicker,setShowCalPicker]=useState(false);
+  // Syllabus / assessment hub state
+  const [showSyllabusImport,setShowSyllabusImport]=useState(false);
+  const [syllabusText,setSyllabusText]=useState("");
+  const [syllabusStart,setSyllabusStart]=useState("2026-04-20");
+  const [geminiKey,setGeminiKey]=useState(function(){try{return localStorage.getItem('__gemini_key__')||"";}catch(_){return "";}});
+  const [geminiLoading,setGeminiLoading]=useState(false);
+  const [geminiPreview,setGeminiPreview]=useState(null);
+  const [showAddAssess,setShowAddAssess]=useState(false);
+  const [addAssessForm,setAddAssessForm]=useState({subject:"WIA&B",name:"",type:"SUBMISSION",date:todayStr()});
   const [gcalExcludedIds,setGcalExcludedIds]=useState(function(){try{var x=localStorage.getItem('__gcal_excluded__');return x?JSON.parse(x):[];}catch(_){return [];}});
 
   // Call this anywhere in App to show a brief auto-dismissing notification.
@@ -1287,23 +1319,24 @@ function App(){
       return next;
     });
   }
-  // Assessment helpers (isAssessmentEvent + isGoTabEvent are module-level; these are App-level only)
-  function cleanAssessTitle(title){
-    var t=(title||"").replace(/^Wk\s*\d+\s*[A-Z/]+\s*[—–-]+\s*/i,"").replace(/^\d+\.\s*/,"").trim();
-    return t.charAt(0).toUpperCase()+t.slice(1);
+  // Assessment helpers
+  function typeBadge(type){
+    if(type==="IN-CLASS")return{label:"IN-CLASS",color:T.orange};
+    if(type==="EXAM")return{label:"EXAM",color:T.danger};
+    if(type==="SUBMISSION")return{label:"SUBMISSION",color:"#e74c3c"};
+    return{label:"ASSESSMENT",color:T.warn};
   }
   function assessBadge(ev){
-    // Accepts full event object so description can be checked too
-    var t=(ev.title||"")+" "+(ev.description||"");
-    var tl=t.toLowerCase();
+    var t=(ev.title||"")+" "+(ev.description||"");var tl=t.toLowerCase();
     if(t.includes("🔴")||tl.includes("supervised"))return{label:"IN-CLASS",color:T.orange};
     if(tl.includes("exam"))return{label:"EXAM",color:T.danger};
-    if(tl.includes("submission")||tl.includes("submit"))return{label:"SUBMISSION",color:T.danger};
+    if(tl.includes("submission")||tl.includes("submit"))return{label:"SUBMISSION",color:"#e74c3c"};
     if(tl.includes("assignment"))return{label:"ASSIGNMENT",color:T.accent};
-    if(tl.includes("due")||tl.includes("at1")||tl.includes("at2")||tl.includes("at3"))return{label:"ASSESSMENT",color:T.warn};
-    return null;
+    return{label:"ASSESSMENT",color:T.warn};
   }
-  const upcoming=dedupedEvents.filter(function(ev){return isAssessmentEvent(ev)&&ev.date>=todayStr();}).map(function(ev){const subjectKey=Object.keys(SUBJECTS).find(function(k){return (ev.title||"").toUpperCase().includes(k.toUpperCase());});const cleaned=cleanAssessTitle(ev.title||"");return{id:ev.id,title:cleaned,fullTitle:ev.title,date:ev.date,subject:subjectKey||"General",badge:assessBadge(ev)};}).sort(function(a,b){return a.date.localeCompare(b.date);}).slice(0,8);
+  // Upcoming pulls from structured assessments — no GCal keyword matching needed
+  const allAssessments=data.uni.assessments||SYLLABUS_ASSESSMENTS;
+  const upcoming=allAssessments.filter(function(a){return !a.done&&a.date>=todayStr();}).sort(function(a,b){return a.date.localeCompare(b.date);}).slice(0,8).map(function(a){return{id:a.id,title:a.name,date:a.date,subject:a.subject,badge:typeBadge(a.type)};});
   const activeTasks=data.personal.tasks.filter(function(t){return !t.done;});
   const doneTasks=data.personal.tasks.filter(function(t){return t.done;});
   const urgTasks=activeTasks.filter(function(t){return t.priority==="urgent";}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});
@@ -1317,6 +1350,40 @@ function App(){
 
   function doCheckin(){setCheckinLoading(true);setCheckinBlocks([]);generateCheckin(data).then(function(blocks){setCheckinBlocks(blocks);setCheckinLoading(false);}).catch(function(){setCheckinLoading(false);});}
   function toggleCalEv(id){setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
+  function toggleAssessmentDone(id){setData(function(p){const as=p.uni.assessments||[];return{...p,uni:{...p.uni,assessments:as.map(function(a){return a.id===id?{...a,done:!a.done}:a;})}};}); }
+  function removeAssessment(id){setData(function(p){return{...p,uni:{...p.uni,assessments:(p.uni.assessments||[]).filter(function(a){return a.id!==id;})}};}); }
+  function addAssessment(){
+    if(!addAssessForm.name||!addAssessForm.date)return;
+    const na={id:"custom-"+Date.now(),subject:addAssessForm.subject,name:addAssessForm.name,type:addAssessForm.type,date:addAssessForm.date,done:false};
+    setData(function(p){return{...p,uni:{...p.uni,assessments:(p.uni.assessments||[]).concat([na])}};});
+    setAddAssessForm({subject:"WIA&B",name:"",type:"SUBMISSION",date:todayStr()});
+    setShowAddAssess(false);
+  }
+  async function parseWithGemini(){
+    if(!syllabusText.trim()){return;}
+    var key=geminiKey.trim();
+    if(!key){showToast("Paste your Gemini API key first","error");return;}
+    try{localStorage.setItem('__gemini_key__',key);}catch(_){}
+    setGeminiLoading(true);setGeminiPreview(null);
+    try{
+      const prompt="Parse this university syllabus. Extract ONLY formal graded assessments (NOT quizzes, NOT self-testing exercises, NOT review questions, NOT resubmissions).\n\nSemester starts: "+syllabusStart+"\nWeek 1 = week of "+syllabusStart+"\nToday: "+todayStr()+"\n\nSubjects (use exact keys): WIA&B, POB, BAS/IAS, FinStmts NRE, Payroll, PFR, Law\n\nFor each assessment:\n- subject: one of the exact keys above\n- name: short descriptive name\n- type: IN-CLASS (supervised/in-class) | SUBMISSION (online submission/assignment) | EXAM\n- date: YYYY-MM-DD calculated from week number and semester start\n- done: false\n- id: short unique slug like 'wiab-at1'\n\nReturn ONLY a raw JSON array. No markdown, no explanation.\n\nSyllabus:\n"+syllabusText;
+      const resp=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key="+key,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.1}})});
+      if(!resp.ok)throw new Error("Gemini API error "+resp.status);
+      const json=await resp.json();
+      const text=json.candidates[0].content.parts[0].text;
+      const match=text.match(/\[[\s\S]*\]/);
+      if(!match)throw new Error("No JSON array in response");
+      const parsed=JSON.parse(match[0]);
+      setGeminiPreview(parsed);
+    }catch(e){showToast("Gemini error: "+e.message,"error");}
+    setGeminiLoading(false);
+  }
+  function saveGeminiPreview(){
+    if(!geminiPreview||geminiPreview.length===0)return;
+    setData(function(p){return{...p,uni:{...p.uni,assessments:geminiPreview.map(function(a){return{...a,done:a.done||false};})}}; });
+    setGeminiPreview(null);setSyllabusText("");setShowSyllabusImport(false);
+    showToast("Assessments saved!","success");
+  }
   function updateProg(id,val){setData(function(p){return{...p,uni:{...p.uni,subjects:p.uni.subjects.map(function(s){return s.id===id?{...s,progress:Number(val)}:s;})}}; });}
   function toggleTask(id){setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.map(function(t){return t.id===id?{...t,done:!t.done}:t;})}}; });}
   function archiveDone(){setData(function(p){const ts=p.personal.tasks||[];const done=ts.filter(function(t){return t.done;}).map(function(t){return{...t,archivedAt:todayStr()};});return{...p,personal:{...p.personal,tasks:ts.filter(function(t){return !t.done;}),archived:(p.personal.archived||[]).concat(done)}};});}
@@ -1607,9 +1674,8 @@ function App(){
             <div style={card()}>
               <div style={sT}>Upcoming assessments</div>
               {upcoming.length===0?<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>:upcoming.map(function(a){const days=daysBetween(a.date);return(<div key={a.id} style={{marginBottom:10,paddingBottom:10,borderBottom:"0.5px solid "+T.border,cursor:"pointer"}} onClick={function(){setPage("Uni");}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:3}}><div style={{display:"flex",alignItems:"center",gap:5,flex:1,minWidth:0,flexWrap:"wrap"}}><div style={{width:6,height:6,borderRadius:"50%",background:SC[a.subject]||T.accent,flexShrink:0,marginTop:2}}/><span style={{fontSize:10,fontWeight:700,color:SC[a.subject]||T.accent,lineHeight:1.3}}>{SUBJECTS[a.subject]||a.subject}</span>{a.badge&&<span style={{fontSize:8,fontWeight:700,color:"#fff",background:a.badge.color,padding:"1px 5px",borderRadius:3,letterSpacing:0.4}}>{a.badge.label}</span>}</div><span style={{fontSize:10,color:days<=3?T.danger:T.text2,fontWeight:600,flexShrink:0,marginLeft:4}}>{days===0?"today":days===1?"tomorrow":days+"d"}</span></div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:3}}><div style={{display:"flex",alignItems:"center",gap:5,flex:1,minWidth:0,flexWrap:"wrap"}}><div style={{width:6,height:6,borderRadius:"50%",background:SC[a.subject]||T.accent,flexShrink:0,marginTop:2}}/><span style={{fontSize:10,fontWeight:700,color:SC[a.subject]||T.accent,lineHeight:1.3}}>{a.subject}</span>{a.badge&&<span style={{fontSize:8,fontWeight:700,color:"#fff",background:a.badge.color,padding:"1px 5px",borderRadius:3,letterSpacing:0.4}}>{a.badge.label}</span>}</div><span style={{fontSize:10,color:days<=3?T.danger:T.text2,fontWeight:600,flexShrink:0,marginLeft:4}}>{days===0?"today":days===1?"tomorrow":days+"d"}</span></div>
                 <div style={{fontSize:11,color:T.text,lineHeight:1.3,paddingLeft:11}}>{a.title}</div>
-                {a.fullTitle!==a.title&&<div style={{fontSize:9,color:T.text3,lineHeight:1.3,paddingLeft:11,marginTop:1,fontStyle:"italic"}}>{a.fullTitle}</div>}
                 <div style={{fontSize:9,color:T.text3,marginTop:2,paddingLeft:11}}>{fmtDate(a.date)}</div>
               </div>);})}
             </div>
@@ -1673,16 +1739,67 @@ function App(){
             <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14}}>{data.uni.subjects.map(function(s){return(<div key={s.id}><div style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:3}}><span style={{fontWeight:600,color:SC[s.name]||T.text}}>{SUBJECTS[s.name]||s.name}</span><span style={{color:T.text2}}>{s.progress}%</span></div><input type="range" min={0} max={100} value={s.progress} onChange={function(ev){updateProg(s.id,ev.target.value);}} style={{width:"100%"}}/><div style={{height:3,borderRadius:2,background:T.bg3,overflow:"hidden"}}><div style={{width:s.progress+"%",height:"100%",background:SC[s.name]||T.accent,borderRadius:2,transition:"width 0.3s"}}/></div></div>);})}</div>
           </div>
           {(function(){
+            const assessments=data.uni.assessments||SYLLABUS_ASSESSMENTS;
+            const totalA=assessments.length;const doneA=assessments.filter(function(a){return a.done;}).length;
             const UNI_KEYS=["uni","tafe","rmit","university","curtin","monash","deakin","uts","usyd","uq","uwa","anu","unsw","federation"];
             function isUniCalEv(ev){return ev.calName&&UNI_KEYS.some(function(k){return ev.calName.toLowerCase().includes(k);});}
-            const uniAssessments=dedupedEvents.filter(function(ev){return isUniCalEv(ev)&&isAssessmentEvent(ev)&&ev.date>=todayStr();}).sort(function(a,b){return a.date.localeCompare(b.date);});
             const wd2=getWeekDates();const ws2=dStr(wd2[0]);const we2=dStr(wd2[6]);
             const thisWeekClasses=dedupedEvents.filter(function(ev){return isUniCalEv(ev)&&!isAssessmentEvent(ev)&&!ev.allDay&&ev.date>=ws2&&ev.date<=we2;}).sort(function(a,b){return a.date.localeCompare(b.date)||(a.time||"").localeCompare(b.time||"");});
             return(<React.Fragment>
+              {/* ── Assessment Hub ── */}
               <div style={card()}>
-                <div style={sT}>Upcoming Assessments</div>
-                {uniAssessments.length===0?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No upcoming assessments found — add events with keywords like AT1, exam, due, or supervised to your uni calendar.":"Connect Google Calendar to see assessments."}</div>:uniAssessments.map(function(ev){const days=daysBetween(ev.date);const sk=Object.keys(SUBJECTS).find(function(k){return (ev.title||"").toUpperCase().includes(k.toUpperCase());});const col=sk?SC[sk]:T.accent;const isUrg=days>=0&&days<=3;const cleaned=cleanAssessTitle(ev.title||"");const badge=assessBadge(ev);return(<div key={ev.id} style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start",padding:"8px 10px",borderRadius:7,background:isUrg?T.dangerBg:T.bg3,border:"0.5px solid "+(isUrg?T.danger+"40":T.border)}}><div style={{width:6,height:6,borderRadius:"50%",background:col,flexShrink:0,marginTop:4}}/><div style={{flex:1}}><div style={{display:"flex",justifyContent:"space-between",gap:6,alignItems:"flex-start",flexWrap:"wrap"}}><div style={{display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:10,fontWeight:700,color:col}}>{sk||"General"}</span>{badge&&<span style={{fontSize:8,fontWeight:700,color:"#fff",background:badge.color,padding:"1px 5px",borderRadius:3,letterSpacing:0.4}}>{badge.label}</span>}</div><span style={{fontSize:10,color:isUrg?T.danger:T.text2,fontWeight:600,flexShrink:0}}>{days===0?"today":days===1?"tomorrow":days+"d"}</span></div><div style={{fontSize:12,color:T.text,marginTop:2,lineHeight:1.4}}>{cleaned}</div>{cleaned!==ev.title&&<div style={{fontSize:10,color:T.text3,marginTop:1,lineHeight:1.3,fontStyle:"italic"}}>{ev.title}</div>}{ev.description&&<div style={{fontSize:10,color:T.text3,marginTop:3,lineHeight:1.5,padding:"4px 6px",borderRadius:4,background:"rgba(255,255,255,0.03)"}}>{ev.description.slice(0,150)}{ev.description.length>150?"…":""}</div>}<div style={{fontSize:10,color:T.text3,marginTop:2}}>{fmtDate(ev.date)}{ev.time&&ev.time!=="All day"?" · "+ev.time:""}</div></div></div>);})}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                  <div>
+                    <div style={sT}>Assessment Hub</div>
+                    <div style={{fontSize:10,color:T.text3,marginTop:2}}>{doneA} of {totalA} complete</div>
+                  </div>
+                  <div style={{display:"flex",gap:6}}>
+                    <button style={{...btn,fontSize:10}} onClick={function(){setShowAddAssess(true);}}>+ Add</button>
+                    <button style={{...btn,fontSize:10,color:T.accent,border:"0.5px solid rgba(199,125,255,0.3)"}} onClick={function(){setShowSyllabusImport(true);}}>⬆ Import</button>
+                  </div>
+                </div>
+                {/* overall progress bar */}
+                <div style={{height:4,borderRadius:2,background:T.bg3,marginBottom:14,overflow:"hidden"}}>
+                  <div style={{width:(totalA>0?(doneA/totalA*100):0)+"%",height:"100%",background:T.success,borderRadius:2,transition:"width 0.4s"}}/>
+                </div>
+                {/* per-subject groups */}
+                {Object.keys(SUBJECTS).map(function(subj){
+                  const sas=assessments.filter(function(a){return a.subject===subj;}).sort(function(a,b){return a.date.localeCompare(b.date);});
+                  if(sas.length===0)return null;
+                  const sDone=sas.filter(function(a){return a.done;}).length;
+                  const col=SC[subj]||T.accent;
+                  return(<div key={subj} style={{marginBottom:14}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        <div style={{width:8,height:8,borderRadius:2,background:col,flexShrink:0}}/>
+                        <span style={{fontSize:11,fontWeight:700,color:col}}>{subj}</span>
+                      </div>
+                      <span style={{fontSize:9,color:T.text3}}>{sDone}/{sas.length}</span>
+                    </div>
+                    {sas.map(function(a){
+                      const days=daysBetween(a.date);
+                      const isUrg=!a.done&&days>=0&&days<=3;
+                      const isPast=!a.done&&days<0;
+                      const badge=typeBadge(a.type);
+                      return(<div key={a.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 8px",borderRadius:7,background:a.done?"rgba(105,240,174,0.04)":isUrg?T.dangerBg:isPast?"rgba(255,107,107,0.06)":T.bg3,border:"0.5px solid "+(a.done?"rgba(105,240,174,0.15)":isUrg?T.danger+"40":isPast?"rgba(255,107,107,0.2)":T.border),marginBottom:4,opacity:a.done?0.55:1,transition:"all 0.15s"}}>
+                        <div style={{width:16,height:16,borderRadius:4,border:"1.5px solid "+(a.done?T.success:T.border2),background:a.done?T.success:"transparent",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={function(){toggleAssessmentDone(a.id);}}>
+                          {a.done&&<span style={{fontSize:9,color:"#05071a",fontWeight:700}}>✓</span>}
+                        </div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:11,color:a.done?T.text3:T.text,textDecoration:a.done?"line-through":"none",lineHeight:1.3}}>{a.name}</div>
+                          <div style={{fontSize:9,color:isPast&&!a.done?T.danger:T.text3,marginTop:1}}>{fmtDate(a.date)}{!a.done&&isPast?" · "+Math.abs(days)+"d overdue":""}</div>
+                        </div>
+                        <span style={{fontSize:7,fontWeight:700,color:"#fff",background:badge.color,padding:"2px 5px",borderRadius:3,letterSpacing:0.3,flexShrink:0}}>{badge.label}</span>
+                        {!a.done&&<span style={{fontSize:9,color:isUrg?T.danger:isPast?T.danger:T.text3,fontWeight:600,flexShrink:0,minWidth:28,textAlign:"right"}}>{days===0?"today":days===1?"tmrw":isPast?days+"d":days+"d"}</span>}
+                        <button style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:12,padding:"0 2px",flexShrink:0,opacity:0.4}} onClick={function(){removeAssessment(a.id);}}>×</button>
+                      </div>);
+                    })}
+                  </div>);
+                })}
+                {/* any custom assessments not in SUBJECTS */}
+                {(function(){const custom=assessments.filter(function(a){return !SUBJECTS[a.subject];});if(custom.length===0)return null;return(<div style={{marginBottom:14}}><div style={{fontSize:10,fontWeight:700,color:T.text3,marginBottom:6}}>Other</div>{custom.map(function(a){const days=daysBetween(a.date);const isPast=!a.done&&days<0;return(<div key={a.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 8px",borderRadius:7,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:4,opacity:a.done?0.55:1}}><div style={{width:16,height:16,borderRadius:4,border:"1.5px solid "+(a.done?T.success:T.border2),background:a.done?T.success:"transparent",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={function(){toggleAssessmentDone(a.id);}}>{a.done&&<span style={{fontSize:9,color:"#05071a",fontWeight:700}}>✓</span>}</div><div style={{flex:1}}><div style={{fontSize:11,color:T.text,textDecoration:a.done?"line-through":"none"}}>{a.name}</div><div style={{fontSize:9,color:T.text3}}>{a.subject} · {fmtDate(a.date)}</div></div><span style={{fontSize:9,color:isPast&&!a.done?T.danger:T.text3,fontWeight:600}}>{days===0?"today":days===1?"tmrw":isPast?Math.abs(days)+"d overdue":days+"d"}</span><button style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:12,opacity:0.4}} onClick={function(){removeAssessment(a.id);}}>×</button></div>);})}</div>);})()}
               </div>
+              {/* ── This Week's Classes ── */}
               <div style={card()}>
                 <div style={sT}>This Week's Classes</div>
                 {thisWeekClasses.length===0?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No classes this week.":"Connect Google Calendar to see your schedule."}</div>:(function(){let lastDate2="";return thisWeekClasses.map(function(ev){const isPast=ev.date<todayStr();const showDate=ev.date!==lastDate2;lastDate2=ev.date;const col=evColor(ev);return(<div key={ev.id}>{showDate&&<div style={{fontSize:10,fontWeight:600,color:isPast?T.text3:T.text2,marginTop:10,marginBottom:6,paddingTop:8,borderTop:"0.5px solid "+T.border}}>{new Date(ev.date+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"short"})}{isPast&&<span style={{marginLeft:6,fontSize:9,color:T.text3,fontWeight:400}}>passed</span>}</div>}<div style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start",opacity:isPast?0.55:1}}><div style={{width:2,borderRadius:2,background:col,alignSelf:"stretch",minHeight:28,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:col,marginBottom:1}}>{evLabel(ev)}</div><div style={{fontSize:12,color:isPast?T.text2:T.text,lineHeight:1.5}}>{ev.title}</div>{ev.description&&<div style={{fontSize:10,color:T.text3,marginTop:2,lineHeight:1.4}}>{ev.description.slice(0,120)}{ev.description.length>120?"…":""}</div>}<div style={{fontSize:10,color:T.text3,marginTop:2}}>{ev.time}</div></div></div></div>);});}())}
@@ -1895,6 +2012,102 @@ function App(){
             <button style={{padding:"6px 11px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text3,cursor:"pointer",fontSize:11}} onClick={function(){try{localStorage.removeItem('__gcal_selected__');localStorage.removeItem('__gcal_excluded__');}catch(_){}setGcalExcludedIds([]);if(window.GCalSync){window.GCalSync.setSelectedIds([]);window.GCalSync.refresh();}setShowCalPicker(false);}}>↺ Reset to all</button>
             <button style={{padding:"6px 13px",borderRadius:8,border:"1px solid rgba(247,111,111,0.4)",background:"rgba(247,111,111,0.1)",color:T.danger,cursor:"pointer",fontSize:12}} onClick={function(){if(window.GCalSync)window.GCalSync.disconnect();setShowCalPicker(false);}}>Disconnect all</button>
           </div>
+        </div>
+      </div>}
+
+      {/* ── Add Assessment modal ── */}
+      {showAddAssess&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.82)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:210,padding:mob?"0":"16px"}} onClick={function(){setShowAddAssess(false);}}>
+        <div style={{background:"rgba(14,16,40,0.97)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 32px":"22px",width:mob?"100%":"360px",maxWidth:"100%",border:"0.5px solid rgba(199,125,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.6)"}} onClick={function(e){e.stopPropagation();}}>
+          {mob&&<div style={{width:36,height:4,borderRadius:2,background:"rgba(255,255,255,0.2)",margin:"0 auto 20px"}}/>}
+          <div style={{fontSize:15,fontWeight:600,marginBottom:16,color:T.text}}>Add Assessment</div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div>
+              <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Subject</div>
+              <select style={{...inp,padding:"9px 11px"}} value={addAssessForm.subject} onChange={function(ev){setAddAssessForm(function(f){return{...f,subject:ev.target.value};});}}>
+                {Object.keys(SUBJECTS).map(function(s){return<option key={s} value={s}>{s}</option>;})}
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div>
+              <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Assessment name</div>
+              <input style={{...inp,padding:"9px 11px"}} placeholder="e.g. Assignment 1" value={addAssessForm.name} onChange={function(ev){setAddAssessForm(function(f){return{...f,name:ev.target.value};});}}/>
+            </div>
+            <div>
+              <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Type</div>
+              <select style={{...inp,padding:"9px 11px"}} value={addAssessForm.type} onChange={function(ev){setAddAssessForm(function(f){return{...f,type:ev.target.value};});}}>
+                <option value="SUBMISSION">Submission</option>
+                <option value="IN-CLASS">In-Class / Supervised</option>
+                <option value="EXAM">Exam</option>
+              </select>
+            </div>
+            <div>
+              <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Due date</div>
+              <input type="date" style={{...inp,padding:"9px 11px"}} value={addAssessForm.date} onChange={function(ev){setAddAssessForm(function(f){return{...f,date:ev.target.value};});}}/>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,marginTop:18,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
+            <button style={btnP} onClick={addAssessment} disabled={!addAssessForm.name||!addAssessForm.date}>Save</button>
+            <button style={btn} onClick={function(){setShowAddAssess(false);}}>Cancel</button>
+          </div>
+        </div>
+      </div>}
+
+      {/* ── Syllabus Import modal ── */}
+      {showSyllabusImport&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.82)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:210,padding:mob?"0":"16px"}} onClick={function(){setShowSyllabusImport(false);}}>
+        <div style={{background:"rgba(14,16,40,0.97)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 32px":"22px",width:mob?"100%":"520px",maxWidth:"100%",maxHeight:mob?"90vh":"85vh",overflowY:"auto",border:"0.5px solid rgba(199,125,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.6)"}} onClick={function(e){e.stopPropagation();}}>
+          {mob&&<div style={{width:36,height:4,borderRadius:2,background:"rgba(255,255,255,0.2)",margin:"0 auto 20px"}}/>}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+            <div style={{fontSize:15,fontWeight:600,color:T.text}}>⬆ Import Syllabus via Gemini AI</div>
+          </div>
+          <div style={{fontSize:11,color:T.text3,marginBottom:16,lineHeight:1.5}}>Paste your unit outline or assessment schedule below. Gemini AI will extract all assessment due dates and add them to your hub.</div>
+
+          {/* Gemini API key */}
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Gemini API key <span style={{color:T.text3,fontWeight:400}}>(saved locally, never sent to our servers)</span></div>
+            <input type="password" style={{...inp,padding:"9px 11px",fontFamily:"monospace",fontSize:12}} placeholder="AIzaSy..." value={geminiKey} onChange={function(ev){var k=ev.target.value;setGeminiKey(k);try{localStorage.setItem('__gemini_key__',k);}catch(_){}}}/>
+          </div>
+
+          {/* Semester start */}
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Semester start date <span style={{color:T.text3,fontWeight:400}}>(used to calculate week dates)</span></div>
+            <input type="date" style={{...inp,padding:"9px 11px"}} value={syllabusStart} onChange={function(ev){setSyllabusStart(ev.target.value);}}/>
+          </div>
+
+          {/* Syllabus text */}
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Syllabus / unit outline text</div>
+            <textarea style={{...inp,resize:"vertical",fontFamily:"monospace",fontSize:11,lineHeight:1.5}} rows={8} placeholder={"Paste your subject outline here...\nE.g.:\nWeek 5 — Assessment 1 due\nWeek 7 — Supervised exam (AT2)\n..."} value={syllabusText} onChange={function(ev){setSyllabusText(ev.target.value);}}/>
+          </div>
+
+          {/* Parse button */}
+          <button style={{...btnP,width:"100%",padding:"11px",marginBottom:12,opacity:geminiLoading?0.6:1}} onClick={parseWithGemini} disabled={geminiLoading||!syllabusText.trim()}>
+            {geminiLoading?"⏳ Parsing with Gemini AI...":"✨ Parse with Gemini AI"}
+          </button>
+
+          {/* Preview */}
+          {geminiPreview&&geminiPreview.length>0&&<div style={{marginBottom:16}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.success,marginBottom:8}}>✓ {geminiPreview.length} assessments found — review before saving:</div>
+            <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:240,overflowY:"auto",paddingRight:2}}>
+              {geminiPreview.map(function(a,i){
+                const badge=typeBadge(a.type||"SUBMISSION");
+                return(<div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:7,background:T.bg3,border:"0.5px solid "+T.border}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:11,color:T.text,fontWeight:500}}>{a.name}</div>
+                    <div style={{fontSize:9,color:T.text3,marginTop:1}}>{a.subject} · {fmtDate(a.date)}</div>
+                  </div>
+                  <span style={{fontSize:7,fontWeight:700,color:"#fff",background:badge.color,padding:"2px 5px",borderRadius:3,flexShrink:0}}>{badge.label}</span>
+                </div>);
+              })}
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:10}}>
+              <button style={{...btnP,flex:1}} onClick={saveGeminiPreview}>Save all to Assessment Hub</button>
+              <button style={btn} onClick={function(){setGeminiPreview(null);}}>Discard</button>
+            </div>
+          </div>}
+
+          {!geminiPreview&&<div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:4}}>
+            <button style={btn} onClick={function(){setShowSyllabusImport(false);setSyllabusText("");setGeminiPreview(null);}}>Close</button>
+          </div>}
         </div>
       </div>}
 
