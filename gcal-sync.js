@@ -45,7 +45,7 @@
 
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
 
-  function parseEvent(ev, calId, calColor, calName) {
+  function parseEvent(ev, calId, calColor, calName, accountEmail) {
     var start = ev.start, end = ev.end;
     var date, time, allDay = false;
     if (start.date) {
@@ -62,8 +62,10 @@
       date: date, time: time,
       title: ev.summary || '(no title)',
       location: ev.location || null,
+      description: ev.description || null,
       gcal: true, allDay: allDay,
-      calId: calId, calColor: calColor || '#4285F4', calName: calName || 'Google'
+      calId: calId, calColor: calColor || '#4285F4', calName: calName || 'Google',
+      _email: accountEmail || null
     };
   }
 
@@ -99,7 +101,7 @@
             orderBy:      'startTime'
           }).then(function (res) {
             return (res.result.items || []).map(function (ev) {
-              return parseEvent(ev, cal.id, cal.backgroundColor, cal.summary);
+              return parseEvent(ev, cal.id, cal.backgroundColor, cal.summary, acc.email);
             });
           }).catch(function () { return []; })
         );
@@ -292,7 +294,36 @@
       fetchAll();
     },
 
-    refresh: function () { fetchAll(); }
+    refresh: function () { fetchAll(); },
+
+    /**
+     * setSingleAccountMode(email) — mute every calendar that does NOT belong
+     * to the given account. Pass null to reset and show all accounts.
+     */
+    setSingleAccountMode: function (email) {
+      if (!email) {
+        // Reset: re-select every calendar across all accounts
+        _selectedIds = [];
+        _accounts.forEach(function (acc) {
+          (acc.calendars || []).forEach(function (cal) {
+            if (_selectedIds.indexOf(cal.id) === -1) _selectedIds.push(cal.id);
+          });
+        });
+      } else {
+        // Keep only calendars belonging to the target account
+        _selectedIds = [];
+        _accounts.forEach(function (acc) {
+          if (acc.email === email) {
+            (acc.calendars || []).forEach(function (cal) {
+              _selectedIds.push(cal.id);
+            });
+          }
+        });
+      }
+      try { localStorage.setItem(SEL_KEY, JSON.stringify(_selectedIds)); } catch (_) {}
+      if (window.__dashSetGcalSelectedIds) window.__dashSetGcalSelectedIds(_selectedIds.slice());
+      fetchAll();
+    }
   };
 
 })();
