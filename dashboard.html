@@ -16,6 +16,10 @@
 <script src="error-boundary.js"></script>
 <script src="monitoring-dashboard.js"></script>
 <script src="ollama-service.js"></script>
+<!-- Google Calendar sync -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://apis.google.com/js/api.js" async defer></script>
+<script src="gcal-sync.js"></script>
 <!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
@@ -1212,6 +1216,12 @@ function App(){
   const [toast,setToast]=useState(null); // {msg,type:'error'|'success'|'warn'}
   const [errLog,setErrLog]=useState([]);
   const [showErrPanel,setShowErrPanel]=useState(false);
+  // Google Calendar sync state
+  const [gcalEvents,setGcalEvents]=useState(function(){try{var c=localStorage.getItem('__gcal_events__');return c?JSON.parse(c):[];}catch(_){return [];}});
+  const [gcalConnected,setGcalConnected]=useState(false);
+  const [gcalCalendars,setGcalCalendars]=useState([]);
+  const [gcalReady,setGcalReady]=useState(false);
+  const [showCalPicker,setShowCalPicker]=useState(false);
 
   // Call this anywhere in App to show a brief auto-dismissing notification.
   // Child components can call window.showToast() which is wired up below.
@@ -1222,6 +1232,20 @@ function App(){
   }
   // Expose globally so FinanceSection and GymSection can reach it without prop drilling
   useEffect(function(){window.showToast=showToast;return function(){window.showToast=null;};},[]);
+
+  // Wire GCalSync callbacks so gcal-sync.js can push into React state
+  useEffect(function(){
+    window.__dashSetGcalEvents=function(evs){setGcalEvents(evs||[]);};
+    window.__dashSetGcalConnected=function(v){setGcalConnected(!!v);};
+    window.__dashSetGcalCalendars=function(cs){setGcalCalendars(cs||[]);};
+    window.__dashSetGcalReady=function(){setGcalReady(true);};
+    return function(){
+      window.__dashSetGcalEvents=null;
+      window.__dashSetGcalConnected=null;
+      window.__dashSetGcalCalendars=null;
+      window.__dashSetGcalReady=null;
+    };
+  },[]);
 
   // Capture an error: log to console, add to errLog, show toast
   function captureError(err,fnName){
@@ -1356,7 +1380,7 @@ function App(){
   const doneTasks=data.personal.tasks.filter(function(t){return t.done;});
   const urgTasks=activeTasks.filter(function(t){return t.priority==="urgent";}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});
   const normTasks=activeTasks.filter(function(t){return t.priority==="normal";}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});
-  const activeDayEvs=UNI_EVENTS.filter(function(ev){return ev.date===activeDay;}).concat(WORK_EVENTS.filter(function(ev){return ev.date===activeDay;})).sort(function(a,b){return(a.time||"").localeCompare(b.time||"");});
+  const activeDayEvs=UNI_EVENTS.filter(function(ev){return ev.date===activeDay;}).concat(WORK_EVENTS.filter(function(ev){return ev.date===activeDay;})).concat(gcalEvents.filter(function(ev){return ev.date===activeDay;})).sort(function(a,b){return(a.time||"").localeCompare(b.time||"");});
   const shifts=WORK_EVENTS.filter(function(ev){return ev.type==="shift";});
   const totNorm=shifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.normalHrs:0);},0);
   const totPen=shifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.penaltyHrs:0);},0);
@@ -1460,36 +1484,39 @@ function App(){
     }
   }
 
+  function evColor(ev){return ev.gcal?ev.calColor:(ev.type?wCol(ev.type):(SC[ev.subject]||"#888"));}
+  function evLabel(ev){return ev.gcal?(ev.calName||"GCal"):(ev.type?"Work":(SUBJECTS[ev.subject]||ev.subject));}
+
   function renderWeek(){
     if(mob){
-      const dayEvs=UNI_EVENTS.filter(function(ev){return ev.date===activeDay;}).concat(WORK_EVENTS.filter(function(ev){return ev.date===activeDay;})).sort(function(a,b){return(a.time||"").localeCompare(b.time||"");});
+      const dayEvs=UNI_EVENTS.filter(function(ev){return ev.date===activeDay;}).concat(WORK_EVENTS.filter(function(ev){return ev.date===activeDay;})).concat(gcalEvents.filter(function(ev){return ev.date===activeDay;})).sort(function(a,b){return(a.time||"").localeCompare(b.time||"");});
       return(
         <div>
           <div style={{display:"flex",gap:4,overflowX:"auto",paddingBottom:6,marginBottom:10}}>
-            {weekDates.map(function(d,di){const ds=dStr(d);const isTdy=ds===todayStr();const isActive=ds===activeDay;return(
+            {weekDates.map(function(d,di){const ds=dStr(d);const isTdy=ds===todayStr();const isActive=ds===activeDay;const hasEv=UNI_EVENTS.concat(WORK_EVENTS).concat(gcalEvents).some(function(ev){return ev.date===ds;});return(
               <button key={di} onClick={function(){setActiveDay(ds);}} style={{flex:"0 0 auto",minWidth:42,padding:"7px 6px",borderRadius:10,border:isActive?"1px solid "+T.accent:"0.5px solid "+T.border,background:isActive?T.accentBg:"rgba(255,255,255,0.03)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
                 <span style={{fontSize:9,color:isTdy?T.accent:T.text3,fontWeight:600}}>{DAYS[di]}</span>
                 <span style={{fontSize:15,fontWeight:isTdy?700:500,color:isTdy?T.accent:isActive?T.text:T.text2}}>{d.getDate()}</span>
-                {UNI_EVENTS.concat(WORK_EVENTS).some(function(ev){return ev.date===ds;})&&<div style={{width:4,height:4,borderRadius:"50%",background:isActive?T.accent:T.text3}}/>}
+                {hasEv&&<div style={{width:4,height:4,borderRadius:"50%",background:isActive?T.accent:T.text3}}/>}
               </button>
             );})}
           </div>
-          {dayEvs.length===0?<div style={{fontSize:12,color:T.text3,padding:"12px 0",textAlign:"center"}}>No events today</div>:dayEvs.map(function(ev){const isW=!!ev.type;const col=isW?wCol(ev.type):(SC[ev.subject]||"#888");const ce=data.uni.completedEvents||[];const done=!isW&&ce.indexOf(ev.id)!==-1;return(
-            <div key={ev.id} onClick={function(){if(!isW)toggleCalEv(ev.id);}} style={{display:"flex",gap:10,padding:"10px 12px",borderRadius:10,background:col+"14",border:"0.5px solid "+col+"35",marginBottom:8,cursor:isW?"default":"pointer",opacity:done?0.5:1,alignItems:"flex-start"}}>
+          {dayEvs.length===0?<div style={{fontSize:12,color:T.text3,padding:"12px 0",textAlign:"center"}}>No events today</div>:dayEvs.map(function(ev){const isW=!!ev.type;const col=evColor(ev);const ce=data.uni.completedEvents||[];const done=!ev.gcal&&!isW&&ce.indexOf(ev.id)!==-1;return(
+            <div key={ev.id} onClick={function(){if(!isW&&!ev.gcal)toggleCalEv(ev.id);}} style={{display:"flex",gap:10,padding:"10px 12px",borderRadius:10,background:col+"14",border:"0.5px solid "+col+"35",marginBottom:8,cursor:(isW||ev.gcal)?"default":"pointer",opacity:done?0.5:1,alignItems:"flex-start"}}>
               <div style={{width:3,background:col,borderRadius:2,alignSelf:"stretch",minHeight:28,flexShrink:0,marginTop:2}}/>
               <div style={{flex:1}}>
-                <div style={{fontSize:11,fontWeight:700,color:col}}>{isW?"Work":(SUBJECTS[ev.subject]||ev.subject)}{ev.assessment?" 📋":""}</div>
+                <div style={{fontSize:11,fontWeight:700,color:col}}>{evLabel(ev)}{ev.assessment?" 📋":""}</div>
                 <div style={{fontSize:13,color:T.text,marginTop:2,lineHeight:1.4}}>{ev.title}</div>
-                <div style={{fontSize:10,color:T.text3,marginTop:3}}>{ev.time}</div>
+                <div style={{fontSize:10,color:T.text3,marginTop:3}}>{ev.time}{ev.location?<span style={{marginLeft:6,opacity:0.7}}>📍 {ev.location}</span>:null}</div>
               </div>
-              {!isW&&<input type="checkbox" checked={done} onChange={function(){toggleCalEv(ev.id);}} style={{accentColor:col,width:18,height:18,flexShrink:0}} onClick={function(e){e.stopPropagation();}}/>}
+              {!isW&&!ev.gcal&&<input type="checkbox" checked={done} onChange={function(){toggleCalEv(ev.id);}} style={{accentColor:col,width:18,height:18,flexShrink:0}} onClick={function(e){e.stopPropagation();}}/>}
             </div>
           );})}
         </div>
       );
     }
     const PPM=0.26;
-    const allEvs=[];weekDates.forEach(function(d){UNI_EVENTS.filter(function(ev){return ev.date===dStr(d);}).forEach(function(ev){allEvs.push(ev);});WORK_EVENTS.filter(function(ev){return ev.date===dStr(d);}).forEach(function(ev){allEvs.push(ev);});});
+    const allEvs=[];weekDates.forEach(function(d){var ds=dStr(d);UNI_EVENTS.filter(function(ev){return ev.date===ds;}).forEach(function(ev){allEvs.push(ev);});WORK_EVENTS.filter(function(ev){return ev.date===ds;}).forEach(function(ev){allEvs.push(ev);});gcalEvents.filter(function(ev){return ev.date===ds&&!ev.allDay;}).forEach(function(ev){allEvs.push(ev);});});
     const allT=allEvs.length>0?allEvs.map(function(ev){return parseTimes(ev.time);}):[];
     const minH=allT.length>0?Math.max(6,Math.floor(Math.min.apply(null,allT.map(function(t){return t.start;}))/60)):7;
     const maxH=allT.length>0?Math.min(24,Math.ceil(Math.max.apply(null,allT.map(function(t){return t.end;}))/60)+1):22;
@@ -1502,16 +1529,18 @@ function App(){
         <div style={{flex:1,display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1}}>
           {weekDates.map(function(d,di){
             const ds=dStr(d);const isTdy=ds===todayStr();const isPast=new Date(ds)<new Date(todayStr());
-            const dayEvs=UNI_EVENTS.filter(function(ev){return ev.date===ds;}).concat(WORK_EVENTS.filter(function(ev){return ev.date===ds;}));
+            const timedEvs=UNI_EVENTS.filter(function(ev){return ev.date===ds;}).concat(WORK_EVENTS.filter(function(ev){return ev.date===ds;})).concat(gcalEvents.filter(function(ev){return ev.date===ds&&!ev.allDay;}));
+            const allDayEvs=gcalEvents.filter(function(ev){return ev.date===ds&&ev.allDay;});
             return(<div key={di} style={{display:"flex",flexDirection:"column",cursor:"pointer"}} onClick={function(){setActiveDay(ds);}}>
               <div style={{textAlign:"center",marginBottom:2,padding:"2px 0",borderRadius:4,background:activeDay===ds?T.accentBg:"transparent"}}>
                 <div style={{fontSize:8,color:isTdy?T.accent:T.text3}}>{DAYS[di]}</div>
                 <div style={{fontSize:10,fontWeight:isTdy?700:400,color:isTdy?T.accent:isPast?T.text3:T.text,width:16,height:16,borderRadius:"50%",background:isTdy?T.accentBg:"transparent",display:"flex",alignItems:"center",justifyContent:"center",margin:"1px auto"}}>{d.getDate()}</div>
+                {allDayEvs.map(function(ev){return<div key={ev.id} style={{fontSize:6,background:ev.calColor+"30",borderLeft:"2px solid "+ev.calColor,borderRadius:2,padding:"0 2px",color:ev.calColor,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:1}}>{ev.title.slice(0,10)}</div>;})}
               </div>
               <div style={{position:"relative",height:totalH,borderLeft:"0.5px solid "+T.border,opacity:isPast?0.5:1}}>
                 {hours.map(function(h){return<div key={h} style={{position:"absolute",top:(h-minH)*60*PPM,left:0,right:0,borderTop:"0.5px solid "+T.border}}/>;} )}
                 {isTdy&&nowMins>=minH*60&&nowMins<=maxH*60&&<div style={{position:"absolute",top:(nowMins-minH*60)*PPM,left:0,right:0,borderTop:"1.5px solid "+T.danger,zIndex:10}}><div style={{position:"absolute",left:-3,top:-3,width:6,height:6,borderRadius:"50%",background:T.danger}}/></div>}
-                {dayEvs.map(function(ev){const isW=!!ev.type;const col=isW?wCol(ev.type):(SC[ev.subject]||"#888");const ce=data.uni.completedEvents||[];const done=!isW&&ce.indexOf(ev.id)!==-1;const tp=parseTimes(ev.time);return(<div key={ev.id} onClick={function(evn){evn.stopPropagation();if(!isW)toggleCalEv(ev.id);}} style={{position:"absolute",top:(tp.start-minH*60)*PPM,left:1,right:1,height:Math.max((tp.end-tp.start)*PPM,10),borderRadius:2,background:col+(done?"15":"28"),borderLeft:"2px solid "+col,padding:"1px 2px",overflow:"hidden",boxSizing:"border-box",zIndex:5,opacity:done?0.4:1}}><div style={{fontSize:6.5,fontWeight:700,color:col,whiteSpace:"nowrap",overflow:"hidden"}}>{isW?"Work":ev.subject}{ev.assessment?" ●":""}</div></div>);})}
+                {timedEvs.map(function(ev){const isW=!!ev.type;const col=evColor(ev);const ce=data.uni.completedEvents||[];const done=!ev.gcal&&!isW&&ce.indexOf(ev.id)!==-1;const tp=parseTimes(ev.time);return(<div key={ev.id} onClick={function(evn){evn.stopPropagation();if(!isW&&!ev.gcal)toggleCalEv(ev.id);}} style={{position:"absolute",top:(tp.start-minH*60)*PPM,left:1,right:1,height:Math.max((tp.end-tp.start)*PPM,10),borderRadius:2,background:col+(done?"15":"28"),borderLeft:"2px solid "+col,padding:"1px 2px",overflow:"hidden",boxSizing:"border-box",zIndex:5,opacity:done?0.4:1}}><div style={{fontSize:6.5,fontWeight:700,color:col,whiteSpace:"nowrap",overflow:"hidden"}}>{evLabel(ev)}{ev.assessment?" ●":""}</div></div>);})}
               </div>
             </div>);
           })}
@@ -1606,7 +1635,9 @@ function App(){
             <div style={card({marginBottom:0})}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
                 <div style={{fontSize:11,fontWeight:500,color:T.text}}>Week of {fmtDate(dStr(weekDates[0]))} — {fmtDate(dStr(weekDates[6]))}</div>
-                <div style={{display:"flex",gap:6}}>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  {gcalReady&&!gcalConnected&&<button style={{...btn,fontSize:10,color:"#4285F4",border:"0.5px solid #4285F440"}} onClick={function(){window.GCalSync&&window.GCalSync.connect();}}>+ Google Cal</button>}
+                  {gcalConnected&&<button style={{...btn,fontSize:10,color:"#34A853",border:"0.5px solid #34A85340"}} onClick={function(){setShowCalPicker(true);}}>📅 {gcalEvents.length} synced</button>}
                   <button style={btn} onClick={function(){setWkOff(function(o){return o-1;});}}>← prev</button>
                   <button style={{...btn,color:wkOff===0?T.accent:T.text2}} onClick={function(){setWkOff(0);setActiveDay(todayStr());}}>today</button>
                   <button style={btn} onClick={function(){setWkOff(function(o){return o+1;});}}>next →</button>
@@ -1847,6 +1878,30 @@ function App(){
           <div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
             {mob?<button style={{...btnP,padding:"13px",fontSize:14,width:"100%",borderRadius:10}} onClick={saveModal}>Save</button>:<button style={btnP} onClick={saveModal}>Save</button>}
             <button style={{...(mob?{...btn,padding:"11px",fontSize:13,width:"100%",borderRadius:10,textAlign:"center"}:btn)}} onClick={function(){setModal(null);}}>Cancel</button>
+          </div>
+        </div>
+      </div>}
+
+      {showCalPicker&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.82)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:200,padding:mob?"0":"16px"}} onClick={function(){setShowCalPicker(false);}}>
+        <div style={{background:"rgba(14,16,40,0.97)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 32px":"22px",width:mob?"100%":"360px",maxWidth:"100%",border:"0.5px solid rgba(199,125,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.6)"}} onClick={function(e){e.stopPropagation();}}>
+          <div style={{fontSize:15,fontWeight:600,marginBottom:4,color:T.text}}>Google Calendars</div>
+          <div style={{fontSize:11,color:T.text3,marginBottom:14}}>Choose which calendars to show on your dashboard.</div>
+          {gcalCalendars.length===0?<div style={{fontSize:12,color:T.text2,marginBottom:16}}>No calendars found. Try refreshing.</div>:gcalCalendars.map(function(cal){
+            const sel=(window.GCalSync?window.GCalSync.getSelectedIds():[]).indexOf(cal.id)!==-1;
+            return(<div key={cal.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:8,background:"rgba(255,255,255,0.04)",marginBottom:6,cursor:"pointer"}} onClick={function(){
+              const cur=window.GCalSync?window.GCalSync.getSelectedIds():[];
+              const next=sel?cur.filter(function(id){return id!==cal.id;}):[].concat(cur,[cal.id]);
+              if(window.GCalSync)window.GCalSync.setSelectedIds(next);
+              setGcalCalendars(function(prev){return prev.slice();});
+            }}>
+              <div style={{width:12,height:12,borderRadius:3,background:cal.backgroundColor||"#4285F4",flexShrink:0,border:sel?"none":"1px solid rgba(255,255,255,0.2)",opacity:sel?1:0.4}}/>
+              <div style={{flex:1,fontSize:13,color:T.text}}>{cal.summary}</div>
+              {sel&&<div style={{fontSize:10,color:"#34A853"}}>✓</div>}
+            </div>);
+          })}
+          <div style={{display:"flex",gap:8,marginTop:14}}>
+            <button style={{...btn,flex:1}} onClick={function(){if(window.GCalSync)window.GCalSync.refresh();setShowCalPicker(false);}}>Refresh & close</button>
+            <button style={{padding:"6px 13px",borderRadius:8,border:"1px solid rgba(247,111,111,0.4)",background:"rgba(247,111,111,0.1)",color:T.danger,cursor:"pointer",fontSize:12}} onClick={function(){if(window.GCalSync)window.GCalSync.disconnect();setShowCalPicker(false);}}>Disconnect</button>
           </div>
         </div>
       </div>}
