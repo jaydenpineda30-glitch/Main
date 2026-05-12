@@ -38,7 +38,7 @@
     if (!db) {
       return Promise.resolve({ ok: true, detail: 'not configured' });
     }
-    return db.collection('__health__').limit(1).get()
+    return db.collection('_ping').limit(1).get()
       .then(function ()  { return { ok: true,  detail: 'Firestore reachable' }; })
       .catch(function (e){ return { ok: false, detail: e.message }; });
   }
