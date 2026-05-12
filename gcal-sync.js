@@ -122,9 +122,14 @@
     gapi.client.calendar.calendarList.list({ minAccessRole: 'reader' })
       .then(function (res) {
         acc.calendars = res.result.items || [];
-        // Default: select all
+        // Auto-select all calendars only on first-time setup (selectedIds empty).
+        // If the user has already made selections, respect them so newly-fetched
+        // shared/delegated calendars don't silently get excluded on re-load.
+        var isFirstTime = _selectedIds.length === 0;
         acc.calendars.forEach(function (cal) {
-          if (_selectedIds.indexOf(cal.id) === -1) _selectedIds.push(cal.id);
+          if (isFirstTime && _selectedIds.indexOf(cal.id) === -1) {
+            _selectedIds.push(cal.id);
+          }
         });
         try { localStorage.setItem(SEL_KEY, JSON.stringify(_selectedIds)); } catch (_) {}
         push();

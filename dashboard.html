@@ -323,6 +323,30 @@ function analyzeReflectionFallback(answers,history){
   return{emotionalState,dominantPattern,rootIssue,insight,recommendation,patternHistory,sentimentScore:sentScore,detectedPatterns:patterns,sentColor:sentScore>=0.1?"#69f0ae":sentScore<=-0.1?"#ff6b6b":"#ffd166",sentBg:sentScore>=0.1?"rgba(105,240,174,0.06)":sentScore<=-0.1?"rgba(255,107,107,0.06)":"rgba(255,209,102,0.06)",sentBorder:sentScore>=0.1?"rgba(105,240,174,0.25)":sentScore<=-0.1?"rgba(255,107,107,0.25)":"rgba(255,209,102,0.25)"};
 }
 
+// ── Assessment detection (module-level so generateCheckinFallback can use it) ─
+const DEFINITE_ASSESS_MARKERS=["🔴","🔵","SUPERVISED ASSESSMENT","assessment due","submission due","submit by","due date","AT1 due","AT2 due","AT3 due","AT4 due","AT5 due"];
+const ASSESS_KEYWORDS=["AT1","AT2","AT3","AT4","AT5","exam","final exam","quiz","mid-sem","midsem","submission","assignment","due","assessment","supervised","test","prac exam","lab exam"];
+function isWeeklyClass(title){return /^Wk\s*\d/i.test(title)||/^Week\s*\d/i.test(title)||/^Lecture/i.test(title)||/^Tutorial/i.test(title)||/^Lab\s/i.test(title)||/^Seminar/i.test(title)||/^Workshop/i.test(title);}
+function isAssessmentEvent(ev){
+  var title=ev.title||"";
+  if(isWeeklyClass(title))return false;
+  var desc=ev.description||"";
+  var combined=title+" "+desc;
+  var combinedLower=combined.toLowerCase();
+  // Definite markers (emoji + key phrases) — checked case-sensitively for emoji support
+  if(DEFINITE_ASSESS_MARKERS.some(function(m){return combined.includes(m);}))return true;
+  // Keyword list — checked in combined title+description
+  if(ASSESS_KEYWORDS.some(function(k){return combinedLower.includes(k.toLowerCase());}))return true;
+  return false;
+}
+function isGoTabEvent(ev){
+  return !ev.allDay&&ev.time&&ev.time!=="All day"&&(
+    (ev.calName&&(ev.calName.toLowerCase().includes("gotab")||ev.calName.toLowerCase().includes("jayden.pineda")))||
+    (ev._email&&ev._email.toLowerCase().includes("gotab"))||
+    (ev.title&&(ev.title.toLowerCase().includes("gotab")||ev.title.toLowerCase().includes("shift")))
+  );
+}
+
 function dedupeEvents(evs){
   var seen=new Map();
   var sorted=evs.slice().sort(function(a,b){
@@ -350,13 +374,12 @@ function generateCheckinFallback(data){
   const tmrStr=dStr(tmrDate);
   const tmrEvs=cachedEvs.filter(function(ev){return ev.date===tmrStr&&!ev.allDay;});
   const tmrFree=tmrEvs.length===0;
-  // soon: assessment-like events in the next 4 days
-  const ASSESS_KWS=["AT1","AT2","AT3","assignment","due","exam","assessment","supervised","test"];
-  const soon=cachedEvs.filter(function(ev){const d=daysBetween(ev.date);const tl=(ev.title||"").toLowerCase();return d>=0&&d<=4&&ASSESS_KWS.some(function(k){return tl.includes(k.toLowerCase());});});
+  // soon: assessment events in the next 4 days — uses shared isAssessmentEvent (checks description too)
+  const soon=cachedEvs.filter(function(ev){var d=daysBetween(ev.date);return d>=0&&d<=4&&isAssessmentEvent(ev);});
   const tToday=cachedEvs.filter(function(ev){return ev.date===todayStr()&&!ev.allDay;});
   let schedLines=[];
-  if(tToday.length>0){schedLines=tToday.map(function(ev){return ev.title+" "+ev.time;});}
-  else{schedLines.push("Check Google Calendar for today's schedule.");}
+  if(tToday.length>0){schedLines=tToday.map(function(ev){var s=ev.title+(ev.time?" "+ev.time:"");if(ev.description)s+=" ["+ev.description.slice(0,80)+"]";return s;});}
+  else{schedLines.push("No events found in Google Calendar for today.");}
   blocks.push({header:"📅 Today's Schedule",items:schedLines});
 
   // Tasks block
@@ -422,7 +445,7 @@ async function generateCheckin(data){
     const overdue=data.personal.tasks.filter(function(t){return !t.done&&t.due&&daysBetween(t.due)<0;});
     const gymRot=data.gym.rotation||[];
     const nextSess=gymRot.length>0?gymRot[(data.gym.rotIdx||0)%Math.max(gymRot.length,1)]:null;
-    const schedule=tToday.length>0?tToday.map(function(ev){return ev.title+" "+ev.time;}).join(", "):"Check Google Calendar";
+    const schedule=tToday.length>0?tToday.map(function(ev){var s=ev.title+(ev.time?" "+ev.time:"");if(ev.description)s+=" ["+ev.description.slice(0,80)+"]";return s;}).join("\n"):"No events found";
     const pending=data.personal.tasks.filter(function(t){return !t.done;}).slice(0,5).map(function(t){return t.name+(overdue.indexOf(t)!==-1?" (OVERDUE)":"");}).join(", ")||"No pending tasks";
     const gymCtx=nextSess?"Next gym session: "+nextSess.name+(nextSess.focus?" ("+nextSess.focus+")":""):"No gym rotation set";
     const prompt="You are a supportive coach helping Jayden start their day.\n\nTODAY'S CONTEXT:\nCalendar: "+schedule+"\nPending tasks: "+pending+"\nGym: "+gymCtx+"\n\nWrite a brief, warm check-in. Exactly 3 short lines:\nLine 1: Acknowledge the day ahead\nLine 2: One specific realistic suggestion\nLine 3: One reflection question based on what they're facing\n\nUnder 60 words total. Warm but not cheesy. Plain lines, no bullets or numbering.";
@@ -836,7 +859,7 @@ function FinanceSection({data,onUpdate,mob,gcalEvents}){
   const budgetLeft=monthBudget>0?monthBudget-totalExpenses:null;
   const goTabIncome=Number(srcAmounts[1]!==undefined?srcAmounts[1]:0);
   const hourlyRate=Number(data.hourlyRate||0);
-  const monthShifts=(gcalEvents||[]).filter(function(ev){return !ev.allDay&&ev.date&&ev.date.startsWith(month)&&((ev.calName&&ev.calName.toLowerCase().includes("gotab"))||(ev.title&&ev.title.toLowerCase().includes("gotab")));});
+  const monthShifts=(gcalEvents||[]).filter(function(ev){return ev.date&&ev.date.startsWith(month)&&isGoTabEvent(ev);});
   const calcGoTabIncome=hourlyRate>0?monthShifts.reduce(function(a,ev){const pay=shiftPay(ev.time);return a+(pay?pay.totalEquiv*hourlyRate:0);},0):0;
   const effectiveGoTabIncome=calcGoTabIncome>0?calcGoTabIncome:goTabIncome;
   const weeklyGoTab=effectiveGoTabIncome/4;
@@ -1264,40 +1287,30 @@ function App(){
       return next;
     });
   }
-  // Assessment detection helpers
-  const DEFINITE_ASSESS=["AT1","AT2","AT3","AT4","AT5","exam","final exam","quiz","mid-sem","midsem","submission","due date"];
-  const SOFT_ASSESS=["assignment","assessment","supervised","test","prac exam","lab exam"];
-  function isWeeklyClass(title){return /^Wk\s*\d/i.test(title)||/^Week\s*\d/i.test(title)||/^Lecture/i.test(title)||/^Tutorial/i.test(title)||/^Lab\s/i.test(title)||/^Seminar/i.test(title)||/^Workshop/i.test(title);}
-  function isAssessmentEvent(ev){
-    if(isWeeklyClass(ev.title||""))return false;
-    const tl=(ev.title||"").toLowerCase();
-    if(DEFINITE_ASSESS.some(function(k){return tl.includes(k.toLowerCase());}))return true;
-    const isUniCal=ev.calName&&["uni","tafe","rmit","university","curtin","monash","deakin","uts","usyd","uq","uwa","anu","unsw","federation"].some(function(k){return ev.calName.toLowerCase().includes(k);});
-    if(isUniCal&&SOFT_ASSESS.some(function(k){return tl.includes(k.toLowerCase());}))return true;
-    return false;
-  }
+  // Assessment helpers (isAssessmentEvent + isGoTabEvent are module-level; these are App-level only)
   function cleanAssessTitle(title){
-    // Strip leading "Wk4 SUBJ — " prefix patterns, keep the core assessment name
-    var t=title.replace(/^Wk\s*\d+\s*[A-Z/]+\s*[—–-]+\s*/i,"").replace(/^\d+\.\s*/,"").trim();
-    // Capitalise first letter
+    var t=(title||"").replace(/^Wk\s*\d+\s*[A-Z/]+\s*[—–-]+\s*/i,"").replace(/^\d+\.\s*/,"").trim();
     return t.charAt(0).toUpperCase()+t.slice(1);
   }
-  function assessBadge(title){
-    const tl=(title||"").toLowerCase();
-    if(tl.includes("exam"))return{label:"EXAM",color:"#e74c3c"};
-    if(tl.includes("submission")||tl.includes("due"))return{label:"SUBMISSION",color:"#e74c3c"};
-    if(tl.includes("in-class")||tl.includes("supervised")||tl.includes("in class"))return{label:"IN-CLASS",color:"#e67e22"};
-    if(tl.includes("assignment"))return{label:"ASSIGNMENT",color:"#8e44ad"};
+  function assessBadge(ev){
+    // Accepts full event object so description can be checked too
+    var t=(ev.title||"")+" "+(ev.description||"");
+    var tl=t.toLowerCase();
+    if(t.includes("🔴")||tl.includes("supervised"))return{label:"IN-CLASS",color:T.orange};
+    if(tl.includes("exam"))return{label:"EXAM",color:T.danger};
+    if(tl.includes("submission")||tl.includes("submit"))return{label:"SUBMISSION",color:T.danger};
+    if(tl.includes("assignment"))return{label:"ASSIGNMENT",color:T.accent};
+    if(tl.includes("due")||tl.includes("at1")||tl.includes("at2")||tl.includes("at3"))return{label:"ASSESSMENT",color:T.warn};
     return null;
   }
-  const upcoming=dedupedEvents.filter(function(ev){return isAssessmentEvent(ev)&&ev.date>=todayStr();}).map(function(ev){const subjectKey=Object.keys(SUBJECTS).find(function(k){return (ev.title||"").toUpperCase().includes(k.toUpperCase());});const cleaned=cleanAssessTitle(ev.title||"");return{id:ev.id,title:cleaned,fullTitle:ev.title,date:ev.date,subject:subjectKey||"General",badge:assessBadge(ev.title)};}).sort(function(a,b){return a.date.localeCompare(b.date);}).slice(0,8);
+  const upcoming=dedupedEvents.filter(function(ev){return isAssessmentEvent(ev)&&ev.date>=todayStr();}).map(function(ev){const subjectKey=Object.keys(SUBJECTS).find(function(k){return (ev.title||"").toUpperCase().includes(k.toUpperCase());});const cleaned=cleanAssessTitle(ev.title||"");return{id:ev.id,title:cleaned,fullTitle:ev.title,date:ev.date,subject:subjectKey||"General",badge:assessBadge(ev)};}).sort(function(a,b){return a.date.localeCompare(b.date);}).slice(0,8);
   const activeTasks=data.personal.tasks.filter(function(t){return !t.done;});
   const doneTasks=data.personal.tasks.filter(function(t){return t.done;});
   const urgTasks=activeTasks.filter(function(t){return t.priority==="urgent";}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});
   const normTasks=activeTasks.filter(function(t){return t.priority==="normal";}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});
   const activeDayEvs=visibleGcalEvents.filter(function(ev){return ev.date===activeDay;}).sort(function(a,b){return(a.time||"").localeCompare(b.time||"");});
   const todayEvs=visibleGcalEvents.filter(function(ev){return ev.date===todayStr()&&!ev.allDay;}).sort(function(a,b){return(a.time||"").localeCompare(b.time||"");});
-  const shifts=visibleGcalEvents.filter(function(ev){return !ev.allDay&&ev.time&&ev.time!=="All day"&&((ev.calName&&ev.calName.toLowerCase().includes("gotab"))||(ev.title&&ev.title.toLowerCase().includes("gotab"))||(ev.title&&ev.title.toLowerCase().includes("shift")));});
+  const shifts=visibleGcalEvents.filter(isGoTabEvent);
   const totNorm=shifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.normalHrs:0);},0);
   const totPen=shifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.penaltyHrs:0);},0);
   const totEquiv=shifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.totalEquiv:0);},0);
@@ -1668,7 +1681,7 @@ function App(){
             return(<React.Fragment>
               <div style={card()}>
                 <div style={sT}>Upcoming Assessments</div>
-                {uniAssessments.length===0?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No upcoming assessments found — add events with keywords like AT1, exam, due, or supervised to your uni calendar.":"Connect Google Calendar to see assessments."}</div>:uniAssessments.map(function(ev){const days=daysBetween(ev.date);const sk=Object.keys(SUBJECTS).find(function(k){return (ev.title||"").toUpperCase().includes(k.toUpperCase());});const col=sk?SC[sk]:T.accent;const isUrg=days>=0&&days<=3;const cleaned=cleanAssessTitle(ev.title||"");const badge=assessBadge(ev.title);return(<div key={ev.id} style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start",padding:"8px 10px",borderRadius:7,background:isUrg?T.dangerBg:T.bg3,border:"0.5px solid "+(isUrg?T.danger+"40":T.border)}}><div style={{width:6,height:6,borderRadius:"50%",background:col,flexShrink:0,marginTop:4}}/><div style={{flex:1}}><div style={{display:"flex",justifyContent:"space-between",gap:6,alignItems:"flex-start",flexWrap:"wrap"}}><div style={{display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:10,fontWeight:700,color:col}}>{sk||"General"}</span>{badge&&<span style={{fontSize:8,fontWeight:700,color:"#fff",background:badge.color,padding:"1px 5px",borderRadius:3,letterSpacing:0.4}}>{badge.label}</span>}</div><span style={{fontSize:10,color:isUrg?T.danger:T.text2,fontWeight:600,flexShrink:0}}>{days===0?"today":days===1?"tomorrow":days+"d"}</span></div><div style={{fontSize:12,color:T.text,marginTop:2,lineHeight:1.4}}>{cleaned}</div>{cleaned!==ev.title&&<div style={{fontSize:10,color:T.text3,marginTop:1,lineHeight:1.3,fontStyle:"italic"}}>{ev.title}</div>}<div style={{fontSize:10,color:T.text3,marginTop:2}}>{fmtDate(ev.date)}{ev.time&&ev.time!=="All day"?" · "+ev.time:""}</div></div></div>);})}
+                {uniAssessments.length===0?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No upcoming assessments found — add events with keywords like AT1, exam, due, or supervised to your uni calendar.":"Connect Google Calendar to see assessments."}</div>:uniAssessments.map(function(ev){const days=daysBetween(ev.date);const sk=Object.keys(SUBJECTS).find(function(k){return (ev.title||"").toUpperCase().includes(k.toUpperCase());});const col=sk?SC[sk]:T.accent;const isUrg=days>=0&&days<=3;const cleaned=cleanAssessTitle(ev.title||"");const badge=assessBadge(ev);return(<div key={ev.id} style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start",padding:"8px 10px",borderRadius:7,background:isUrg?T.dangerBg:T.bg3,border:"0.5px solid "+(isUrg?T.danger+"40":T.border)}}><div style={{width:6,height:6,borderRadius:"50%",background:col,flexShrink:0,marginTop:4}}/><div style={{flex:1}}><div style={{display:"flex",justifyContent:"space-between",gap:6,alignItems:"flex-start",flexWrap:"wrap"}}><div style={{display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:10,fontWeight:700,color:col}}>{sk||"General"}</span>{badge&&<span style={{fontSize:8,fontWeight:700,color:"#fff",background:badge.color,padding:"1px 5px",borderRadius:3,letterSpacing:0.4}}>{badge.label}</span>}</div><span style={{fontSize:10,color:isUrg?T.danger:T.text2,fontWeight:600,flexShrink:0}}>{days===0?"today":days===1?"tomorrow":days+"d"}</span></div><div style={{fontSize:12,color:T.text,marginTop:2,lineHeight:1.4}}>{cleaned}</div>{cleaned!==ev.title&&<div style={{fontSize:10,color:T.text3,marginTop:1,lineHeight:1.3,fontStyle:"italic"}}>{ev.title}</div>}{ev.description&&<div style={{fontSize:10,color:T.text3,marginTop:3,lineHeight:1.5,padding:"4px 6px",borderRadius:4,background:"rgba(255,255,255,0.03)"}}>{ev.description.slice(0,150)}{ev.description.length>150?"…":""}</div>}<div style={{fontSize:10,color:T.text3,marginTop:2}}>{fmtDate(ev.date)}{ev.time&&ev.time!=="All day"?" · "+ev.time:""}</div></div></div>);})}
               </div>
               <div style={card()}>
                 <div style={sT}>This Week's Classes</div>
@@ -1683,8 +1696,7 @@ function App(){
           const hrRate=Number((data.finance&&data.finance.hourlyRate)||0);
           function getCurrentPayPeriod(cycDay){const today=new Date();const yr=today.getFullYear();const mo=today.getMonth();const cycleStart=new Date(yr,mo,cycDay);if(today<cycleStart){const start=new Date(yr,mo-1,cycDay);const end=new Date(yr,mo,cycDay-1);return{start:dStr(start),end:dStr(end)};}return{start:dStr(cycleStart),end:dStr(new Date(yr,mo+1,cycDay-1))};}
           const {start:periodStart,end:periodEnd}=getCurrentPayPeriod(payCycleDay);
-          function isGoTabShift(ev){return !ev.allDay&&ev.time&&ev.time!=="All day"&&((ev.calName&&ev.calName.toLowerCase().includes("gotab"))||(ev.title&&(ev.title.toLowerCase().includes("gotab")||ev.title.toLowerCase().includes("shift"))));}
-          const periodShifts=dedupedEvents.filter(isGoTabShift).filter(function(ev){return ev.date>=periodStart&&ev.date<=periodEnd;}).sort(function(a,b){return a.date.localeCompare(b.date);});
+          const periodShifts=dedupedEvents.filter(isGoTabEvent).filter(function(ev){return ev.date>=periodStart&&ev.date<=periodEnd;}).sort(function(a,b){return a.date.localeCompare(b.date);});
           const periodNorm=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.normalHrs:0);},0);
           const periodPen=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.penaltyHrs:0);},0);
           const periodEquiv=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.totalEquiv:0);},0);
@@ -1878,8 +1890,9 @@ function App(){
               </div>
             );});
           })()}
-          <div style={{display:"flex",gap:8,marginTop:14,paddingTop:12,borderTop:"0.5px solid "+T.border}}>
+          <div style={{display:"flex",gap:8,marginTop:14,paddingTop:12,borderTop:"0.5px solid "+T.border,flexWrap:"wrap"}}>
             <button style={{...btn,flex:1}} onClick={function(){if(window.GCalSync)window.GCalSync.refresh();setShowCalPicker(false);}}>Sync & close</button>
+            <button style={{padding:"6px 11px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text3,cursor:"pointer",fontSize:11}} onClick={function(){try{localStorage.removeItem('__gcal_selected__');localStorage.removeItem('__gcal_excluded__');}catch(_){}setGcalExcludedIds([]);if(window.GCalSync){window.GCalSync.setSelectedIds([]);window.GCalSync.refresh();}setShowCalPicker(false);}}>↺ Reset to all</button>
             <button style={{padding:"6px 13px",borderRadius:8,border:"1px solid rgba(247,111,111,0.4)",background:"rgba(247,111,111,0.1)",color:T.danger,cursor:"pointer",fontSize:12}} onClick={function(){if(window.GCalSync)window.GCalSync.disconnect();setShowCalPicker(false);}}>Disconnect all</button>
           </div>
         </div>
