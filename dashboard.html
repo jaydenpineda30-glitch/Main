@@ -322,6 +322,16 @@ function analyzeReflectionFallback(answers,history){
   return{emotionalState,dominantPattern,rootIssue,insight,recommendation,patternHistory,sentimentScore:sentScore,detectedPatterns:patterns,sentColor:sentScore>=0.1?"#69f0ae":sentScore<=-0.1?"#ff6b6b":"#ffd166",sentBg:sentScore>=0.1?"rgba(105,240,174,0.06)":sentScore<=-0.1?"rgba(255,107,107,0.06)":"rgba(255,209,102,0.06)",sentBorder:sentScore>=0.1?"rgba(105,240,174,0.25)":sentScore<=-0.1?"rgba(255,107,107,0.25)":"rgba(255,209,102,0.25)"};
 }
 
+function dedupeEvents(evs){
+  var seen=new Map();
+  var sorted=evs.slice().sort(function(a,b){
+    var aP=(a._email||"").includes("jaydenpineda30")?0:1;
+    var bP=(b._email||"").includes("jaydenpineda30")?0:1;
+    return aP-bP;
+  });
+  for(var i=0;i<sorted.length;i++){var ev=sorted[i];var key=(ev.title||"")+"||"+(ev.date||"")+"||"+(ev.time||"");if(!seen.has(key))seen.set(key,ev);}
+  return Array.from(seen.values());
+}
 // ── Rule-based check-in (fallback) ────────────────────────────────────────
 function generateCheckinFallback(data){
   const blocks=[];
@@ -333,6 +343,7 @@ function generateCheckinFallback(data){
 
   // Schedule block from cached Google Calendar events
   var cachedEvs=[];try{var ce=localStorage.getItem('__gcal_events__');if(ce)cachedEvs=JSON.parse(ce);}catch(_){}
+  cachedEvs=dedupeEvents(cachedEvs);
   // tmrFree: true if tomorrow has no timed events
   const tmrDate=new Date(Date.now()+864e5);
   const tmrStr=dStr(tmrDate);
@@ -1238,10 +1249,10 @@ function App(){
   const bwBgMap={blue:T.accentBg,yellow:T.warnBg,red:T.dangerBg,done:T.successBg};
   const gymRot=data.gym.rotation||[];const gymRotLen=gymRot.length>0?gymRot.length:1;
   const gymRotIdx=(data.gym.rotIdx||0)%gymRotLen;const nextRot=gymRot.length>0?gymRot[gymRotIdx]:null;
-  // Bug 1 fix: filter gcalEvents at render time so toggle is instant
-  const visibleGcalEvents=gcalSelectedIds.length===0?gcalEvents:gcalEvents.filter(function(ev){return gcalSelectedIds.indexOf(ev.calId)!==-1;});
+  const dedupedEvents=dedupeEvents(gcalEvents);
+  const visibleGcalEvents=gcalSelectedIds.length===0?dedupedEvents:dedupedEvents.filter(function(ev){return gcalSelectedIds.indexOf(ev.calId)!==-1;});
   const ASSESS_KEYWORDS=["AT1","AT2","AT3","assignment","due","exam","assessment","supervised","test"];
-  const upcoming=visibleGcalEvents.filter(function(ev){const tl=(ev.title||"").toLowerCase();const isUniCal=ev.calName&&(ev.calName.toLowerCase().includes("uni")||ev.calName.toLowerCase().includes("tafe")||ev.calName.toLowerCase().includes("rmit")||ev.calName.toLowerCase().includes("university"));const hasKw=ASSESS_KEYWORDS.some(function(k){return tl.includes(k.toLowerCase());});return (isUniCal||hasKw)&&ev.date>=todayStr();}).map(function(ev){const subjectKey=Object.keys(SUBJECTS).find(function(k){return (ev.title||"").toUpperCase().includes(k.toUpperCase());});return{id:ev.id,title:ev.title,date:ev.date,subject:subjectKey||"General"};}).sort(function(a,b){return a.date.localeCompare(b.date);}).slice(0,8);
+  const upcoming=dedupedEvents.filter(function(ev){const tl=(ev.title||"").toLowerCase();const isUniCal=ev.calName&&(ev.calName.toLowerCase().includes("uni")||ev.calName.toLowerCase().includes("tafe")||ev.calName.toLowerCase().includes("rmit")||ev.calName.toLowerCase().includes("university"));const hasKw=ASSESS_KEYWORDS.some(function(k){return tl.includes(k.toLowerCase());});return (isUniCal||hasKw)&&ev.date>=todayStr();}).map(function(ev){const subjectKey=Object.keys(SUBJECTS).find(function(k){return (ev.title||"").toUpperCase().includes(k.toUpperCase());});return{id:ev.id,title:ev.title,date:ev.date,subject:subjectKey||"General"};}).sort(function(a,b){return a.date.localeCompare(b.date);}).slice(0,8);
   const activeTasks=data.personal.tasks.filter(function(t){return !t.done;});
   const doneTasks=data.personal.tasks.filter(function(t){return t.done;});
   const urgTasks=activeTasks.filter(function(t){return t.priority==="urgent";}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});
@@ -1609,27 +1620,67 @@ function App(){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={sT}>Subject progress (drag sliders to update)</div><button style={btn} onClick={function(){setModal("add_subject");setMForm({});}}>+ Subject</button></div>
             <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:14}}>{data.uni.subjects.map(function(s){return(<div key={s.id}><div style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:3}}><span style={{fontWeight:600,color:SC[s.name]||T.text}}>{SUBJECTS[s.name]||s.name}</span><span style={{color:T.text2}}>{s.progress}%</span></div><input type="range" min={0} max={100} value={s.progress} onChange={function(ev){updateProg(s.id,ev.target.value);}} style={{width:"100%"}}/><div style={{height:3,borderRadius:2,background:T.bg3,overflow:"hidden"}}><div style={{width:s.progress+"%",height:"100%",background:SC[s.name]||T.accent,borderRadius:2,transition:"width 0.3s"}}/></div></div>);})}</div>
           </div>
-          <div style={card()}>
-            <div style={sT}>This week's events</div>
-            {(function(){const wd=getWeekDates();const ws=dStr(wd[0]);const we=dStr(wd[6]);const classes=visibleGcalEvents.filter(function(ev){return ev.date>=ws&&ev.date<=we&&!ev.allDay;}).sort(function(a,b){return a.date.localeCompare(b.date)||a.time.localeCompare(b.time);});if(classes.length===0)return<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No events this week.":"Connect Google Calendar to see your schedule."}</div>;let lastDate="";return classes.map(function(ev){const isPast=ev.date<todayStr();const showDate=ev.date!==lastDate;lastDate=ev.date;const col=evColor(ev);return(<div key={ev.id}>{showDate&&<div style={{fontSize:10,fontWeight:600,color:isPast?T.text3:T.text2,marginTop:10,marginBottom:6,paddingTop:8,borderTop:"0.5px solid "+T.border}}>{new Date(ev.date+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"short"})}{isPast&&<span style={{marginLeft:6,fontSize:9,color:T.text3,fontWeight:400}}>passed</span>}</div>}<div style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start",opacity:isPast?0.55:1}}><div style={{width:2,borderRadius:2,background:col,alignSelf:"stretch",minHeight:28,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:col,marginBottom:1}}>{evLabel(ev)}</div><div style={{fontSize:12,color:isPast?T.text2:T.text,lineHeight:1.5}}>{ev.title}</div><div style={{fontSize:10,color:T.text3,marginTop:2}}>{ev.time}</div></div></div></div>);});}())}
-          </div>
-          <div style={card()}>
-            <div style={sT}>Upcoming events</div>
-            {(function(){const upcomingEvs=visibleGcalEvents.filter(function(ev){return ev.date>=todayStr()&&!ev.allDay;}).sort(function(a,b){return a.date.localeCompare(b.date)||a.time.localeCompare(b.time);}).slice(0,10);if(upcomingEvs.length===0)return<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"Nothing upcoming.":"Connect Google Calendar to see upcoming events."}</div>;return upcomingEvs.map(function(ev){const days=daysBetween(ev.date);const isUrg=days>=0&&days<=3;const col=evColor(ev);return(<div key={ev.id} style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start",padding:"8px 10px",borderRadius:7,background:isUrg?T.dangerBg:T.bg3,border:"0.5px solid "+(isUrg?T.danger+"40":T.border)}}><div style={{flex:1}}><div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginBottom:3}}><span style={{fontSize:10,fontWeight:700,color:col}}>{evLabel(ev)}</span>{isUrg&&<span style={bdg("urgent")}>{days===0?"today":days===1?"tomorrow":"in "+days+"d"}</span>}</div><div style={{fontSize:12,color:T.text,marginBottom:2}}>{ev.title}</div><div style={{fontSize:10,color:T.text3}}>{fmtDate(ev.date)} · {ev.time}</div></div></div>);});}())}
-          </div>
+          {(function(){
+            const UNI_KEYS=["uni","tafe","rmit","university"];
+            const ASSESS_KWS_B=["at1","at2","at3","assignment","due","exam","assessment","supervised","test","prac"];
+            function isUniCal(ev){return ev.calName&&UNI_KEYS.some(function(k){return ev.calName.toLowerCase().includes(k);});}
+            function isAssessEv(ev){const tl=(ev.title||"").toLowerCase();return ASSESS_KWS_B.some(function(k){return tl.includes(k);});}
+            const uniAssessments=dedupedEvents.filter(function(ev){return isUniCal(ev)&&isAssessEv(ev)&&ev.date>=todayStr();}).sort(function(a,b){return a.date.localeCompare(b.date);});
+            const wd2=getWeekDates();const ws2=dStr(wd2[0]);const we2=dStr(wd2[6]);
+            const thisWeekClasses=dedupedEvents.filter(function(ev){return isUniCal(ev)&&!isAssessEv(ev)&&!ev.allDay&&ev.date>=ws2&&ev.date<=we2;}).sort(function(a,b){return a.date.localeCompare(b.date)||(a.time||"").localeCompare(b.time||"");});
+            return(<React.Fragment>
+              <div style={card()}>
+                <div style={sT}>Upcoming Assessments</div>
+                {uniAssessments.length===0?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No upcoming assessments found — assessment events should contain keywords like AT1, exam, due, supervised.":"Connect Google Calendar to see assessments."}</div>:uniAssessments.map(function(ev){const days=daysBetween(ev.date);const sk=Object.keys(SUBJECTS).find(function(k){return (ev.title||"").toUpperCase().includes(k.toUpperCase());});const col=sk?SC[sk]:T.accent;const isUrg=days>=0&&days<=3;return(<div key={ev.id} style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start",padding:"8px 10px",borderRadius:7,background:isUrg?T.dangerBg:T.bg3,border:"0.5px solid "+(isUrg?T.danger+"40":T.border)}}><div style={{width:6,height:6,borderRadius:"50%",background:col,flexShrink:0,marginTop:4}}/><div style={{flex:1}}><div style={{display:"flex",justifyContent:"space-between",gap:6,alignItems:"flex-start"}}><span style={{fontSize:10,fontWeight:700,color:col}}>{sk||"General"}</span><span style={{fontSize:10,color:isUrg?T.danger:T.text2,fontWeight:600,flexShrink:0}}>{days===0?"today":days===1?"tomorrow":days+"d"}</span></div><div style={{fontSize:12,color:T.text,marginTop:2,lineHeight:1.4}}>{ev.title}</div><div style={{fontSize:10,color:T.text3,marginTop:2}}>{fmtDate(ev.date)}{ev.time&&ev.time!=="All day"?" · "+ev.time:""}</div></div></div>);})}
+              </div>
+              <div style={card()}>
+                <div style={sT}>This Week's Classes</div>
+                {thisWeekClasses.length===0?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No classes this week.":"Connect Google Calendar to see your schedule."}</div>:(function(){let lastDate2="";return thisWeekClasses.map(function(ev){const isPast=ev.date<todayStr();const showDate=ev.date!==lastDate2;lastDate2=ev.date;const col=evColor(ev);return(<div key={ev.id}>{showDate&&<div style={{fontSize:10,fontWeight:600,color:isPast?T.text3:T.text2,marginTop:10,marginBottom:6,paddingTop:8,borderTop:"0.5px solid "+T.border}}>{new Date(ev.date+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"short"})}{isPast&&<span style={{marginLeft:6,fontSize:9,color:T.text3,fontWeight:400}}>passed</span>}</div>}<div style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start",opacity:isPast?0.55:1}}><div style={{width:2,borderRadius:2,background:col,alignSelf:"stretch",minHeight:28,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:col,marginBottom:1}}>{evLabel(ev)}</div><div style={{fontSize:12,color:isPast?T.text2:T.text,lineHeight:1.5}}>{ev.title}</div><div style={{fontSize:10,color:T.text3,marginTop:2}}>{ev.time}</div></div></div></div>);});}())}
+              </div>
+            </React.Fragment>);
+          })()}
         </div>}
 
-        {page==="Work"&&<div style={{maxWidth:700}}>
-          <div style={card()}>
-            <div style={sT}>Pay period summary</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:10}}>{[{label:"Standard hrs",value:totNorm.toFixed(1)+"h",sub:"before 7pm",color:T.success},{label:"Penalty hrs",value:totPen.toFixed(1)+"h",sub:"after 7pm × 1.5",color:T.warn},{label:"Total equiv",value:totEquiv.toFixed(1)+"h",sub:"std equivalent",color:T.accent}].map(function(stat){return(<div key={stat.label} style={{background:T.bg3,borderRadius:8,padding:"12px 14px"}}><div style={{fontSize:10,color:T.text2,marginBottom:4}}>{stat.label}</div><div style={{fontSize:22,fontWeight:700,color:stat.color,lineHeight:1}}>{stat.value}</div><div style={{fontSize:9,color:T.text3,marginTop:4}}>{stat.sub}</div></div>);})}</div>
-            <div style={{fontSize:10,color:T.text3}}>Penalty rate: after 7:00pm = 1.5×</div>
-          </div>
-          <div style={card()}>
-            <div style={sT}>Shift breakdown</div>
-            {shifts.length===0?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No GoTab shifts found.":"Connect Google Calendar to see your shifts."}</div>:shifts.slice().sort(function(a,b){return a.date.localeCompare(b.date)||a.time.localeCompare(b.time);}).map(function(ev){const past=daysBetween(ev.date)<0;const pay=shiftPay(ev.time);const col=evColor(ev);return(<div key={ev.id} style={{display:"flex",gap:10,marginBottom:8,alignItems:"center",opacity:past?0.5:1,padding:"8px 10px",background:T.bg3,borderRadius:6}}><div style={{width:3,borderRadius:2,background:col,alignSelf:"stretch",minHeight:24,flexShrink:0}}/><div style={{flex:1}}><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:2}}><span style={{fontSize:11,fontWeight:600,color:T.text}}>{ev.title}</span><span style={{fontSize:10,color:T.text3}}>{fmtDate(ev.date)} · {ev.time}</span>{past&&<span style={bdg("normal")}>past</span>}</div>{pay&&<div style={{display:"flex",gap:10,fontSize:10}}><span style={{color:T.success}}>{pay.normalHrs}h standard</span>{pay.penaltyHrs>0&&<span style={{color:T.warn}}>{pay.penaltyHrs}h x 1.5</span>}<span style={{color:T.text2,fontWeight:600}}>= {pay.totalEquiv}h equiv</span></div>}</div></div>);})}
-          </div>
-        </div>}
+        {page==="Work"&&(function(){
+          const payCycleDay=Number(data.payCycleDay||1);
+          const hrRate=Number((data.finance&&data.finance.hourlyRate)||0);
+          function getCurrentPayPeriod(cycDay){const today=new Date();const yr=today.getFullYear();const mo=today.getMonth();const cycleStart=new Date(yr,mo,cycDay);if(today<cycleStart){const start=new Date(yr,mo-1,cycDay);const end=new Date(yr,mo,cycDay-1);return{start:dStr(start),end:dStr(end)};}return{start:dStr(cycleStart),end:dStr(new Date(yr,mo+1,cycDay-1))};}
+          const {start:periodStart,end:periodEnd}=getCurrentPayPeriod(payCycleDay);
+          function isGoTabShift(ev){return !ev.allDay&&ev.time&&ev.time!=="All day"&&((ev.calName&&ev.calName.toLowerCase().includes("gotab"))||(ev.title&&(ev.title.toLowerCase().includes("gotab")||ev.title.toLowerCase().includes("shift"))));}
+          const periodShifts=dedupedEvents.filter(isGoTabShift).filter(function(ev){return ev.date>=periodStart&&ev.date<=periodEnd;}).sort(function(a,b){return a.date.localeCompare(b.date);});
+          const periodNorm=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.normalHrs:0);},0);
+          const periodPen=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.penaltyHrs:0);},0);
+          const periodEquiv=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.totalEquiv:0);},0);
+          const estimatedPay=hrRate>0?periodEquiv*hrRate:null;
+          function fmtPeriod(){const s=new Date(periodStart+"T12:00:00");const e=new Date(periodEnd+"T12:00:00");return s.toLocaleDateString("en-AU",{day:"numeric",month:"short"})+" – "+e.toLocaleDateString("en-AU",{day:"numeric",month:"short",year:"numeric"});}
+          return(
+            <div style={{maxWidth:700}}>
+              <div style={card()}>
+                <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:11,color:T.text2}}>Pay cycle: monthly on the</span><input type="number" min={1} max={28} style={{...inp,width:48,textAlign:"center",padding:"4px 6px"}} value={payCycleDay} onChange={function(ev){setData(function(p){return{...p,payCycleDay:Math.max(1,Math.min(28,Number(ev.target.value)||1))};});}}/><span style={{fontSize:11,color:T.text2}}>th</span></div>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:11,color:T.text2}}>Hourly rate: $</span><input type="number" min={0} step={0.01} style={{...inp,width:70,padding:"4px 6px"}} placeholder="0.00" value={(data.finance&&data.finance.hourlyRate)||""} onChange={function(ev){setData(function(p){return{...p,finance:{...p.finance,hourlyRate:Number(ev.target.value)||0}};});}}/><span style={{fontSize:11,color:T.text2}}>/hr</span></div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:mob?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:10}}>
+                  {[{label:"Shifts worked",value:String(periodShifts.length),sub:"this pay period",color:T.text},{label:"Standard hrs",value:periodNorm.toFixed(1)+"h",sub:"before 7pm",color:T.success},{label:"Penalty hrs",value:periodPen.toFixed(1)+"h",sub:"after 7pm × 1.5",color:T.warn},{label:"Estimated pay",value:estimatedPay!==null?"$"+estimatedPay.toFixed(2):"Set rate ↑",sub:estimatedPay!==null?periodEquiv.toFixed(1)+"h equiv":"enter hourly rate above",color:estimatedPay!==null?T.accent:T.text3}].map(function(stat){return(<div key={stat.label} style={{background:T.bg3,borderRadius:8,padding:"12px 14px"}}><div style={{fontSize:10,color:T.text2,marginBottom:4}}>{stat.label}</div><div style={{fontSize:mob?16:20,fontWeight:700,color:stat.color,lineHeight:1}}>{stat.value}</div><div style={{fontSize:9,color:T.text3,marginTop:4}}>{stat.sub}</div></div>);})}
+                </div>
+                <div style={{fontSize:10,color:T.text3}}>Pay period: {fmtPeriod()} · Penalty rate: after 7:00pm = 1.5×</div>
+              </div>
+              <div style={card()}>
+                <div style={sT}>Shift breakdown</div>
+                {periodShifts.length===0
+                  ?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No GoTab shifts found for this pay period. If your shifts are in Google Calendar, check the calendar picker above.":"Connect Google Calendar to see your shifts."}</div>
+                  :mob
+                    ?periodShifts.map(function(ev){const past=daysBetween(ev.date)<0;const pay=shiftPay(ev.time);const rowPay=hrRate>0&&pay?"$"+(pay.totalEquiv*hrRate).toFixed(2):"—";return(<div key={ev.id} style={{display:"flex",gap:8,marginBottom:8,padding:"10px 12px",background:T.bg3,borderRadius:8,opacity:past?0.6:1}}><div style={{flex:1}}><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:3}}><span style={{fontSize:11,fontWeight:600,color:T.text}}>{ev.title}</span>{past&&<span style={bdg("normal")}>past</span>}</div><div style={{fontSize:10,color:T.text3}}>{new Date(ev.date+"T12:00:00").toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short"})} · {ev.time}</div>{pay&&<div style={{display:"flex",gap:8,fontSize:10,marginTop:4}}><span style={{color:T.success}}>{pay.normalHrs}h std</span>{pay.penaltyHrs>0&&<span style={{color:T.warn}}>{pay.penaltyHrs}h pen</span>}<span style={{color:T.accent,fontWeight:600}}>{pay.totalEquiv}h equiv</span><span style={{color:T.text,fontWeight:700}}>{rowPay}</span></div>}</div></div>);})
+                    :<div>
+                      <div style={{display:"grid",gridTemplateColumns:"90px 45px 1fr 58px 58px 58px 70px",gap:4,padding:"4px 8px",marginBottom:4}}>{["Date","Day","Time","Std hrs","Pen hrs","Equiv","Pay"].map(function(h){return<div key={h} style={{fontSize:9,color:T.text3,fontWeight:600}}>{h}</div>;})}</div>
+                      {periodShifts.map(function(ev,i){const past=daysBetween(ev.date)<0;const pay=shiftPay(ev.time);const rowPay=hrRate>0&&pay?"$"+(pay.totalEquiv*hrRate).toFixed(2):"—";const d=new Date(ev.date+"T12:00:00");return(<div key={ev.id} style={{display:"grid",gridTemplateColumns:"90px 45px 1fr 58px 58px 58px 70px",gap:4,padding:"7px 8px",borderRadius:6,background:i%2===0?"rgba(255,255,255,0.025)":"transparent",opacity:past?0.6:1}}><div style={{fontSize:11,color:T.text}}>{fmtDate(ev.date)}</div><div style={{fontSize:11,color:T.text3}}>{d.toLocaleDateString("en-AU",{weekday:"short"})}</div><div style={{fontSize:11,color:T.text2}}>{ev.time}</div><div style={{fontSize:11,color:T.success}}>{pay?pay.normalHrs+"h":"—"}</div><div style={{fontSize:11,color:T.warn}}>{pay&&pay.penaltyHrs>0?pay.penaltyHrs+"h":"—"}</div><div style={{fontSize:11,color:T.accent,fontWeight:600}}>{pay?pay.totalEquiv+"h":"—"}</div><div style={{fontSize:11,fontWeight:700,color:T.text}}>{rowPay}</div></div>);})}
+                      <div style={{display:"grid",gridTemplateColumns:"90px 45px 1fr 58px 58px 58px 70px",gap:4,padding:"8px",borderTop:"0.5px solid "+T.border,marginTop:4}}><div style={{fontSize:10,fontWeight:700,color:T.text,gridColumn:"1/4"}}>Total</div><div style={{fontSize:11,fontWeight:700,color:T.success}}>{periodNorm.toFixed(1)}h</div><div style={{fontSize:11,fontWeight:700,color:T.warn}}>{periodPen.toFixed(1)}h</div><div style={{fontSize:11,fontWeight:700,color:T.accent}}>{periodEquiv.toFixed(1)}h</div><div style={{fontSize:11,fontWeight:700,color:T.text}}>{estimatedPay!==null?"$"+estimatedPay.toFixed(2):"—"}</div></div>
+                    </div>
+                }
+              </div>
+            </div>
+          );
+        })()}
 
         {page==="Gym"&&<ErrorBoundary name="Gym"><GymSection mob={mob} gymData={data.gym} onAddEx={function(){setModal("add_exercise");setMForm({});}} onLogW={function(ex){setModal("log_weight");setMForm({exId:ex.id,exName:ex.name});}} onSave={function(wk){setData(function(p){const rl=p.gym.rotation?p.gym.rotation.length:1;return{...p,gym:{...p.gym,workouts:(p.gym.workouts||[]).concat([wk]),rotIdx:((p.gym.rotIdx||0)+1)%Math.max(rl,1)}};});}} onUpdateRot={function(rot,idx){setData(function(p){return{...p,gym:{...p.gym,rotation:rot,rotIdx:idx}};});}}/></ErrorBoundary>}
 
@@ -1754,15 +1805,22 @@ function App(){
             <div style={{fontSize:15,fontWeight:600,color:T.text}}>Google Calendars</div>
             <button style={{...btn,fontSize:10,color:"#4285F4",border:"0.5px solid #4285F440"}} onClick={function(){if(window.GCalSync)window.GCalSync.connect();}}>+ Add account</button>
           </div>
-          <div style={{fontSize:11,color:T.text3,marginBottom:14}}>Tap a calendar to toggle it on or off.</div>
+          <div style={{fontSize:11,color:T.text3,marginBottom:8}}>Tap a calendar to toggle it on or off.</div>
+          <div style={{fontSize:9,color:T.text3,marginBottom:12,padding:"5px 8px",borderRadius:6,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.15)"}}>Duplicate events (same title, date, time) are merged automatically. Events from jaydenpineda30@gmail.com are preferred when duplicates are detected.</div>
           {gcalCalendars.length===0?<div style={{fontSize:12,color:T.text2,marginBottom:16}}>No calendars found. Connect a Google account above.</div>:(function(){
             var byAccount={};
             gcalCalendars.forEach(function(cal){var e=cal._email||"Google";(byAccount[e]=byAccount[e]||[]).push(cal);});
-            return Object.keys(byAccount).map(function(email){return(
+            return Object.keys(byAccount).map(function(email){
+              var accountCalIds=byAccount[email].map(function(c){return c.id;});
+              var allSelected=gcalSelectedIds.length===0||accountCalIds.every(function(id){return gcalSelectedIds.indexOf(id)!==-1;});
+              return(
               <div key={email} style={{marginBottom:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                   <div style={{fontSize:10,color:T.text3,fontWeight:600}}>{email}</div>
-                  <button style={{fontSize:9,color:T.danger,background:"none",border:"none",cursor:"pointer",padding:"2px 6px"}} onClick={function(){if(window.GCalSync)window.GCalSync.disconnect(email);}}>Remove</button>
+                  <div style={{display:"flex",gap:6}}>
+                    <button style={{fontSize:9,color:allSelected?T.warn:T.success,background:"none",border:"none",cursor:"pointer",padding:"2px 6px"}} onClick={function(){var next=allSelected?gcalSelectedIds.filter(function(id){return accountCalIds.indexOf(id)===-1;}):[].concat(gcalSelectedIds,accountCalIds.filter(function(id){return gcalSelectedIds.indexOf(id)===-1;}));if(window.GCalSync)window.GCalSync.setSelectedIds(next);}}>{allSelected?"Mute all":"Enable all"}</button>
+                    <button style={{fontSize:9,color:T.danger,background:"none",border:"none",cursor:"pointer",padding:"2px 6px"}} onClick={function(){if(window.GCalSync)window.GCalSync.disconnect(email);}}>Remove</button>
+                  </div>
                 </div>
                 {byAccount[email].map(function(cal){
                   var sel=gcalSelectedIds.indexOf(cal.id)!==-1;
