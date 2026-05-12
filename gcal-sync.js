@@ -1,17 +1,8 @@
 /**
  * gcal-sync.js
- * Google Calendar OAuth + event fetch via GIS + GAPI.
+ * Multi-account Google Calendar sync via GIS + GAPI.
+ * Supports connecting multiple Google accounts simultaneously.
  * Exposes global: window.GCalSync
- *
- * Requires in <head> (before this file):
- *   <script src="https://accounts.google.com/gsi/client" async defer></script>
- *   <script src="https://apis.google.com/js/api.js" async defer></script>
- *
- * Notifies the React app via window callbacks:
- *   window.__dashSetGcalEvents(events[])
- *   window.__dashSetGcalConnected(bool)
- *   window.__dashSetGcalCalendars(calendars[])
- *   window.__dashSetGcalReady(bool)
  */
 (function () {
   'use strict';
@@ -19,25 +10,36 @@
   var CLIENT_ID = '134399742010-ls72tfl37fgre7ip3oohrmq65ln1ilrf.apps.googleusercontent.com';
   var SCOPE     = 'https://www.googleapis.com/auth/calendar.readonly';
   var CACHE_KEY = '__gcal_events__';
-  var CAL_KEY   = '__gcal_selected__';
+  var SEL_KEY   = '__gcal_selected__';
+  var ACC_KEY   = '__gcal_accounts__';
 
-  var _tokenClient  = null;
-  var _accessToken  = null;
-  var _refreshTimer = null;
-  var _calendars    = [];
-  var _selectedIds  = [];
+  // _accounts: [{ email, token, calendars: [{id, summary, backgroundColor}] }]
+  var _accounts      = [];
+  var _selectedIds   = [];
+  var _tokenClient   = null;
+  var _gapiReady     = false;
+  var _refreshTimers = {};
 
-  try {
-    var _stored = localStorage.getItem(CAL_KEY);
-    _selectedIds = _stored ? JSON.parse(_stored) : [];
-  } catch (_) { _selectedIds = []; }
+  try { _selectedIds = JSON.parse(localStorage.getItem(SEL_KEY) || '[]'); } catch (_) {}
 
   // ── Callbacks into React ───────────────────────────────────────────────────
 
-  function notifyEvents(evs)   { if (window.__dashSetGcalEvents)     window.__dashSetGcalEvents(evs); }
-  function notifyConn(v)       { if (window.__dashSetGcalConnected)  window.__dashSetGcalConnected(v); }
-  function notifyCalendars(cs) { if (window.__dashSetGcalCalendars)  window.__dashSetGcalCalendars(cs); }
-  function notifyReady()       { if (window.__dashSetGcalReady)      window.__dashSetGcalReady(true); }
+  function push() {
+    // Build merged calendar list across all accounts
+    var allCals = [];
+    _accounts.forEach(function (acc) {
+      (acc.calendars || []).forEach(function (cal) {
+        allCals.push(Object.assign({}, cal, { _email: acc.email }));
+      });
+    });
+    if (window.__dashSetGcalCalendars) window.__dashSetGcalCalendars(allCals);
+    if (window.__dashSetGcalConnected) window.__dashSetGcalConnected(_accounts.length > 0);
+    if (window.__dashSetGcalSelectedIds) window.__dashSetGcalSelectedIds(_selectedIds.slice());
+  }
+
+  function pushEvents(evs) {
+    if (window.__dashSetGcalEvents) window.__dashSetGcalEvents(evs || []);
+  }
 
   // ── Event parsing ──────────────────────────────────────────────────────────
 
@@ -47,101 +49,144 @@
     var start = ev.start, end = ev.end;
     var date, time, allDay = false;
     if (start.date) {
-      date   = start.date;
-      time   = 'All day';
-      allDay = true;
+      date = start.date; time = 'All day'; allDay = true;
     } else {
       var sd = new Date(start.dateTime);
-      var ed = new Date(end   ? end.dateTime : start.dateTime);
-      date   = sd.toISOString().slice(0, 10);
-      time   = pad(sd.getHours()) + ':' + pad(sd.getMinutes()) +
-               '–' + pad(ed.getHours()) + ':' + pad(ed.getMinutes());
+      var ed = new Date(end ? end.dateTime : start.dateTime);
+      date = sd.toISOString().slice(0, 10);
+      time = pad(sd.getHours()) + ':' + pad(sd.getMinutes()) +
+             '–' + pad(ed.getHours()) + ':' + pad(ed.getMinutes());
     }
     return {
-      id:       'gcal_' + ev.id,
-      date:     date,
-      time:     time,
-      title:    ev.summary || '(no title)',
+      id: 'gcal_' + ev.id,
+      date: date, time: time,
+      title: ev.summary || '(no title)',
       location: ev.location || null,
-      gcal:     true,
-      allDay:   allDay,
-      calId:    calId,
-      calColor: calColor || '#4285F4',
-      calName:  calName  || 'Google'
+      gcal: true, allDay: allDay,
+      calId: calId, calColor: calColor || '#4285F4', calName: calName || 'Google'
     };
   }
 
-  // ── Fetch events from selected calendars ───────────────────────────────────
+  // ── Fetch events for all accounts ─────────────────────────────────────────
 
-  function fetchEvents() {
-    if (!_accessToken) return;
-    var active = _calendars.filter(function (c) {
-      return _selectedIds.indexOf(c.id) !== -1;
-    });
-    if (active.length === 0 && _calendars.length > 0) {
-      // Default: sync all calendars if nothing selected yet
-      active = _calendars;
-      _selectedIds = _calendars.map(function (c) { return c.id; });
-      try { localStorage.setItem(CAL_KEY, JSON.stringify(_selectedIds)); } catch (_) {}
-    }
-    if (active.length === 0) return;
+  function fetchAll() {
+    if (!_gapiReady || _accounts.length === 0) return;
 
     var now  = new Date();
     var tMin = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
     var tMax = new Date(now.getFullYear(), now.getMonth() + 3, 31, 23, 59).toISOString();
 
-    var promises = active.map(function (cal) {
-      return gapi.client.calendar.events.list({
-        calendarId:   cal.id,
-        timeMin:      tMin,
-        timeMax:      tMax,
-        maxResults:   500,
-        singleEvents: true,
-        orderBy:      'startTime'
-      }).then(function (res) {
-        return (res.result.items || []).map(function (ev) {
-          return parseEvent(ev, cal.id, cal.backgroundColor, cal.summary);
-        });
-      }).catch(function () { return []; });
+    var allPromises = [];
+
+    _accounts.forEach(function (acc) {
+      if (!acc.token) return;
+      // Temporarily set this account's token
+      gapi.client.setToken({ access_token: acc.token });
+
+      var activeCals = (acc.calendars || []).filter(function (c) {
+        return _selectedIds.length === 0 || _selectedIds.indexOf(c.id) !== -1;
+      });
+      if (activeCals.length === 0) activeCals = acc.calendars || [];
+
+      activeCals.forEach(function (cal) {
+        allPromises.push(
+          gapi.client.calendar.events.list({
+            calendarId:   cal.id,
+            timeMin:      tMin,
+            timeMax:      tMax,
+            maxResults:   500,
+            singleEvents: true,
+            orderBy:      'startTime'
+          }).then(function (res) {
+            return (res.result.items || []).map(function (ev) {
+              return parseEvent(ev, cal.id, cal.backgroundColor, cal.summary);
+            });
+          }).catch(function () { return []; })
+        );
+      });
     });
 
-    Promise.all(promises).then(function (results) {
+    Promise.all(allPromises).then(function (results) {
       var all = [].concat.apply([], results);
       try { localStorage.setItem(CACHE_KEY, JSON.stringify(all)); } catch (_) {}
-      notifyEvents(all);
-      notifyConn(true);
+      pushEvents(all);
     });
   }
 
-  // ── Fetch calendar list ────────────────────────────────────────────────────
+  // ── Load calendar list for a single account ────────────────────────────────
 
-  function loadCalendars() {
-    return gapi.client.calendar.calendarList.list({ minAccessRole: 'reader' })
+  function loadCalendarsForAccount(acc, callback) {
+    gapi.client.setToken({ access_token: acc.token });
+    gapi.client.calendar.calendarList.list({ minAccessRole: 'reader' })
       .then(function (res) {
-        _calendars = res.result.items || [];
-        notifyCalendars(_calendars);
-        // Restore previously saved selection, or default to all
-        if (_selectedIds.length === 0) {
-          _selectedIds = _calendars.map(function (c) { return c.id; });
-          try { localStorage.setItem(CAL_KEY, JSON.stringify(_selectedIds)); } catch (_) {}
-        }
-        return _calendars;
+        acc.calendars = res.result.items || [];
+        // Default: select all
+        acc.calendars.forEach(function (cal) {
+          if (_selectedIds.indexOf(cal.id) === -1) _selectedIds.push(cal.id);
+        });
+        try { localStorage.setItem(SEL_KEY, JSON.stringify(_selectedIds)); } catch (_) {}
+        push();
+        if (callback) callback();
+      }).catch(function (err) {
+        console.warn('[GCalSync] calendarList failed for', acc.email, err);
+        if (callback) callback();
       });
   }
 
-  // ── GAPI + GIS init ────────────────────────────────────────────────────────
+  // ── Token receipt ──────────────────────────────────────────────────────────
 
-  function onTokenReceived(response) {
+  function onToken(response) {
     if (!response || !response.access_token) return;
-    _accessToken = response.access_token;
-    gapi.client.setToken({ access_token: _accessToken });
-    loadCalendars().then(fetchEvents);
-    // Re-request token silently before it expires (tokens last 1 h)
-    if (_refreshTimer) clearTimeout(_refreshTimer);
-    _refreshTimer = setTimeout(function () {
-      _tokenClient.requestAccessToken({ prompt: '' });
-    }, 55 * 60 * 1000);
+    var token = response.access_token;
+
+    // Decode the id_token hint to get email (if present), else use a placeholder
+    var email = response.email || null;
+
+    // Try to read email from the Google token info endpoint
+    fetch('https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=' + token)
+      .then(function (r) { return r.json(); })
+      .then(function (info) {
+        email = info.email || email || ('account' + (_accounts.length + 1));
+        finishConnect(email, token);
+      })
+      .catch(function () {
+        email = email || ('account' + (_accounts.length + 1));
+        finishConnect(email, token);
+      });
   }
+
+  function finishConnect(email, token) {
+    // Update existing account or add new one
+    var existing = null;
+    _accounts.forEach(function (a) { if (a.email === email) existing = a; });
+    if (existing) {
+      existing.token = token;
+    } else {
+      existing = { email: email, token: token, calendars: [] };
+      _accounts.push(existing);
+    }
+
+    // Persist account list (email only, not token — tokens are in-memory)
+    persistAccounts();
+
+    // Schedule token refresh (55 min)
+    if (_refreshTimers[email]) clearTimeout(_refreshTimers[email]);
+    _refreshTimers[email] = setTimeout(function () {
+      if (_tokenClient) _tokenClient.requestAccessToken({ prompt: '', login_hint: email });
+    }, 55 * 60 * 1000);
+
+    loadCalendarsForAccount(existing, fetchAll);
+  }
+
+  function persistAccounts() {
+    try {
+      localStorage.setItem(ACC_KEY, JSON.stringify(
+        _accounts.map(function (a) { return { email: a.email }; })
+      ));
+    } catch (_) {}
+  }
+
+  // ── GAPI + GIS init ────────────────────────────────────────────────────────
 
   function initGapi() {
     gapi.load('client', function () {
@@ -150,19 +195,21 @@
           'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'
         );
       }).then(function () {
+        _gapiReady = true;
+
         _tokenClient = google.accounts.oauth2.initTokenClient({
           client_id: CLIENT_ID,
           scope:     SCOPE,
-          callback:  onTokenReceived
+          callback:  onToken
         });
 
-        // Surface any cached events immediately while we wait for the user to connect
+        // Surface cached events immediately
         try {
           var cached = localStorage.getItem(CACHE_KEY);
-          if (cached) notifyEvents(JSON.parse(cached));
+          if (cached) pushEvents(JSON.parse(cached));
         } catch (_) {}
 
-        notifyReady();
+        if (window.__dashSetGcalReady) window.__dashSetGcalReady(true);
       }).catch(function (err) {
         console.warn('[GCalSync] GAPI init failed:', err);
       });
@@ -183,42 +230,69 @@
 
   window.GCalSync = {
 
-    /** Trigger OAuth consent / token flow (opens a Google popup). */
-    connect: function () {
-      if (_tokenClient) _tokenClient.requestAccessToken({ prompt: 'select_account' });
+    /** Add another Google account (opens the account-picker popup). */
+    connect: function (loginHint) {
+      if (!_tokenClient) return;
+      _tokenClient.requestAccessToken({
+        prompt:     'select_account',
+        login_hint: loginHint || undefined
+      });
     },
 
-    /** Revoke token and clear cached events. */
-    disconnect: function () {
-      if (_accessToken) {
-        google.accounts.oauth2.revoke(_accessToken, function () {});
-        _accessToken = null;
-        gapi.client.setToken(null);
+    /** Disconnect a specific account by email, or all if no email given. */
+    disconnect: function (email) {
+      if (email) {
+        _accounts = _accounts.filter(function (a) {
+          if (a.email === email) {
+            if (a.token) try { google.accounts.oauth2.revoke(a.token, function(){}); } catch(_){}
+            if (_refreshTimers[email]) clearTimeout(_refreshTimers[email]);
+            return false;
+          }
+          return true;
+        });
+        // Remove this account's calendars from selected
+        // (we keep other accounts' selections)
+      } else {
+        _accounts.forEach(function (a) {
+          if (a.token) try { google.accounts.oauth2.revoke(a.token, function(){}); } catch(_){}
+          if (_refreshTimers[a.email]) clearTimeout(_refreshTimers[a.email]);
+        });
+        _accounts = [];
+        _selectedIds = [];
+        try { localStorage.removeItem(CACHE_KEY); localStorage.removeItem(SEL_KEY); } catch (_) {}
+        pushEvents([]);
       }
-      if (_refreshTimer) { clearTimeout(_refreshTimer); _refreshTimer = null; }
-      _calendars   = [];
-      _selectedIds = [];
-      try { localStorage.removeItem(CACHE_KEY); localStorage.removeItem(CAL_KEY); } catch (_) {}
-      notifyEvents([]);
-      notifyCalendars([]);
-      notifyConn(false);
+      persistAccounts();
+      push();
+      if (_accounts.length > 0) fetchAll();
     },
 
-    /** Return the list of calendars (populated after connect). */
-    getCalendars: function () { return _calendars; },
+    /** All connected account emails. */
+    getAccounts: function () {
+      return _accounts.map(function (a) { return a.email; });
+    },
 
-    /** IDs of calendars currently being synced. */
+    /** All calendars across all connected accounts. */
+    getCalendars: function () {
+      var all = [];
+      _accounts.forEach(function (acc) {
+        (acc.calendars || []).forEach(function (cal) {
+          all.push(Object.assign({}, cal, { _email: acc.email }));
+        });
+      });
+      return all;
+    },
+
     getSelectedIds: function () { return _selectedIds.slice(); },
 
-    /** Update which calendars are synced and re-fetch. */
     setSelectedIds: function (ids) {
       _selectedIds = ids;
-      try { localStorage.setItem(CAL_KEY, JSON.stringify(ids)); } catch (_) {}
-      fetchEvents();
+      try { localStorage.setItem(SEL_KEY, JSON.stringify(ids)); } catch (_) {}
+      if (window.__dashSetGcalSelectedIds) window.__dashSetGcalSelectedIds(ids.slice());
+      fetchAll();
     },
 
-    /** Force an immediate re-fetch. */
-    refresh: function () { fetchEvents(); }
+    refresh: function () { fetchAll(); }
   };
 
 })();
