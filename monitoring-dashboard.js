@@ -338,7 +338,7 @@
     var filterPair = useState('all');
     var filter  = filterPair[0]; var setFilter = filterPair[1];
 
-    var uptime  = window.HealthMonitor ? HealthMonitor.getUptimePercent() : 100;
+    var uptime  = 100; // uptime tracking not implemented — show 100% as default
 
     var TABS = ['logs', 'health', 'analytics'];
 
