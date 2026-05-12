@@ -34,10 +34,11 @@
    * Skips gracefully if Firebase is not configured yet.
    */
   function checkFirebase() {
-    if (!window.db) {
+    var db = window._db || window.db;
+    if (!db) {
       return Promise.resolve({ ok: true, detail: 'not configured' });
     }
-    return window.db.collection('__health__').limit(1).get()
+    return db.collection('__health__').limit(1).get()
       .then(function ()  { return { ok: true,  detail: 'Firestore reachable' }; })
       .catch(function (e){ return { ok: false, detail: e.message }; });
   }
