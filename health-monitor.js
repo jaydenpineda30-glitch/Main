@@ -34,11 +34,12 @@
    * Skips gracefully if Firebase is not configured yet.
    */
   function checkFirebase() {
-    var db = window._db || window.db;
-    if (!db) {
-      return Promise.resolve({ ok: true, detail: 'not configured' });
-    }
-    return db.collection('_ping').limit(1).get()
+    var db   = window._db || window.db;
+    var user = window._currentUser;
+    if (!db)   return Promise.resolve({ ok: true, detail: 'not configured' });
+    if (!user) return Promise.resolve({ ok: true, detail: 'not signed in yet' });
+    // Read the user's own doc — always allowed by security rules
+    return db.collection('users').doc(user.uid).get()
       .then(function ()  { return { ok: true,  detail: 'Firestore reachable' }; })
       .catch(function (e){ return { ok: false, detail: e.message }; });
   }
