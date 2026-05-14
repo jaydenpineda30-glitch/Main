@@ -1141,6 +1141,7 @@ function App(){
   const [authUser,setAuthUser]=useState(null);
   const [authLoading,setAuthLoading]=useState(true);
   const _fbReady=useRef(false);
+  const _dataLoaded=useRef(false); // only true after we've confirmed Firebase state
   const _saveTimer=useRef(null);
   const [docIn,setDocIn]=useState({title:"",tags:"",content:""});
   const [forceMob,setForceMob]=useState(false);
@@ -1247,14 +1248,26 @@ function App(){
           if(cloud){
             var fin=cloud.finance||{};
             if(!fin.financeVersion||fin.financeVersion<2)cloud={...cloud,finance:INIT.finance};
+            // Write a rolling daily backup to localStorage the moment we load from Firestore.
+            // This ensures recovery is always possible even if a future session corrupts Firestore.
+            try{
+              var bk='dash_backup_'+new Date().toISOString().slice(0,10);
+              localStorage.setItem(bk,JSON.stringify(cloud));
+              var bks=Object.keys(localStorage).filter(function(k){return k.startsWith('dash_backup_');}).sort();
+              while(bks.length>3){try{localStorage.removeItem(bks.shift());}catch(_){}}
+            }catch(_){}
             setData(mergeWithDefaults(cloud));
           }
         }
+        // Safe to save now — we've confirmed what Firestore holds (real data or empty new user)
+        _dataLoaded.current=true;
         _fbReady.current=true;
         setSyncStatus("synced");
       }).catch(function(err){
         console.error("[Firestore] Load failed:",err);
-        _fbReady.current=true;
+        // IMPORTANT: do NOT set _fbReady or _dataLoaded on error.
+        // If we did, the empty initial state would get saved over real Firestore data
+        // on the next user interaction. Stay in offline mode instead.
         setSyncStatus("offline");
       });
     }
@@ -1288,13 +1301,15 @@ function App(){
         localStorage.setItem(MIGRATED_KEY,'1');
         localStorage.removeItem('dash_v1');
         showToast("Migration complete! Your data is now synced.","success");
+        _dataLoaded.current=true;
         _fbReady.current=true;
         setSyncStatus("synced");
         setData(mergeWithDefaults(parsed));
       }).catch(function(err){
         console.error("[Migration] Upload failed:",err);
         showToast("Migration failed — your data is still saved locally.","error");
-        _fbReady.current=true;
+        // Do NOT set _fbReady on migration failure — local data is still in dash_v1
+        // and we don't want to risk overwriting Firestore with anything
         setSyncStatus("offline");
       });
     }else{
@@ -1304,7 +1319,10 @@ function App(){
   // Save to localStorage immediately + Firestore (debounced 2s)
   useEffect(function(){
     try{localStorage.setItem("dash_v1",JSON.stringify(data));}catch(_){}
-    if(!_fbReady.current||!window.DASH_DOC)return;
+    // Require BOTH flags: _fbReady (connected) AND _dataLoaded (confirmed Firebase state).
+    // This prevents the race condition where empty initial state saves over real Firestore data
+    // when opening the dashboard on a new device before Firebase finishes loading.
+    if(!_fbReady.current||!_dataLoaded.current||!window.DASH_DOC)return;
     setSyncStatus("syncing");
     if(_saveTimer.current)clearTimeout(_saveTimer.current);
     _saveTimer.current=setTimeout(function(){
@@ -1369,6 +1387,40 @@ function App(){
 
   function doCheckin(){setCheckinLoading(true);setCheckinBlocks([]);generateCheckin(data).then(function(blocks){setCheckinBlocks(blocks);setCheckinLoading(false);}).catch(function(){setCheckinLoading(false);});}
   function toggleCalEv(id){setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
+  // ── Backup & restore helpers ───────────────────────────────────────────────
+  function getLatestBackup(){
+    try{
+      var bks=Object.keys(localStorage).filter(function(k){return k.startsWith('dash_backup_');}).sort();
+      if(bks.length===0)return null;
+      var raw=localStorage.getItem(bks[bks.length-1]);
+      if(!raw)return null;
+      return{key:bks[bks.length-1],data:JSON.parse(raw)};
+    }catch(_){return null;}
+  }
+  function exportData(){
+    try{
+      var blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+      var a=document.createElement("a");
+      a.href=URL.createObjectURL(blob);
+      a.download="dashboard-backup-"+new Date().toISOString().slice(0,10)+".json";
+      a.click();
+    }catch(e){showToast("Export failed: "+e.message,"error");}
+  }
+  function restoreFromBackup(){
+    var bk=getLatestBackup();
+    if(!bk){showToast("No local backup found","error");return;}
+    var merged=mergeWithDefaults(bk.data);
+    setData(merged);
+    // Also push to Firestore immediately if connected
+    if(_fbReady.current&&_dataLoaded.current&&window.DASH_DOC){
+      window.DASH_DOC.set({dashData:stripUndefined(merged)}).then(function(){
+        showToast("Restored from backup ("+bk.key.replace("dash_backup_","")+") and saved to cloud","success");
+        setSyncStatus("synced");
+      }).catch(function(){showToast("Restored locally — cloud sync failed","warn");});
+    }else{
+      showToast("Restored from backup ("+bk.key.replace("dash_backup_","")+"). Reconnect to sync to cloud.","success");
+    }
+  }
   function toggleAssessmentDone(id){setData(function(p){const as=p.uni.assessments||[];return{...p,uni:{...p.uni,assessments:as.map(function(a){return a.id===id?{...a,done:!a.done}:a;})}};}); }
   function removeAssessment(id){setData(function(p){return{...p,uni:{...p.uni,assessments:(p.uni.assessments||[]).filter(function(a){return a.id!==id;})}};}); }
   function addAssessment(){
@@ -1630,8 +1682,10 @@ function App(){
         <div style={{display:"flex",alignItems:"center",gap:8,marginRight:14}}>
           <div style={{fontSize:13,fontWeight:700,color:T.accent,textShadow:"0 0 12px rgba(199,125,255,0.6)"}}>Jayden</div>
           <div title={syncStatus==="synced"?"Synced to cloud":syncStatus==="syncing"?"Saving...":syncStatus==="loading"?"Connecting...":"Offline — saved locally"} style={{width:7,height:7,borderRadius:"50%",background:syncStatus==="synced"?T.success:syncStatus==="syncing"?T.warn:syncStatus==="loading"?T.text3:T.danger,boxShadow:syncStatus==="synced"?"0 0 6px "+T.success:syncStatus==="syncing"?"0 0 6px "+T.warn:"none",transition:"background 0.4s"}}/>
+          {syncStatus==="offline"&&getLatestBackup()&&<button onClick={restoreFromBackup} style={{fontSize:9,padding:"2px 8px",borderRadius:6,border:"0.5px solid rgba(255,209,102,0.5)",background:"rgba(255,209,102,0.1)",color:T.warn,cursor:"pointer",fontWeight:600}}>⟲ Restore backup</button>}
         </div>
         <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
+          <button onClick={exportData} title="Download all your data as JSON backup" style={{padding:"3px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text3,cursor:"pointer",fontSize:11}}>⬇ Export</button>
           {authUser&&authUser.photoURL&&<img src={authUser.photoURL} alt="" style={{width:22,height:22,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.2)"}}/>}
           <button onClick={function(){_auth.signOut();}} style={{padding:"3px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text3,cursor:"pointer",fontSize:11}}>Sign out</button>
         </div>
