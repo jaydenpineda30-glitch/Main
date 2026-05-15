@@ -45,6 +45,6 @@ input,select,textarea,button{-webkit-tap-highlight-color:transparent;}
 
 /* ── Card hover rim light ── */
 .card-rim{position:relative;overflow:hidden;transition:box-shadow .3s,transform .3s;}
-.card-rim::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 0 0 1px rgba(210,80,255,0);transition:box-shadow .35s ease;}
-.card-rim:hover::after{box-shadow:inset 0 0 0 1px rgba(210,80,255,.55),inset 0 0 22px rgba(210,80,255,.08);}
-.card-rim:hover{box-shadow:0 0 45px rgba(180,50,255,.3),0 0 90px rgba(180,50,255,.12);transform:translateY(-2px);}
+.card-rim::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 0 0 1.5px rgba(210,80,255,0);transition:box-shadow .35s ease;}
+.card-rim:hover::after{box-shadow:inset 0 0 0 1.5px rgba(210,80,255,.85),inset 0 0 35px rgba(210,80,255,.18),inset 0 0 8px rgba(210,80,255,.12);}
+.card-rim:hover{box-shadow:0 0 60px rgba(180,50,255,.5),0 0 120px rgba(180,50,255,.22);transform:translateY(-2px);}

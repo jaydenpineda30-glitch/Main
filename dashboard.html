@@ -588,7 +588,7 @@ function WeatherWidget(props){
 }
 
 function GymSection(props){
-  const gymData=props.gymData;const onAddEx=props.onAddEx;const onLogW=props.onLogW;const onSave=props.onSave;const onUpdateRot=props.onUpdateRot;const mob=props.mob||false;
+  const gymData=props.gymData;const onAddEx=props.onAddEx;const onLogW=props.onLogW;const onSave=props.onSave;const onUpdateRot=props.onUpdateRot;const onDeleteBW=props.onDeleteBW;const mob=props.mob||false;
   const [tab,setTab]=useState("progress");
   const [wkt,setWkt]=useState({name:"",date:todayStr(),sets:[]});
   const [row,setRow]=useState({exercise:"",sets:"",reps:"",weight:""});
@@ -637,7 +637,7 @@ function GymSection(props){
         <div className="card-rim" style={gs.card}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:13,fontWeight:500,color:T.text}}>Body weight trend</div><span style={{fontSize:10,color:T.text3}}>Logged weekly</span></div>
           <Sparkline data={gymData.bodyWeight||[]} color={T.accent} width={mob?280:360} height={60}/>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>{(gymData.bodyWeight||[]).slice(-6).map(function(l,i){return<div key={i} style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.bg3,color:T.text2}}>{fmtDate(l.date)}: {l.weight}kg</div>;})}</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>{(gymData.bodyWeight||[]).slice(-6).map(function(l,i){return<div key={i} style={{display:"flex",alignItems:"center",gap:3,fontSize:10,padding:"2px 6px 2px 8px",borderRadius:99,background:T.bg3,color:T.text2}}>{fmtDate(l.date)}: {l.weight}kg<button style={{background:"none",border:"none",cursor:"pointer",color:T.text3,fontSize:11,opacity:0.5,lineHeight:1,padding:"0 1px"}} title="Delete entry" onClick={function(){onDeleteBW&&onDeleteBW(l.date);}}>×</button></div>;})}</div>
         </div>
         <div className="card-rim" style={gs.card}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={{fontSize:13,fontWeight:500,color:T.text}}>Exercise progression</div><button style={gs.btn} onClick={onAddEx}>+ Exercise</button></div>
@@ -1035,8 +1035,6 @@ function App(){
   const [capturesSearch,setCapturesSearch]=useState("");
   const [expandedCapture,setExpandedCapture]=useState(null);
   const [expandedRefl,setExpandedRefl]=useState(null);
-  const [dragTaskId,setDragTaskId]=useState(null);
-  const [dragOverDay,setDragOverDay]=useState(null);
   const [editTaskId,setEditTaskId]=useState(null);
   const [editTaskForm,setEditTaskForm]=useState({});
   const [gymDraftBanner,setGymDraftBanner]=useState(false);
@@ -1065,7 +1063,7 @@ function App(){
   const mob=forceMob||rawMob;
   const [checkinLoading,setCheckinLoading]=useState(false);
   const [reflAnalysisLoading,setReflAnalysisLoading]=useState(false);
-  const [ollamaAvailable,setOllamaAvailable]=useState(null);
+
   const [showMonitor,setShowMonitor]=useState(false);
   const [toast,setToast]=useState(null); // {msg,type:'error'|'success'|'warn'}
   const [errLog,setErrLog]=useState([]);
@@ -1260,7 +1258,6 @@ function App(){
       window.DASH_DOC.set({dashData:stripUndefined(data)}).then(function(){setSyncStatus("synced");}).catch(function(e){console.error("[Firestore] Write failed:",e.message);setSyncStatus("offline");});
     },2000);
   },[data]);
-  useEffect(function(){fetch("http://localhost:11434/api/tags").then(function(r){setOllamaAvailable(r.ok);}).catch(function(){setOllamaAvailable(false);});},[]);
   useEffect(function(){
     if(!_fbReady.current||!_dataLoaded.current||!window.DASH_DOC)return;
     window.DASH_DOC.set({settings:{geminiKey:geminiKey,gcalSelected:gcalSelectedIds,gcalExcluded:gcalExcludedIds}},{merge:true}).catch(function(){});
@@ -1334,7 +1331,37 @@ function App(){
   const totPen=shifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.penaltyHrs:0);},0);
   const totEquiv=shifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.totalEquiv:0);},0);
 
-  function doCheckin(){setCheckinLoading(true);setCheckinBlocks([]);OllamaService.generateCheckIn(data).then(function(blocks){setCheckinBlocks(blocks||generateCheckinFallback(data));setCheckinLoading(false);}).catch(function(){setCheckinBlocks(generateCheckinFallback(data));setCheckinLoading(false);});}
+  function doCheckin(){
+    setCheckinLoading(true);setCheckinBlocks([]);
+    var key=localStorage.getItem('__gemini_key__')||'';
+    if(!key){setCheckinBlocks(generateCheckinFallback(data));setCheckinLoading(false);return;}
+    var cachedEvs=[];try{var ce=localStorage.getItem('__gcal_events__');if(ce)cachedEvs=JSON.parse(ce);}catch(_){}
+    var td=todayStr();
+    var todayEvs=cachedEvs.filter(function(ev){return ev.date===td&&!ev.allDay;});
+    var tasks=(data.personal&&data.personal.tasks)||[];
+    var overdue=tasks.filter(function(t){return !t.done&&t.due&&t.due<td;});
+    var gymRot=(data.gym&&data.gym.rotation)||[];
+    var nextGym=gymRot.length>0?gymRot[((data.gym&&data.gym.rotIdx)||0)%gymRot.length]:null;
+    var ctx={
+      schedule:todayEvs.length>0?todayEvs.map(function(ev){return ev.title+(ev.time?' '+ev.time:'');}).join('\n'):'No events today',
+      tasks:tasks.filter(function(t){return !t.done;}).slice(0,5).map(function(t){return t.name+(overdue.indexOf(t)!==-1?' (OVERDUE)':'');}).join(', ')||'No pending tasks',
+      gym:nextGym?'Next session: '+nextGym.name+(nextGym.focus?' ('+nextGym.focus+')':''):'No gym rotation set'
+    };
+    var prompt='You are a supportive coach helping Jayden start their day.\n\nTODAY\'S CONTEXT:\nCalendar: '+ctx.schedule+'\nPending tasks: '+ctx.tasks+'\nGym: '+ctx.gym+'\n\nWrite a brief, warm check-in. Exactly 3 short lines:\nLine 1: Acknowledge the day ahead\nLine 2: One specific realistic suggestion\nLine 3: One reflection question based on what they\'re facing\n\nUnder 60 words total. Warm but not cheesy. Plain lines, no bullets or numbering.';
+    fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='+key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.7}})})
+      .then(function(r){if(!r.ok)throw new Error('Gemini '+r.status);return r.json();})
+      .then(function(json){
+        var text=json.candidates[0].content.parts[0].text;
+        var lines=text.trim().split('\n').map(function(l){return l.replace(/^[\d.\-*]+\s*/,'').trim();}).filter(function(l){return l.length>0;});
+        var blocks=[];
+        if(lines[0])blocks.push({header:'📅 Your Day Ahead',items:[lines[0]]});
+        if(lines[1])blocks.push({header:'💡 Suggestion',items:[lines[1]]});
+        if(lines[2])blocks.push({header:'❓ Check-in',items:[lines[2]]});
+        setCheckinBlocks(blocks.length>0?blocks:generateCheckinFallback(data));
+        setCheckinLoading(false);
+      })
+      .catch(function(){setCheckinBlocks(generateCheckinFallback(data));setCheckinLoading(false);});
+  }
   function toggleCalEv(id){setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
   // ── Backup & restore helpers ───────────────────────────────────────────────
   function getLatestBackup(){
@@ -1432,6 +1459,13 @@ function App(){
     setBwIn("");setBwDate(todayStr());setBwEditing(false);
     showToast("Body weight logged!","success");
   }
+  function deleteBWEntry(dateStr){
+    setData(function(p){
+      var newBW=(p.gym.bodyWeight||[]).filter(function(e){return e.date!==dateStr;});
+      return{...p,gym:{...p.gym,bodyWeight:newBW,lastBWWeek:dateStr>=thisWeek?null:p.gym.lastBWWeek}};
+    });
+    showToast("Entry removed","success");
+  }
   function submitCapture(){
     if(!captureText.trim())return;
     if(!window.GeminiService){showToast("Gemini service not loaded.","error");return;}
@@ -1480,7 +1514,6 @@ function App(){
       showToast("Scheduled for "+fmtDate(scheduleForDay)+" at "+scheduleTime,"success");
     }
     setShowTimePicker(false);setScheduleTaskId(null);setScheduleForDay(null);
-    setDragTaskId(null);setDragOverDay(null);
   }
   function unscheduleTask(){
     if(!scheduleTaskId)return;
@@ -1488,11 +1521,7 @@ function App(){
       return t.id!==scheduleTaskId?t:{...t,scheduledDate:null,scheduledTime:null,scheduledDuration:null,editedAt:todayStr()};
     })}};});
     showToast("Removed from calendar","success");
-    setShowTimePicker(false);setScheduleTaskId(null);setDragTaskId(null);setDragOverDay(null);
-  }
-  function dropTaskOnDay(ds){
-    if(!dragTaskId)return;
-    openSchedulePicker(dragTaskId,ds);
+    setShowTimePicker(false);setScheduleTaskId(null);
   }
 
   function saveNextSess(){
@@ -1637,8 +1666,8 @@ function App(){
             const ds=dStr(d);const isTdy=ds===todayStr();const isPast=new Date(ds)<new Date(todayStr());
             const timedEvs=visibleGcalEvents.filter(function(ev){return ev.date===ds&&!ev.allDay;});
             const allDayEvs=visibleGcalEvents.filter(function(ev){return ev.date===ds&&ev.allDay;});
-            const isSchedTarget=scheduleTaskId&&!dragTaskId;
-            return(<div key={di} style={{display:"flex",flexDirection:"column",cursor:isSchedTarget?"crosshair":"pointer",borderRadius:6,outline:(dragOverDay===ds||isSchedTarget)?"1.5px dashed "+T.accent:"none",background:dragOverDay===ds?"rgba(199,125,255,0.07)":isSchedTarget?"rgba(199,125,255,0.04)":"transparent",transition:"background 0.1s"}} onClick={function(){if(isSchedTarget){openSchedulePicker(scheduleTaskId,ds);}else{setActiveDay(ds);}}} onDragOver={function(e){e.preventDefault();setDragOverDay(ds);}} onDragLeave={function(){setDragOverDay(null);}} onDrop={function(e){e.preventDefault();dropTaskOnDay(ds);}}>
+            const isSchedTarget=!!scheduleTaskId;
+            return(<div key={di} style={{display:"flex",flexDirection:"column",cursor:isSchedTarget?"crosshair":"pointer",borderRadius:6,outline:isSchedTarget?"1.5px dashed "+T.accent:"none",background:isSchedTarget?"rgba(199,125,255,0.04)":"transparent",transition:"background 0.1s"}} onClick={function(){if(isSchedTarget){openSchedulePicker(scheduleTaskId,ds);}else{setActiveDay(ds);}}}>
               <div style={{textAlign:"center",marginBottom:2,padding:"2px 0",borderRadius:4,background:activeDay===ds?T.accentBg:"transparent"}}>
                 <div style={{fontSize:8,color:isTdy?T.accent:T.text3}}>{DAYS[di]}</div>
                 <div style={{fontSize:10,fontWeight:isTdy?700:400,color:isTdy?T.accent:isPast?T.text3:T.text,width:16,height:16,borderRadius:"50%",background:isTdy?T.accentBg:"transparent",display:"flex",alignItems:"center",justifyContent:"center",margin:"1px auto"}}>{d.getDate()}</div>
@@ -1832,7 +1861,10 @@ function App(){
                     <div style={{display:"flex",alignItems:"center",gap:12,padding:"4px 0 8px"}}>
                       <div style={{fontSize:32,color:T.success,lineHeight:1,fontWeight:700}}>✓</div>
                       <div>
-                        <div style={{fontSize:22,fontWeight:700,color:T.success,lineHeight:1.1}}>{(function(){const e=(data.gym.bodyWeight||[]).find(function(e){return e.date>=thisWeek;});return e?e.weight+" kg":"Logged";})()}</div>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <div style={{fontSize:22,fontWeight:700,color:T.success,lineHeight:1.1}}>{(function(){const e=(data.gym.bodyWeight||[]).find(function(e){return e.date>=thisWeek;});return e?e.weight+" kg":"Logged";})()}</div>
+                          <button style={{background:"none",border:"none",cursor:"pointer",color:T.text3,fontSize:16,opacity:0.45,lineHeight:1,padding:"0 2px"}} title="Delete this entry" onClick={function(){const e=(data.gym.bodyWeight||[]).find(function(en){return en.date>=thisWeek;});if(e)deleteBWEntry(e.date);}}>×</button>
+                        </div>
                         <div style={{fontSize:10,color:T.success,opacity:0.75,marginTop:2}}>Logged this week</div>
                       </div>
                     </div>
@@ -1851,9 +1883,9 @@ function App(){
             <div className="card-rim" style={card()}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={sT}>Tasks</div><button style={btn} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+</button></div>
               {urgTasks.length===0&&normTasks.length===0&&doneTasks.length===0&&<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>}
-              {(dragTaskId||scheduleTaskId)&&<div style={{fontSize:9,color:T.accent,marginBottom:6,padding:"3px 8px",borderRadius:6,background:T.accentBg,border:"0.5px solid rgba(199,125,255,0.3)"}}>{mob?"Tap a calendar day to schedule":"Drop on a calendar day to schedule as a time block"}</div>}
-              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);const isActive=dragTaskId===t.id||scheduleTaskId===t.id;return(<div key={t.id} draggable={!mob} onDragStart={function(){setDragTaskId(t.id);}} onDragEnd={function(){setDragTaskId(null);setDragOverDay(null);}} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:mob?"default":"grab",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:13,flexShrink:0,touchAction:"none",userSelect:"none",lineHeight:1}} title="Schedule on calendar" onTouchStart={function(e){e.stopPropagation();longPressRef.current=setTimeout(function(){setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");},600);}} onTouchEnd={function(e){e.stopPropagation();clearTimeout(longPressRef.current);}} onTouchMove={function(){clearTimeout(longPressRef.current);}} onClick={function(e){e.stopPropagation();if(!mob){setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");}}}>📅</button></div>);})}</div>}
-              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);const isActive=dragTaskId===t.id||scheduleTaskId===t.id;return(<div key={t.id} draggable={!mob} onDragStart={function(){setDragTaskId(t.id);}} onDragEnd={function(){setDragTaskId(null);setDragOverDay(null);}} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:mob?"default":"grab",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:13,flexShrink:0,touchAction:"none",userSelect:"none",lineHeight:1}} title="Schedule on calendar" onTouchStart={function(e){e.stopPropagation();longPressRef.current=setTimeout(function(){setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");},600);}} onTouchEnd={function(e){e.stopPropagation();clearTimeout(longPressRef.current);}} onTouchMove={function(){clearTimeout(longPressRef.current);}} onClick={function(e){e.stopPropagation();if(!mob){setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");}}}>📅</button></div>);})}</div>}
+              {scheduleTaskId&&<div style={{fontSize:9,color:T.accent,marginBottom:6,padding:"3px 8px",borderRadius:6,background:T.accentBg,border:"0.5px solid rgba(199,125,255,0.3)"}}>Tap a calendar day to schedule</div>}
+              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:"default",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");}}>⠿</button></div>);})}</div>}
+              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:"default",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");}}>⠿</button></div>);})}</div>}
               {doneTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneTasks.map(function(t){return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:5,alignItems:"center",opacity:0.45}}><input type="checkbox" checked={true} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,flexShrink:0}}/><div style={{fontSize:11,color:T.text3,textDecoration:"line-through"}}>{t.name}</div></div>);})}</div>}
             </div>
           </div>
@@ -1977,7 +2009,7 @@ function App(){
           );
         })()}
 
-        {page==="Gym"&&<ErrorBoundary name="Gym"><GymSection mob={mob} gymData={data.gym} onAddEx={function(){setModal("add_exercise");setMForm({});}} onLogW={function(ex){setModal("log_weight");setMForm({exId:ex.id,exName:ex.name});}} onSave={function(wk){setData(function(p){const rl=p.gym.rotation?p.gym.rotation.length:1;return{...p,gym:{...p.gym,workouts:(p.gym.workouts||[]).concat([wk]),rotIdx:((p.gym.rotIdx||0)+1)%Math.max(rl,1)}};});}} onUpdateRot={function(rot,idx){setData(function(p){return{...p,gym:{...p.gym,rotation:rot,rotIdx:idx}};});}}/></ErrorBoundary>}
+        {page==="Gym"&&<ErrorBoundary name="Gym"><GymSection mob={mob} gymData={data.gym} onAddEx={function(){setModal("add_exercise");setMForm({});}} onLogW={function(ex){setModal("log_weight");setMForm({exId:ex.id,exName:ex.name});}} onSave={function(wk){setData(function(p){const rl=p.gym.rotation?p.gym.rotation.length:1;return{...p,gym:{...p.gym,workouts:(p.gym.workouts||[]).concat([wk]),rotIdx:((p.gym.rotIdx||0)+1)%Math.max(rl,1)}};});}} onUpdateRot={function(rot,idx){setData(function(p){return{...p,gym:{...p.gym,rotation:rot,rotIdx:idx}};});}} onDeleteBW={deleteBWEntry}/></ErrorBoundary>}
 
         {page==="Personal"&&<div style={{maxWidth:640}}>
           <div className="card-rim" style={card()}>
@@ -2187,7 +2219,7 @@ function App(){
         </div>
       </div>}
 
-      {showTimePicker&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.82)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:250,padding:mob?"0":"16px"}} onClick={function(){setShowTimePicker(false);setScheduleTaskId(null);setDragTaskId(null);setDragOverDay(null);}}>
+      {showTimePicker&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.82)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:250,padding:mob?"0":"16px"}} onClick={function(){setShowTimePicker(false);setScheduleTaskId(null);}}>
         <div style={{background:"rgba(14,16,40,0.97)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 32px":"22px",width:mob?"100%":"320px",maxWidth:"100%",border:"0.5px solid rgba(199,125,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.08)"}} onClick={function(e){e.stopPropagation();}}>
           {mob&&<div style={{width:36,height:4,borderRadius:2,background:"rgba(255,255,255,0.2)",margin:"0 auto 20px"}}/>}
           {(function(){const editingBlock=!!(data.personal.tasks.find(function(tt){return tt.id===scheduleTaskId;})||{}).scheduledDate;return(<React.Fragment>
@@ -2207,7 +2239,7 @@ function App(){
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             <button style={{...btnP,padding:"12px",fontSize:14,width:"100%",borderRadius:10}} onClick={function(){confirmSchedule(false);}}>{editingBlock?"Update block →":"Schedule block →"}</button>
             <button style={{...btn,padding:"10px",fontSize:12,width:"100%",borderRadius:10,textAlign:"center"}} onClick={function(){confirmSchedule(true);}}>Just set due date</button>
-            <button style={{...btn,padding:"10px",fontSize:12,width:"100%",borderRadius:10,textAlign:"center",opacity:0.6}} onClick={function(){setShowTimePicker(false);setScheduleTaskId(null);setDragTaskId(null);setDragOverDay(null);}}>Cancel</button>
+            <button style={{...btn,padding:"10px",fontSize:12,width:"100%",borderRadius:10,textAlign:"center",opacity:0.6}} onClick={function(){setShowTimePicker(false);setScheduleTaskId(null);}}>Cancel</button>
             {editingBlock&&<button style={{...btn,padding:"10px",fontSize:12,width:"100%",borderRadius:10,textAlign:"center",color:T.danger,borderColor:T.danger+"40",marginTop:4}} onClick={unscheduleTask}>Remove from calendar</button>}
           </div>
           </React.Fragment>);}())}
