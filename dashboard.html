@@ -599,13 +599,23 @@ function GymSection(props){
   const [editRotForm,setEditRotForm]=useState({rName:"",rFocus:"",exercises:[]});
   const rotation=gymData.rotation||[];const rotLen=rotation.length>0?rotation.length:1;
   const rotIdx=(gymData.rotIdx||0)%rotLen;const nextSess=rotation.length>0?rotation[rotIdx]:null;
-  // Pre-fill workout form from rotation template (exercise, sets, reps, weight) when tab opens empty
+  // On mount: restore draft if one exists for this rotation, otherwise pre-fill from template
   useEffect(function(){
-    if(tab!=="workout")return;
-    if(wkt.sets.length>0)return;
+    try{
+      var draft=JSON.parse(localStorage.getItem('gym_tab_draft')||'null');
+      if(draft&&nextSess&&draft.rotId===nextSess.id&&draft.sets&&draft.sets.some(function(r){return r.exercise;})){
+        setWkt(function(w){return{...w,sets:draft.sets};});
+        return;
+      }
+    }catch(_){}
     if(!nextSess||!nextSess.exercises||nextSess.exercises.length===0)return;
     setWkt(function(w){return{...w,sets:nextSess.exercises.map(function(ex,i){return{id:ex.id||i+1,exercise:ex.exercise||"",sets:ex.sets||"",reps:ex.reps||"",weight:ex.weight||""};})};});
-  },[tab,nextSess]);
+  },[]);
+  // Auto-save draft to localStorage whenever sets change (protects against phone screen off)
+  useEffect(function(){
+    if(!nextSess||wkt.sets.length===0)return;
+    try{localStorage.setItem('gym_tab_draft',JSON.stringify({rotId:nextSess?nextSess.id:null,sets:wkt.sets,savedAt:Date.now()}));}catch(_){}
+  },[wkt.sets]);
   const gs={card:{background:T.bg2,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",border:"0.5px solid "+T.border2,borderRadius:12,padding:"14px 16px",marginBottom:10,boxShadow:"0 4px 24px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.08)"},btn:{padding:"5px 11px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text2,cursor:"pointer",fontSize:12},btnP:{padding:"6px 13px",borderRadius:8,border:"1px solid rgba(199,125,255,0.45)",background:"rgba(199,125,255,0.15)",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,boxShadow:"0 0 10px rgba(199,125,255,0.2)"},inp:{width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"}};
   function addRow(){if(!row.exercise)return;setWkt(function(w){return{...w,sets:[...w.sets,{...row,id:Date.now()}]};});setRow({exercise:"",sets:"",reps:"",weight:""});}
   function removeRow(i){setWkt(function(w){return{...w,sets:w.sets.filter(function(_,j){return j!==i;})};});}
@@ -618,6 +628,7 @@ function GymSection(props){
     const name=wkt.name||(nextSess?nextSess.name:"Workout");
     const rotId=nextSess?nextSess.id:null;
     if(onSave)onSave({...wkt,name:name,id:Date.now(),rotId:rotId});
+    try{localStorage.removeItem('gym_tab_draft');}catch(_){}
     setWkt({name:"",date:todayStr(),sets:[]});
     if(window.showToast)window.showToast("Workout saved!","success");
   }
