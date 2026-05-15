@@ -1452,24 +1452,19 @@ function App(){
     }catch(e){showToast("Export failed: "+e.message,"error");}
   }
   function downloadObsidianExport(){
-    if(!window._currentUser||!window._db){showToast("Sign in first","error");return;}
-    showToast("Fetching captures…","warn");
-    window._db.collection('captures').where('uid','==',window._currentUser.uid).get()
-      .then(function(snap){
-        var captures=snap.docs.map(function(d){return{...d.data(),id:d.id};});
-        var payload={
-          exportedAt:new Date().toISOString(),
-          captures:captures,
-          reflections:data.reflections||[]
-        };
-        var blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
-        var a=document.createElement("a");
-        a.href=URL.createObjectURL(blob);
-        a.download="obsidian-export.json";
-        a.click();
-        showToast("Downloaded obsidian-export.json — now run: node export-to-obsidian.js","success");
-      })
-      .catch(function(e){showToast("Export failed: "+e.message,"error");});
+    if(!window._currentUser){showToast("Sign in first","error");return;}
+    if(capturesData.length===0){showToast("Visit the Captures tab first so they load, then try again","warn");return;}
+    var payload={
+      exportedAt:new Date().toISOString(),
+      captures:capturesData,
+      reflections:data.reflections||[]
+    };
+    var blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+    var a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download="obsidian-export.json";
+    a.click();
+    showToast("Downloaded — move to my-project folder then run: node export-to-obsidian.js","success");
   }
   function restoreFromBackup(){
     var bk=getLatestBackup();
