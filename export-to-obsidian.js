@@ -1,31 +1,49 @@
 /**
  * export-to-obsidian.js
- * Reads obsidian-export.json (from dashboard) and writes .md files into Obsidian vault.
- * Usage: node export-to-obsidian.js
- * No npm packages required.
+ * Reads captures and reflections directly from Firestore and writes .md files
+ * into the Obsidian vault. Runs fully automated — no browser, no JSON download.
+ *
+ * Usage:    node export-to-obsidian.js
+ * Schedule: Windows Task Scheduler — see README or run setup-scheduler.ps1
+ *
+ * Requires: service account JSON in the same folder as this script.
+ *           Set SERVICE_ACCOUNT_PATH below if the filename differs.
  */
 
-const fs   = require('fs');
-const path = require('path');
-const os   = require('os');
+const fs    = require('fs');
+const path  = require('path');
+const admin = require('firebase-admin');
 
+// ── Config ────────────────────────────────────────────────────────────────────
+
+const UID   = 'hG4uA1WxQJdQ6yyZtvrrh8WyV2v2';   // Jayden's Firebase UID
 const VAULT = 'C:\\Users\\Jayde\\OneDrive\\Documents\\Obsidian Vault';
-const CAPTURES_DIR   = path.join(VAULT, 'Dashboard', 'Captures');
+const CAPTURES_DIR    = path.join(VAULT, 'Dashboard', 'Captures');
 const REFLECTIONS_DIR = path.join(VAULT, 'Dashboard', 'Reflections');
 
-// ── Find the export file ──────────────────────────────────────────────────────
-
-function findExportFile() {
-  var candidates = [
-    path.join(__dirname, 'obsidian-export.json'),
-    path.join(os.homedir(), 'Downloads', 'obsidian-export.json'),
-    path.join(os.homedir(), 'Desktop', 'obsidian-export.json'),
-  ];
-  for (var i = 0; i < candidates.length; i++) {
-    if (fs.existsSync(candidates[i])) return candidates[i];
+// Auto-find the service account JSON in the same folder
+function findServiceAccount() {
+  var files = fs.readdirSync(__dirname).filter(function(f) {
+    return f.endsWith('.json') && f !== 'package.json' && f !== 'package-lock.json';
+  });
+  if (files.length === 0) throw new Error('No service account JSON found in ' + __dirname);
+  if (files.length > 1) {
+    var sa = files.find(function(f) { return f.includes('firebase') || f.includes('service'); });
+    if (sa) return path.join(__dirname, sa);
   }
-  return null;
+  return path.join(__dirname, files[0]);
 }
+
+// ── Init Firebase ─────────────────────────────────────────────────────────────
+
+var serviceAccountPath = findServiceAccount();
+console.log('Using service account: ' + path.basename(serviceAccountPath));
+
+admin.initializeApp({
+  credential: admin.credential.cert(require(serviceAccountPath))
+});
+
+var db = admin.firestore();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -33,17 +51,18 @@ function safeFilename(str) {
   return (str || 'Untitled').replace(/[\\/:*?"<>|]/g, '-').slice(0, 80).trim();
 }
 
-function fmtDate(iso) {
-  if (!iso) return 'Unknown date';
-  var d = new Date(iso);
+function fmtDate(ts) {
+  if (!ts) return 'Unknown date';
+  var d = ts.toDate ? ts.toDate() : (ts.seconds ? new Date(ts.seconds * 1000) : new Date(ts));
   return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-function datePrefix(iso) {
-  if (!iso) return '0000-00-00';
-  var d = new Date(iso);
-  var y = d.getFullYear();
-  var m = String(d.getMonth() + 1).padStart(2, '0');
+function datePrefix(ts) {
+  if (!ts) return '0000-00-00';
+  var d = ts.toDate ? ts.toDate() : (ts.seconds ? new Date(ts.seconds * 1000) : new Date(ts));
+  if (isNaN(d.getTime())) return '0000-00-00';
+  var y   = d.getFullYear();
+  var m   = String(d.getMonth() + 1).padStart(2, '0');
   var day = String(d.getDate()).padStart(2, '0');
   return y + '-' + m + '-' + day;
 }
@@ -55,10 +74,9 @@ function ensureDir(dir) {
 // ── Capture → markdown ────────────────────────────────────────────────────────
 
 function captureToMd(c) {
-  var rawDate = c.date ? (c.date.toDate ? c.date.toDate().toISOString() : (c.date.seconds ? new Date(c.date.seconds * 1000).toISOString() : c.date)) : null;
-  var date = datePrefix(rawDate);
+  var date  = datePrefix(c.date);
   var title = c.title || c.rawInput || 'Capture';
-  var tags = (c.tags || []).concat(['capture', c.type || 'thought']).filter(Boolean);
+  var tags  = (c.tags || []).concat(['capture', c.type || 'thought']).filter(Boolean);
   var lines = [];
 
   lines.push('---');
@@ -82,19 +100,13 @@ function captureToMd(c) {
 
 // ── Reflection → markdown ─────────────────────────────────────────────────────
 
-var AREA_LABELS = [
-  'Academic load',
-  'Work situation',
-  'Physical health',
-  'Work-life balance',
-  'Personal growth'
-];
+var AREA_LABELS = ['Academic load', 'Work situation', 'Physical health', 'Work-life balance', 'Personal growth'];
 
 function reflectionToMd(r) {
-  var date = datePrefix(r.date);
+  var date       = datePrefix(r.date);
   var prettyDate = fmtDate(r.date);
-  var an = r.analysis || {};
-  var lines = [];
+  var an         = r.analysis || {};
+  var lines      = [];
 
   lines.push('---');
   lines.push('type: reflection');
@@ -120,11 +132,11 @@ function reflectionToMd(r) {
 
   if (an.dominantPattern || an.insight || an.recommendation) {
     lines.push('## Gemini Analysis');
-    if (an.dominantPattern)  { lines.push(''); lines.push('**Pattern:** ' + an.dominantPattern); }
-    if (an.rootIssue)        { lines.push(''); lines.push('**Root issue:** ' + an.rootIssue); }
-    if (an.insight)          { lines.push(''); lines.push('**Insight:** ' + an.insight); }
-    if (an.recommendation)   { lines.push(''); lines.push('**Recommendation:** ' + an.recommendation); }
-    if (an.patternHistory)   { lines.push(''); lines.push('**Trend:** ' + an.patternHistory); }
+    if (an.dominantPattern) { lines.push(''); lines.push('**Pattern:** ' + an.dominantPattern); }
+    if (an.rootIssue)       { lines.push(''); lines.push('**Root issue:** ' + an.rootIssue); }
+    if (an.insight)         { lines.push(''); lines.push('**Insight:** ' + an.insight); }
+    if (an.recommendation)  { lines.push(''); lines.push('**Recommendation:** ' + an.recommendation); }
+    if (an.patternHistory)  { lines.push(''); lines.push('**Trend:** ' + an.patternHistory); }
   }
 
   return { filename: date + ' Weekly Reflection.md', content: lines.join('\n') };
@@ -132,43 +144,48 @@ function reflectionToMd(r) {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-var exportFile = findExportFile();
-if (!exportFile) {
-  console.error('Could not find obsidian-export.json.');
-  console.error('Click "⬇ Obsidian" in the dashboard, then move the file to:');
-  console.error('  ' + __dirname);
-  process.exit(1);
-}
-
-console.log('Reading ' + exportFile);
-var payload = JSON.parse(fs.readFileSync(exportFile, 'utf8'));
-var captures    = payload.captures    || [];
-var reflections = payload.reflections || [];
-
 ensureDir(CAPTURES_DIR);
 ensureDir(REFLECTIONS_DIR);
 
-var capWritten = 0, capSkipped = 0;
-captures.forEach(function(c) {
-  var result = captureToMd(c);
-  var dest = path.join(CAPTURES_DIR, result.filename);
-  if (fs.existsSync(dest)) { capSkipped++; return; }
-  fs.writeFileSync(dest, result.content, 'utf8');
-  capWritten++;
-});
+var capWritten = 0, capSkipped = 0, reflWritten = 0, reflSkipped = 0;
 
-var reflWritten = 0, reflSkipped = 0;
-reflections.forEach(function(r) {
-  var result = reflectionToMd(r);
-  var dest = path.join(REFLECTIONS_DIR, result.filename);
-  if (fs.existsSync(dest)) { reflSkipped++; return; }
-  fs.writeFileSync(dest, result.content, 'utf8');
-  reflWritten++;
-});
+Promise.all([
+  db.collection('users').doc(UID).collection('captures').get(),
+  db.collection('users').doc(UID).get()
+]).then(function(results) {
+  var capSnap  = results[0];
+  var userSnap = results[1];
 
-console.log('');
-console.log('Done!');
-console.log('  Captures:    ' + capWritten + ' written, ' + capSkipped + ' already existed');
-console.log('  Reflections: ' + reflWritten + ' written, ' + reflSkipped + ' already existed');
-console.log('');
-console.log('Vault: ' + VAULT);
+  // Write captures
+  capSnap.forEach(function(doc) {
+    var result = captureToMd(doc.data());
+    var dest   = path.join(CAPTURES_DIR, result.filename);
+    if (fs.existsSync(dest)) { capSkipped++; return; }
+    fs.writeFileSync(dest, result.content, 'utf8');
+    capWritten++;
+  });
+
+  // Write reflections from dashData
+  var dashData    = (userSnap.data() || {}).dashData || {};
+  var reflections = dashData.reflections || [];
+  reflections.forEach(function(r) {
+    var result = reflectionToMd(r);
+    var dest   = path.join(REFLECTIONS_DIR, result.filename);
+    if (fs.existsSync(dest)) { reflSkipped++; return; }
+    fs.writeFileSync(dest, result.content, 'utf8');
+    reflWritten++;
+  });
+
+  console.log('');
+  console.log('Done!  ' + new Date().toLocaleString('en-AU'));
+  console.log('  Captures:    ' + capWritten + ' written, ' + capSkipped + ' already existed');
+  console.log('  Reflections: ' + reflWritten + ' written, ' + reflSkipped + ' already existed');
+  console.log('  Vault: ' + VAULT);
+  console.log('');
+
+}).catch(function(e) {
+  console.error('Export failed:', e.message);
+  process.exit(1);
+}).finally(function() {
+  admin.app().delete();
+});
