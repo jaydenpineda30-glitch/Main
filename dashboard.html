@@ -1429,7 +1429,7 @@ function App(){
         setCheckinBlocks(blocks.length>0?blocks:generateCheckinFallback(data));
         setCheckinLoading(false);
       })
-      .catch(function(){setCheckinBlocks(generateCheckinFallback(data));setCheckinLoading(false);});
+      .catch(function(e){showToast('Check-in failed: '+(e&&e.message?e.message:'unknown error'),'error');setCheckinBlocks(generateCheckinFallback(data));setCheckinLoading(false);});
   }
   function toggleCalEv(id){setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
   // ── Backup & restore helpers ───────────────────────────────────────────────
