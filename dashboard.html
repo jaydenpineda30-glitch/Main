@@ -1186,8 +1186,9 @@ function App(){
           // Restore cross-device settings if not already set locally
           var settings=doc.data().settings||{};
           if(settings.geminiKey&&!localStorage.getItem('__gemini_key__')){
-            setGeminiKey(settings.geminiKey);
-            try{localStorage.setItem('__gemini_key__',settings.geminiKey);}catch(_){}
+            var restoredKey=settings.geminiKey.trim();
+            setGeminiKey(restoredKey);
+            try{localStorage.setItem('__gemini_key__',restoredKey);}catch(_){}
           }
           if(settings.gcalSelected&&!localStorage.getItem('__gcal_selected__')){
             setGcalSelectedIds(settings.gcalSelected);

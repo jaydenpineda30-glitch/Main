@@ -19,7 +19,7 @@
   ];
 
   function getKey() {
-    try { return localStorage.getItem('__gemini_key__') || ''; } catch (_) { return ''; }
+    try { return (localStorage.getItem('__gemini_key__') || '').trim(); } catch (_) { return ''; }
   }
 
   function extractJson(text) {
