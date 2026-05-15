@@ -10,7 +10,7 @@
 
   var DEFAULT_MODEL = 'llama2';
   var DEFAULT_URL   = 'http://localhost:11434/api/generate';
-  var GEMINI_URL    = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
+  var GEMINI_URL    = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent';
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
