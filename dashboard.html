@@ -16,6 +16,7 @@
 <script src="error-boundary.js"></script>
 <script src="monitoring-dashboard.js"></script>
 <script src="ollama-service.js"></script>
+<script src="gemini-service.js"></script>
 <!-- Google Calendar sync -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://apis.google.com/js/api.js" async defer></script>
@@ -194,8 +195,9 @@ function mergeWithDefaults(cloud){
 }
 function localDateStr(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 function todayStr(){return localDateStr(new Date());}
+function futureDateStr(n){const d=new Date();d.setDate(d.getDate()+n);return localDateStr(d);}
 function weekMonday(){const n=new Date();const d=n.getDay();const off=d===0?-6:1-d;const m=new Date(n);m.setDate(n.getDate()+off);return localDateStr(m);}
-function daysBetween(s){const d=new Date(s);d.setHours(23,59,59);return Math.ceil((d-new Date())/864e5);}
+function daysBetween(s){const d=new Date(s+'T00:00:00');const now=new Date();const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());return Math.round((d-today)/864e5);}
 function fmtDate(s){if(!s)return"";return new Date(s).toLocaleDateString("en-AU",{day:"numeric",month:"short"});}
 function toMins(s){const parts=(s||"0:00").split(":");return parseInt(parts[0])*60+parseInt(parts[1]||0);}
 function parseTimes(t){if(!t)return{start:480,end:540};const norm=t.replace(/[–-]/g,"|");const parts=norm.split("|");return{start:toMins(parts[0].trim()),end:toMins(parts[1].trim())};}
@@ -997,6 +999,19 @@ function App(){
     }
   },[data.gym.rotIdx,data.gym.rotation]);
   const [bwIn,setBwIn]=useState("");
+  const [bwDate,setBwDate]=useState(todayStr());
+  const [showCapture,setShowCapture]=useState(false);
+  const [captureText,setCaptureText]=useState("");
+  const [captureLoading,setCaptureLoading]=useState(false);
+  const [captureResult,setCaptureResult]=useState(null);
+  const [capturesData,setCapturesData]=useState([]);
+  const [capturesLoading,setCapturesLoading]=useState(false);
+  const [capturesFilter,setCapturesFilter]=useState("all");
+  const [capturesSearch,setCapturesSearch]=useState("");
+  const [expandedCapture,setExpandedCapture]=useState(null);
+  const [expandedRefl,setExpandedRefl]=useState(null);
+  const [dragTaskId,setDragTaskId]=useState(null);
+  const [dragOverDay,setDragOverDay]=useState(null);
   const [editTaskId,setEditTaskId]=useState(null);
   const [editTaskForm,setEditTaskForm]=useState({});
   const [showArch,setShowArch]=useState(false);
@@ -1127,6 +1142,21 @@ function App(){
             }catch(_){}
             setData(mergeWithDefaults(cloud));
           }
+          // Restore cross-device settings if not already set locally
+          var settings=doc.data().settings||{};
+          if(settings.geminiKey&&!localStorage.getItem('__gemini_key__')){
+            setGeminiKey(settings.geminiKey);
+            try{localStorage.setItem('__gemini_key__',settings.geminiKey);}catch(_){}
+          }
+          if(settings.gcalSelected&&!localStorage.getItem('__gcal_selected__')){
+            setGcalSelectedIds(settings.gcalSelected);
+            try{localStorage.setItem('__gcal_selected__',JSON.stringify(settings.gcalSelected));}catch(_){}
+            if(window.GCalSync)window.GCalSync.setSelectedIds(settings.gcalSelected);
+          }
+          if(settings.gcalExcluded&&!localStorage.getItem('__gcal_excluded__')){
+            setGcalExcludedIds(settings.gcalExcluded);
+            try{localStorage.setItem('__gcal_excluded__',JSON.stringify(settings.gcalExcluded));}catch(_){}
+          }
         }
         // Safe to save now — we've confirmed what Firestore holds (real data or empty new user)
         _dataLoaded.current=true;
@@ -1199,8 +1229,26 @@ function App(){
     },2000);
   },[data]);
   useEffect(function(){fetch("http://localhost:11434/api/tags").then(function(r){setOllamaAvailable(r.ok);}).catch(function(){setOllamaAvailable(false);});},[]);
+  useEffect(function(){
+    if(!_fbReady.current||!_dataLoaded.current||!window.DASH_DOC)return;
+    window.DASH_DOC.set({settings:{geminiKey:geminiKey,gcalSelected:gcalSelectedIds,gcalExcluded:gcalExcludedIds}},{merge:true}).catch(function(){});
+  },[geminiKey,gcalSelectedIds,gcalExcludedIds]);
   // Start health monitor (runs checks every 30s)
   useEffect(function(){if(window.HealthMonitor){HealthMonitor.start();}return function(){if(window.HealthMonitor)HealthMonitor.stop();};},[]);
+  useEffect(function(){
+    if(page!=="Captures"||!window._currentUser||!window._db)return;
+    setCapturesLoading(true);
+    _db.collection('captures').where('uid','==',window._currentUser.uid).get().then(function(snap){
+      var items=[];
+      snap.forEach(function(doc){items.push({id:doc.id,...doc.data()});});
+      items.sort(function(a,b){
+        var ta=a.date&&a.date.toDate?a.date.toDate().getTime():0;
+        var tb=b.date&&b.date.toDate?b.date.toDate().getTime():0;
+        return tb-ta;
+      });
+      setCapturesData(items);setCapturesLoading(false);
+    }).catch(function(){setCapturesLoading(false);});
+  },[page]);
 
   const baseDate=new Date();baseDate.setDate(baseDate.getDate()+wkOff*7);
   const weekDates=getWeekDates(baseDate);
@@ -1340,13 +1388,52 @@ function App(){
   function logBW(){
     if(!bwIn)return;
     if(window.DataValidator){
-      const r=DataValidator.validate("bodyWeight",{weight:Number(bwIn),date:todayStr()});
+      const r=DataValidator.validate("bodyWeight",{weight:Number(bwIn),date:bwDate||todayStr()});
       if(!r.valid){showToast(r.firstError);return;}
     }
-    setData(function(p){return{...p,gym:{...p.gym,bodyWeight:(p.gym.bodyWeight||[]).concat([{date:todayStr(),weight:Number(bwIn)}]),lastBWWeek:thisWeek}};});
-    setBwIn("");
+    const entryDate=bwDate||todayStr();
+    setData(function(p){
+      const existing=(p.gym.bodyWeight||[]).filter(function(e){return e.date!==entryDate;});
+      const updated=existing.concat([{date:entryDate,weight:Number(bwIn)}]).sort(function(a,b){return a.date.localeCompare(b.date);});
+      return{...p,gym:{...p.gym,bodyWeight:updated,lastBWWeek:thisWeek}};
+    });
+    setBwIn("");setBwDate(todayStr());
     showToast("Body weight logged!","success");
   }
+  function submitCapture(){
+    if(!captureText.trim())return;
+    if(!window.GeminiService){showToast("Gemini service not loaded.","error");return;}
+    setCaptureLoading(true);setCaptureResult(null);
+    window.GeminiService.classify(captureText).then(function(result){
+      setCaptureResult(result);setCaptureLoading(false);
+      if(window._currentUser&&window._db){
+        _db.collection('captures').add({
+          uid:window._currentUser.uid,
+          type:result.type||"thought",
+          title:result.title||"",
+          content:result.content||"",
+          formula:result.formula||"",
+          example:result.example||"",
+          subject:result.subject||"",
+          tags:result.tags||[],
+          rawInput:captureText,
+          date:firebase.firestore.FieldValue.serverTimestamp()
+        }).catch(function(e){console.error("[Capture] Firestore write failed:",e.message);});
+      }
+      setCaptureText("");
+    }).catch(function(e){
+      setCaptureLoading(false);
+      showToast("Capture failed: "+(e.message||"Check your Gemini API key in settings."),"error");
+    });
+  }
+
+  function dropTaskOnDay(ds){
+    if(!dragTaskId)return;
+    setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.map(function(t){return t.id===dragTaskId?{...t,due:ds,editedAt:todayStr()}:t;})}}; });
+    showToast("Due date set to "+fmtDate(ds),"success");
+    setDragTaskId(null);setDragOverDay(null);
+  }
+
   function saveNextSess(){
     const rows=nxtRows.filter(function(r){return r.exercise&&r.weight;});
     if(rows.length===0){showToast("Add at least one exercise with a weight.");return;}
@@ -1467,7 +1554,7 @@ function App(){
             const ds=dStr(d);const isTdy=ds===todayStr();const isPast=new Date(ds)<new Date(todayStr());
             const timedEvs=visibleGcalEvents.filter(function(ev){return ev.date===ds&&!ev.allDay;});
             const allDayEvs=visibleGcalEvents.filter(function(ev){return ev.date===ds&&ev.allDay;});
-            return(<div key={di} style={{display:"flex",flexDirection:"column",cursor:"pointer"}} onClick={function(){setActiveDay(ds);}}>
+            return(<div key={di} style={{display:"flex",flexDirection:"column",cursor:"pointer",borderRadius:6,outline:dragOverDay===ds?"1.5px dashed "+T.accent:"none",background:dragOverDay===ds?"rgba(199,125,255,0.07)":"transparent",transition:"background 0.1s"}} onClick={function(){setActiveDay(ds);}} onDragOver={function(e){e.preventDefault();setDragOverDay(ds);}} onDragLeave={function(){setDragOverDay(null);}} onDrop={function(e){e.preventDefault();dropTaskOnDay(ds);}}>
               <div style={{textAlign:"center",marginBottom:2,padding:"2px 0",borderRadius:4,background:activeDay===ds?T.accentBg:"transparent"}}>
                 <div style={{fontSize:8,color:isTdy?T.accent:T.text3}}>{DAYS[di]}</div>
                 <div style={{fontSize:10,fontWeight:isTdy?700:400,color:isTdy?T.accent:isPast?T.text3:T.text,width:16,height:16,borderRadius:"50%",background:isTdy?T.accentBg:"transparent",display:"flex",alignItems:"center",justifyContent:"center",margin:"1px auto"}}>{d.getDate()}</div>
@@ -1559,7 +1646,7 @@ function App(){
           {authUser&&authUser.photoURL&&<img src={authUser.photoURL} alt="" style={{width:22,height:22,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.2)"}}/>}
           <button onClick={function(){_auth.signOut();}} style={{padding:"3px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text3,cursor:"pointer",fontSize:11}}>Sign out</button>
         </div>
-        {["Dashboard","Uni","Work","Gym","Personal","Finance","Reflection"].map(function(s){return<button key={s} style={navBtn(page===s)} onClick={function(){setPage(s);}}>{s}</button>;})}
+        {["Dashboard","Uni","Work","Gym","Personal","Finance","Reflection","Captures"].map(function(s){return<button key={s} style={navBtn(page===s)} onClick={function(){setPage(s);}}>{s}</button>;})}
       </nav>}
       {!mob&&<button onClick={function(){setForceMob(true);}} style={{position:"fixed",bottom:24,right:24,zIndex:200,padding:"10px 16px",borderRadius:99,border:"1px solid rgba(199,125,255,0.5)",background:"rgba(14,16,40,0.95)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:700,boxShadow:"0 4px 20px rgba(199,125,255,0.3)",display:"flex",alignItems:"center",gap:6}}>📱 Mobile view</button>}
       {mob&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",background:"rgba(5,7,26,0.85)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"0.5px solid rgba(199,125,255,0.2)",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 20px rgba(0,0,0,0.4)"}}>
@@ -1652,16 +1739,20 @@ function App(){
                   {!bwLogged&&<div style={{fontSize:10,color:bwColMap[bwUrg],fontWeight:600,padding:"2px 7px",borderRadius:99,background:bwColMap[bwUrg]+"18"}}>{dLeft}d left</div>}
                 </div>
                 {bwLogged
-                  ?<div style={{display:"flex",alignItems:"center",gap:12,padding:"4px 0"}}>
-                    <div style={{fontSize:32,color:T.success,lineHeight:1,fontWeight:700}}>✓</div>
-                    <div>
-                      <div style={{fontSize:22,fontWeight:700,color:T.success,lineHeight:1.1}}>{(data.gym.bodyWeight&&data.gym.bodyWeight.length>0)?data.gym.bodyWeight[data.gym.bodyWeight.length-1].weight+" kg":"Logged"}</div>
-                      <div style={{fontSize:10,color:T.success,opacity:0.75,marginTop:2}}>Logged this week</div>
+                  ?<div>
+                    <div style={{display:"flex",alignItems:"center",gap:12,padding:"4px 0 8px"}}>
+                      <div style={{fontSize:32,color:T.success,lineHeight:1,fontWeight:700}}>✓</div>
+                      <div>
+                        <div style={{fontSize:22,fontWeight:700,color:T.success,lineHeight:1.1}}>{(data.gym.bodyWeight&&data.gym.bodyWeight.length>0)?data.gym.bodyWeight[data.gym.bodyWeight.length-1].weight+" kg":"Logged"}</div>
+                        <div style={{fontSize:10,color:T.success,opacity:0.75,marginTop:2}}>Logged this week</div>
+                      </div>
                     </div>
+                    {(data.gym.bodyWeight||[]).length>=2&&<Sparkline data={data.gym.bodyWeight} color={T.success} width={180} height={40}/>}
                   </div>
                   :<div>
                     <div style={{fontSize:10,color:T.text3,marginBottom:8}}>{dLeft<=1?"Last chance — ends tomorrow!":dLeft<=3?"Log before the week ends":"Log once this week"}</div>
-                    <div style={{display:"flex",gap:6}}><input style={{...inp,flex:1}} type="number" step="0.1" placeholder="e.g. 81.2 kg" value={bwIn} onChange={function(ev){setBwIn(ev.target.value);}}/><button style={{...btnP,background:bwColMap[bwUrg]+"22",color:bwColMap[bwUrg]}} onClick={logBW}>Log</button></div>
+                    <div style={{display:"flex",gap:6,marginBottom:6}}><input style={{...inp,flex:1}} type="number" step="0.1" placeholder="e.g. 81.2 kg" value={bwIn} onChange={function(ev){setBwIn(ev.target.value);}}/><button style={{...btnP,background:bwColMap[bwUrg]+"22",color:bwColMap[bwUrg]}} onClick={logBW}>Log</button></div>
+                    <input type="date" style={{...inp,padding:"6px 10px",fontSize:11,color:T.text3}} value={bwDate} onChange={function(ev){setBwDate(ev.target.value);}}/>
                   </div>
                 }
               </div>
@@ -1669,8 +1760,9 @@ function App(){
             <div style={card()}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={sT}>Tasks</div><button style={btn} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+</button></div>
               {urgTasks.length===0&&normTasks.length===0&&doneTasks.length===0&&<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>}
-              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:TUB[urg],border:"0.5px solid "+TUC[urg]+"30"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div></div>);})}</div>}
-              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:TUB[urg],border:"0.5px solid "+TUC[urg]+"30"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div></div>);})}</div>}
+              {dragTaskId&&<div style={{fontSize:9,color:T.accent,marginBottom:6,padding:"3px 8px",borderRadius:6,background:T.accentBg,border:"0.5px solid rgba(199,125,255,0.3)"}}>Drop on a calendar day to set due date</div>}
+              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);return(<div key={t.id} draggable={!mob} onDragStart={function(){setDragTaskId(t.id);}} onDragEnd={function(){setDragTaskId(null);setDragOverDay(null);}} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:dragTaskId===t.id?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(dragTaskId===t.id?T.accent:TUC[urg]+"30"),cursor:"grab",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div></div>);})}</div>}
+              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);return(<div key={t.id} draggable={!mob} onDragStart={function(){setDragTaskId(t.id);}} onDragEnd={function(){setDragTaskId(null);setDragOverDay(null);}} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:dragTaskId===t.id?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(dragTaskId===t.id?T.accent:TUC[urg]+"30"),cursor:"grab",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div></div>);})}</div>}
               {doneTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneTasks.map(function(t){return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:5,alignItems:"center",opacity:0.45}}><input type="checkbox" checked={true} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,flexShrink:0}}/><div style={{fontSize:11,color:T.text3,textDecoration:"line-through"}}>{t.name}</div></div>);})}</div>}
             </div>
           </div>
@@ -1818,15 +1910,57 @@ function App(){
               <button style={btnP} onClick={function(){setReflStep(1);setReflAns([]);setReflAnalysis(null);}}>Start this week's reflection →</button>
               {data.reflections.length>0&&<div style={{marginTop:20}}>
                 <div style={{fontSize:10,fontWeight:700,color:T.text3,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Previous Reflections</div>
-                {data.reflections.slice(-3).reverse().map(function(r,i){const a=r.analysis;const sc=a?a.sentimentScore:null;return<div key={i} style={{marginBottom:8,padding:"10px 12px",background:T.bg3,borderRadius:8,border:"0.5px solid "+T.border}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:a?5:0}}>
-                    <div style={{fontSize:11,fontWeight:600,color:T.text}}>{new Date(r.date).toLocaleDateString("en-AU")}</div>
-                    {sc!==null&&<div style={{fontSize:10,fontWeight:700,color:sc>=0.1?T.success:sc<=-0.1?T.danger:T.warn}}>{sc>=0.1?"↑ Positive":sc<=-0.1?"↓ Stressed":"→ Neutral"}</div>}
-                  </div>
-                  {a&&<div style={{fontSize:11,color:T.accent,marginBottom:3}}>{a.dominantPattern}</div>}
-                  {a&&<div style={{fontSize:11,color:T.text3,lineHeight:1.4}}>{a.insight.slice(0,110)}...</div>}
-                  {!a&&r.summary&&<div style={{fontSize:11,color:T.text2}}>{r.summary.slice(0,120)}</div>}
-                </div>;})}
+                {data.reflections.slice().reverse().map(function(r,i){
+                  const a=r.analysis;const sc=a?a.sentimentScore:null;
+                  const isExp=expandedRefl===i;
+                  const sentCol=sc>=0.1?T.success:sc<=-0.1?T.danger:T.warn;
+                  const sentLabel=sc>=0.1?"↑ Positive":sc<=-0.1?"↓ Stressed":"→ Neutral";
+                  return<div key={i} style={{marginBottom:8,borderRadius:10,border:"0.5px solid "+(isExp?T.accent:T.border),overflow:"hidden"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",background:isExp?T.accentBg:T.bg3,cursor:"pointer"}} onClick={function(){setExpandedRefl(isExp?null:i);}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <div style={{fontSize:11,fontWeight:600,color:T.text}}>{new Date(r.date).toLocaleDateString("en-AU",{day:"numeric",month:"short",year:"numeric"})}</div>
+                        {a&&<div style={{fontSize:10,color:T.accent}}>{a.dominantPattern}</div>}
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        {sc!==null&&<div style={{fontSize:10,fontWeight:700,color:sentCol}}>{sentLabel}</div>}
+                        <span style={{fontSize:11,color:T.text3}}>{isExp?"▲":"▼"}</span>
+                      </div>
+                    </div>
+                    {isExp&&<div style={{padding:"14px 14px",background:"rgba(14,16,40,0.6)"}}>
+                      {a&&<div>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+                          <div style={{padding:"8px 10px",borderRadius:8,background:a.sentBg||T.bg3,border:"0.5px solid "+(a.sentBorder||T.border)}}>
+                            <div style={{fontSize:9,color:T.text3,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>Emotional State</div>
+                            <div style={{fontSize:11,color:a.sentColor||T.text,fontWeight:600,lineHeight:1.4}}>{a.emotionalState}</div>
+                          </div>
+                          <div style={{padding:"8px 10px",borderRadius:8,background:T.accentBg,border:"0.5px solid rgba(199,125,255,0.18)"}}>
+                            <div style={{fontSize:9,color:T.text3,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>Dominant Pattern</div>
+                            <div style={{fontSize:11,color:T.accent,fontWeight:600,lineHeight:1.4}}>{a.dominantPattern}</div>
+                          </div>
+                        </div>
+                        {a.rootIssue&&<div style={{padding:"8px 10px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:8}}>
+                          <div style={{fontSize:9,color:T.text3,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>Root Issue</div>
+                          <div style={{fontSize:11,color:T.text,lineHeight:1.5}}>{a.rootIssue}</div>
+                        </div>}
+                        {a.insight&&<div style={{padding:"10px 12px",borderRadius:8,background:"rgba(199,125,255,0.06)",border:"0.5px solid rgba(199,125,255,0.18)",marginBottom:8}}>
+                          <div style={{fontSize:9,color:T.accent,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>🧠 Analysis</div>
+                          <div style={{fontSize:11,color:T.text2,lineHeight:1.8}}>{a.insight}</div>
+                        </div>}
+                        {a.recommendation&&<div style={{padding:"10px 12px",borderRadius:8,background:"rgba(105,240,174,0.06)",border:"0.5px solid rgba(105,240,174,0.2)",marginBottom:8}}>
+                          <div style={{fontSize:9,color:T.success,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>💡 Recommendation</div>
+                          <div style={{fontSize:11,color:T.text2,lineHeight:1.8}}>{a.recommendation}</div>
+                        </div>}
+                      </div>}
+                      {r.answers&&r.answers.length>0&&<div style={{marginTop:10,paddingTop:10,borderTop:"0.5px solid "+T.border}}>
+                        <div style={{fontSize:9,color:T.text3,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8}}>Your Answers</div>
+                        {r.answers.map(function(qa,qi){return<div key={qi} style={{marginBottom:8}}>
+                          <div style={{fontSize:10,color:T.accent,fontWeight:600,marginBottom:2}}>{qa.area||("Q"+(qi+1))}</div>
+                          <div style={{fontSize:11,color:T.text2,lineHeight:1.6,padding:"6px 10px",background:T.bg3,borderRadius:6}}>{qa.answer||qa.a}</div>
+                        </div>;})}
+                      </div>}
+                    </div>}
+                  </div>;
+                })}
               </div>}
             </div>}
             {reflStep>0&&reflStep<=REFL_QS.length&&<div>
@@ -1879,6 +2013,57 @@ function App(){
             </div>}
           </div>
         </div>}
+
+        {page==="Captures"&&<div>
+          <div style={card()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+              <div style={sT}>Captures</div>
+              <button style={{...btnP,fontSize:11,padding:"5px 12px"}} onClick={function(){if(page==="Captures"&&window._currentUser&&window._db){setCapturesLoading(true);_db.collection('captures').where('uid','==',window._currentUser.uid).get().then(function(snap){var items=[];snap.forEach(function(doc){items.push({id:doc.id,...doc.data()});});items.sort(function(a,b){var ta=a.date&&a.date.toDate?a.date.toDate().getTime():0;var tb=b.date&&b.date.toDate?b.date.toDate().getTime():0;return tb-ta;});setCapturesData(items);setCapturesLoading(false);}).catch(function(){setCapturesLoading(false);});}}}>↻ Refresh</button>
+            </div>
+            <input value={capturesSearch} onChange={function(ev){setCapturesSearch(ev.target.value);}} placeholder="Search captures..." style={{...inp,padding:"9px 12px",marginBottom:12,width:"100%"}}/>
+            <div style={{display:"flex",gap:6,marginBottom:14}}>
+              {["all","learning","thought","reflection"].map(function(f){return(
+                <button key={f} onClick={function(){setCapturesFilter(f);}} style={{padding:"4px 12px",borderRadius:99,fontSize:11,cursor:"pointer",border:capturesFilter===f?"1px solid "+T.accent:"0.5px solid "+T.border,background:capturesFilter===f?T.accentBg:"transparent",color:capturesFilter===f?T.accent:T.text2,fontWeight:capturesFilter===f?600:400}}>
+                  {f==="all"?"All":f.charAt(0).toUpperCase()+f.slice(1)+"s"}
+                </button>
+              );})}
+            </div>
+            {capturesLoading&&<div style={{fontSize:12,color:T.text3,padding:"20px 0",textAlign:"center"}}>Loading...</div>}
+            {!capturesLoading&&capturesData.length===0&&<div style={{fontSize:12,color:T.text3,padding:"20px 0",textAlign:"center"}}>No captures yet — hit ⚡ Capture to add your first one.</div>}
+            {!capturesLoading&&(function(){
+              var filtered=capturesData.filter(function(c){
+                if(capturesFilter!=="all"&&c.type!==capturesFilter)return false;
+                if(capturesSearch.trim()){var q=capturesSearch.toLowerCase();return(c.title||"").toLowerCase().includes(q)||(c.content||"").toLowerCase().includes(q)||(c.rawInput||"").toLowerCase().includes(q)||(c.tags||[]).some(function(t){return t.toLowerCase().includes(q);});}
+                return true;
+              });
+              if(filtered.length===0)return<div style={{fontSize:12,color:T.text3,padding:"16px 0",textAlign:"center"}}>No results.</div>;
+              return filtered.map(function(c){
+                var isExp=expandedCapture===c.id;
+                var ts=c.date&&c.date.toDate?c.date.toDate():null;
+                var dateLabel=ts?ts.toLocaleDateString("en-AU",{day:"numeric",month:"short",year:"numeric"})+" · "+ts.toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit"}):"";
+                var typeColor=c.type==="learning"?T.accent:c.type==="reflection"?T.warn:T.text3;
+                var typeBg=c.type==="learning"?T.accentBg:c.type==="reflection"?"rgba(255,209,102,0.12)":T.bg3;
+                return(
+                  <div key={c.id} style={{marginBottom:10,padding:"12px 14px",borderRadius:10,background:T.bg2,border:"0.5px solid "+(isExp?T.accent:T.border),cursor:"pointer",transition:"border 0.15s"}} onClick={function(){setExpandedCapture(isExp?null:c.id);}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:isExp?10:4}}>
+                      <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:typeBg,color:typeColor}}>{c.type||"thought"}</span>
+                      {c.subject&&<span style={{fontSize:10,color:T.text3}}>{c.subject}</span>}
+                      <span style={{fontSize:10,color:T.text3,marginLeft:"auto"}}>{dateLabel}</span>
+                      <span style={{fontSize:12,color:T.text3}}>{isExp?"▲":"▼"}</span>
+                    </div>
+                    <div style={{fontSize:12,fontWeight:isExp?700:500,color:T.text,marginBottom:isExp?8:0}}>{c.title||c.rawInput||""}</div>
+                    {isExp&&<div>
+                      <div style={{fontSize:12,color:T.text2,lineHeight:1.8,marginBottom:c.formula?10:0}}>{c.content}</div>
+                      {c.formula&&<div style={{padding:"8px 12px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,fontSize:11,color:T.accent,fontFamily:"monospace",marginBottom:8}}>{c.formula}</div>}
+                      {c.example&&<div style={{padding:"8px 12px",borderRadius:8,background:"rgba(105,240,174,0.06)",border:"0.5px solid rgba(105,240,174,0.2)",fontSize:11,color:T.text2,lineHeight:1.6,marginBottom:8}}><span style={{fontWeight:600,color:T.success}}>Example: </span>{c.example}</div>}
+                      {c.tags&&c.tags.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:6}}>{c.tags.map(function(tag){return<span key={tag} style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.bg3,color:T.text3}}>#{tag}</span>;})}</div>}
+                    </div>}
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </div>}
       </div>
 
       {modal&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.82)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:200,padding:mob?"0":"16px"}} onClick={function(){setModal(null);}}>
@@ -1887,7 +2072,7 @@ function App(){
           <div style={{fontSize:15,fontWeight:600,marginBottom:16,color:T.text}}>{modal==="add_subject"&&"Add subject"}{modal==="add_exercise"&&"Add exercise"}{modal==="log_weight"&&"Log weight — "+(mForm.exName||"")}{modal==="add_task"&&"Add task"}{modal==="edit_rotation"&&"Edit rotation template"}</div>
           {(modal==="add_subject"||modal==="add_exercise"||modal==="add_task")&&<div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Name</div><input style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.name||""} onChange={function(ev){setMForm(function(f){return{...f,name:ev.target.value};});}} placeholder="Enter name..."/></div>}
           {modal==="log_weight"&&<div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Weight (kg)</div><input type="number" step="0.5" style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.weight||""} onChange={function(ev){setMForm(function(f){return{...f,weight:ev.target.value};});}} placeholder="e.g. 85"/></div>}
-          {modal==="add_task"&&<div><div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Category</div><select style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.cat||"Errands"} onChange={function(ev){setMForm(function(f){return{...f,cat:ev.target.value};});}}>{TASK_CATS.map(function(c){return<option key={c}>{c}</option>;})}</select></div><div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Priority</div><select style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.priority||"normal"} onChange={function(ev){setMForm(function(f){return{...f,priority:ev.target.value};});}}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></div><div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Due date</div><input type="date" style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.due||""} onChange={function(ev){setMForm(function(f){return{...f,due:ev.target.value};});}}/></div></div>}
+          {modal==="add_task"&&<div><div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Category</div><select style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.cat||"Errands"} onChange={function(ev){setMForm(function(f){return{...f,cat:ev.target.value};});}}>{TASK_CATS.map(function(c){return<option key={c}>{c}</option>;})}</select></div><div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Priority</div><select style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.priority||"normal"} onChange={function(ev){setMForm(function(f){return{...f,priority:ev.target.value};});}}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></div><div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Due date</div><div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8}}>{[["Today",0],["3 days",3],["7 days",7],["14 days",14]].map(function(item){const label=item[0];const n=item[1];const val=futureDateStr(n);const active=mForm.due===val;return(<button key={label} type="button" onClick={function(){setMForm(function(f){return{...f,due:val};});}} style={{padding:"5px 10px",borderRadius:99,border:active?"1px solid "+T.accent:"0.5px solid "+T.border,background:active?T.accentBg:"transparent",color:active?T.accent:T.text2,fontSize:11,cursor:"pointer",fontWeight:active?600:400}}>{label}</button>);})}</div><input type="date" style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.due||""} onChange={function(ev){setMForm(function(f){return{...f,due:ev.target.value};});}}/></div></div>}
           {modal==="edit_rotation"&&<div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
               <div><div style={{fontSize:11,color:T.text2,marginBottom:4}}>Session name</div><input style={{...inp,padding:"8px 10px",fontSize:13}} value={mForm.rName||""} onChange={function(ev){setMForm(function(f){return{...f,rName:ev.target.value};});}}/></div>
@@ -2057,8 +2242,57 @@ function App(){
         </div>
       </div>}
 
+      {/* ── Quick Capture floating button ── */}
+      <button onClick={function(){setShowCapture(true);setCaptureResult(null);}} style={{position:"fixed",bottom:mob?70:24,right:20,zIndex:150,background:"linear-gradient(135deg,#7b2fff,#c77dff)",border:"none",borderRadius:99,padding:"11px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(199,125,255,0.45)",display:"flex",alignItems:"center",gap:7,letterSpacing:0.2}}>
+        <span style={{fontSize:15}}>⚡</span>Capture
+      </button>
+
+      {/* ── Quick Capture panel ── */}
+      {showCapture&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.85)",backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:200,padding:mob?"0":"16px"}} onClick={function(){if(!captureLoading){setShowCapture(false);setCaptureResult(null);}}}>
+        <div style={{background:"rgba(14,16,40,0.98)",borderRadius:mob?"20px 20px 0 0":"18px",padding:mob?"24px 20px 32px":"24px",width:mob?"100%":"480px",maxWidth:"100%",border:"0.5px solid rgba(199,125,255,0.3)",boxShadow:"0 8px 40px rgba(0,0,0,0.7)"}} onClick={function(e){e.stopPropagation();}}>
+          {mob&&<div style={{width:36,height:4,borderRadius:2,background:"rgba(255,255,255,0.2)",margin:"0 auto 20px"}}/>}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
+            <span style={{fontSize:18}}>⚡</span>
+            <div style={{fontSize:15,fontWeight:700,color:T.text}}>Quick Capture</div>
+            <div style={{fontSize:10,color:T.text3,marginLeft:"auto"}}>Ctrl+Enter to save · Esc to close</div>
+          </div>
+
+          {!captureResult&&<div>
+            <textarea
+              autoFocus
+              rows={4}
+              value={captureText}
+              onChange={function(ev){setCaptureText(ev.target.value);}}
+              onKeyDown={function(ev){if(ev.key==="Escape"){setShowCapture(false);setCaptureResult(null);}if(ev.key==="Enter"&&ev.ctrlKey){ev.preventDefault();submitCapture();}}}
+              placeholder="What's on your mind, or something you just learned..."
+              style={{width:"100%",background:"rgba(255,255,255,0.05)",border:"0.5px solid rgba(199,125,255,0.25)",borderRadius:10,padding:"12px 14px",color:T.text,fontSize:13,lineHeight:1.7,resize:"vertical",fontFamily:"inherit",outline:"none",marginBottom:12}}
+            />
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button style={{padding:"8px 14px",borderRadius:8,border:"0.5px solid "+T.border,background:"transparent",color:T.text2,cursor:"pointer",fontSize:12}} onClick={function(){setShowCapture(false);setCaptureResult(null);}}>Cancel</button>
+              <button onClick={submitCapture} disabled={captureLoading||!captureText.trim()} style={{padding:"8px 18px",borderRadius:8,border:"none",background:captureLoading||!captureText.trim()?"rgba(199,125,255,0.3)":"linear-gradient(135deg,#7b2fff,#c77dff)",color:"#fff",cursor:captureLoading||!captureText.trim()?"default":"pointer",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
+                {captureLoading&&<span style={{display:"inline-block",width:10,height:10,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.4)",borderTopColor:"#fff",animation:"spin 0.8s linear infinite"}}/>}
+                {captureLoading?"Thinking...":"Save"}
+              </button>
+            </div>
+          </div>}
+
+          {captureResult&&<div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,padding:"10px 14px",borderRadius:10,background:"rgba(105,240,174,0.07)",border:"0.5px solid rgba(105,240,174,0.25)"}}>
+              <span style={{fontSize:16}}>✓</span>
+              <div style={{fontSize:12,fontWeight:600,color:T.success}}>Captured & saved</div>
+              <div style={{marginLeft:"auto",padding:"2px 8px",borderRadius:99,fontSize:10,fontWeight:700,background:captureResult.type==="learning"?T.accentBg:captureResult.type==="reflection"?"rgba(255,209,102,0.15)":T.bg3,color:captureResult.type==="learning"?T.accent:captureResult.type==="reflection"?T.warn:T.text2}}>{captureResult.type}</div>
+            </div>
+            {captureResult.title&&<div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:8}}>{captureResult.title}</div>}
+            <div style={{fontSize:12,color:T.text2,lineHeight:1.7,marginBottom:captureResult.formula?10:0}}>{(captureResult.content||"").slice(0,200)}{(captureResult.content||"").length>200?"...":""}</div>
+            {captureResult.formula&&<div style={{padding:"8px 12px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,fontSize:11,color:T.accent,fontFamily:"monospace",marginBottom:8}}>{captureResult.formula}</div>}
+            {captureResult.tags&&captureResult.tags.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:8}}>{captureResult.tags.map(function(tag){return<span key={tag} style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.bg3,color:T.text3}}>#{tag}</span>;})}</div>}
+            <button style={{marginTop:14,padding:"8px 18px",borderRadius:8,border:"none",background:"linear-gradient(135deg,#7b2fff,#c77dff)",color:"#fff",cursor:"pointer",fontSize:12,fontWeight:600}} onClick={function(){setShowCapture(false);setCaptureResult(null);}}>Done</button>
+          </div>}
+        </div>
+      </div>}
+
       {mob&&<nav style={{display:"flex",position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:"rgba(5,7,26,0.97)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"0.5px solid rgba(199,125,255,0.18)",justifyContent:"space-around",alignItems:"stretch",boxShadow:"0 -4px 24px rgba(0,0,0,0.5)"}}>
-        {[{name:"Dashboard",icon:"⊞"},{name:"Uni",icon:"📚"},{name:"Work",icon:"💼"},{name:"Gym",icon:"💪"},{name:"Personal",icon:"✓"},{name:"Finance",icon:"$"},{name:"Reflection",icon:"◎"}].map(function(item){const active=page===item.name;return(
+        {[{name:"Dashboard",icon:"⊞"},{name:"Uni",icon:"📚"},{name:"Work",icon:"💼"},{name:"Gym",icon:"💪"},{name:"Personal",icon:"✓"},{name:"Finance",icon:"$"},{name:"Reflection",icon:"◎"},{name:"Captures",icon:"⚡"}].map(function(item){const active=page===item.name;return(
           <button key={item.name} onClick={function(){setPage(item.name);}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,padding:"8px 4px",color:active?T.accent:T.text3,flex:1,minHeight:54,position:"relative"}}>
             {active&&<div style={{position:"absolute",top:0,left:"50%",transform:"translateX(-50%)",width:24,height:2,borderRadius:1,background:T.accent}}/>}
             <span style={{fontSize:17,lineHeight:1}}>{item.icon}</span>
