@@ -1015,6 +1015,7 @@ function App(){
   },[nxtRows]);
   const [bwIn,setBwIn]=useState("");
   const [bwDate,setBwDate]=useState(todayStr());
+  const [bwEditing,setBwEditing]=useState(false);
   const [showCapture,setShowCapture]=useState(false);
   const [captureText,setCaptureText]=useState("");
   const [captureLoading,setCaptureLoading]=useState(false);
@@ -1419,7 +1420,7 @@ function App(){
       const updated=existing.concat([{date:entryDate,weight:Number(bwIn)}]).sort(function(a,b){return a.date.localeCompare(b.date);});
       return{...p,gym:{...p.gym,bodyWeight:updated,lastBWWeek:entryDate>=thisWeek?thisWeek:p.gym.lastBWWeek}};
     });
-    setBwIn("");setBwDate(todayStr());
+    setBwIn("");setBwDate(todayStr());setBwEditing(false);
     showToast("Body weight logged!","success");
   }
   function submitCapture(){
@@ -1817,21 +1818,23 @@ function App(){
                   <div style={{fontSize:12,fontWeight:600,color:bwLogged?T.success:bwColMap[bwUrg]}}>Weekly body weight</div>
                   {!bwLogged&&<div style={{fontSize:10,color:bwColMap[bwUrg],fontWeight:600,padding:"2px 7px",borderRadius:99,background:bwColMap[bwUrg]+"18"}}>{dLeft}d left</div>}
                 </div>
-                {bwLogged
+                {bwLogged&&!bwEditing
                   ?<div>
                     <div style={{display:"flex",alignItems:"center",gap:12,padding:"4px 0 8px"}}>
                       <div style={{fontSize:32,color:T.success,lineHeight:1,fontWeight:700}}>✓</div>
                       <div>
-                        <div style={{fontSize:22,fontWeight:700,color:T.success,lineHeight:1.1}}>{(data.gym.bodyWeight&&data.gym.bodyWeight.length>0)?data.gym.bodyWeight[data.gym.bodyWeight.length-1].weight+" kg":"Logged"}</div>
+                        <div style={{fontSize:22,fontWeight:700,color:T.success,lineHeight:1.1}}>{(function(){const e=(data.gym.bodyWeight||[]).find(function(e){return e.date>=thisWeek;});return e?e.weight+" kg":"Logged";})()}</div>
                         <div style={{fontSize:10,color:T.success,opacity:0.75,marginTop:2}}>Logged this week</div>
                       </div>
                     </div>
                     {(data.gym.bodyWeight||[]).length>=2&&<Sparkline data={data.gym.bodyWeight} color={T.success} width={180} height={40}/>}
+                    <button style={{...btn,fontSize:10,padding:"4px 10px",marginTop:8}} onClick={function(){const e=(data.gym.bodyWeight||[]).find(function(e){return e.date>=thisWeek;});if(e){setBwIn(String(e.weight));setBwDate(e.date);}else{setBwIn("");setBwDate(todayStr());}setBwEditing(true);}}>Edit / add past entry</button>
                   </div>
                   :<div>
-                    <div style={{fontSize:10,color:T.text3,marginBottom:8}}>{dLeft<=1?"Last chance — ends tomorrow!":dLeft<=3?"Log before the week ends":"Log once this week"}</div>
+                    <div style={{fontSize:10,color:T.text3,marginBottom:8}}>{bwEditing?"Update your entry or add a past entry below":dLeft<=1?"Last chance — ends tomorrow!":dLeft<=3?"Log before the week ends":"Log once this week"}</div>
                     <div style={{display:"flex",gap:6,marginBottom:6}}><input style={{...inp,flex:1}} type="number" step="0.1" placeholder="e.g. 81.2 kg" value={bwIn} onChange={function(ev){setBwIn(ev.target.value);}}/><button style={{...btnP,background:bwColMap[bwUrg]+"22",color:bwColMap[bwUrg]}} onClick={logBW}>Log</button></div>
                     <input type="date" style={{...inp,padding:"6px 10px",fontSize:11,color:T.text3}} value={bwDate} onChange={function(ev){setBwDate(ev.target.value);}}/>
+                    {bwLogged&&bwEditing&&<button style={{...btn,fontSize:10,padding:"4px 10px",marginTop:6,opacity:0.6}} onClick={function(){setBwEditing(false);setBwIn("");setBwDate(todayStr());}}>Cancel</button>}
                   </div>
                 }
               </div>
