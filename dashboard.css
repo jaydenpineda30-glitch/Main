@@ -47,7 +47,7 @@ input,select,textarea,button{-webkit-tap-highlight-color:transparent;}
 .card-rim{position:relative;overflow:hidden;transition:box-shadow .3s,transform .3s;}
 
 /* Cursor-tracking spotlight (shared by cards and glow items) */
-.card-rim::before,.glow-item::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:radial-gradient(circle at var(--mouse-x,50%) var(--mouse-y,50%),rgba(199,125,255,.22) 0%,rgba(160,80,255,.08) 40%,transparent 70%);opacity:0;transition:opacity .4s ease;z-index:1;}
+.card-rim::before,.glow-item::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:radial-gradient(circle at var(--mouse-x,50%) var(--mouse-y,50%),rgba(199,125,255,.11) 0%,rgba(160,80,255,.04) 45%,transparent 68%);opacity:0;transition:opacity .4s ease;z-index:1;}
 .card-rim:hover::before,.glow-item:hover::before{opacity:1;}
 
 /* Rim border */
