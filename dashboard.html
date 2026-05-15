@@ -599,6 +599,13 @@ function GymSection(props){
   const [editRotForm,setEditRotForm]=useState({rName:"",rFocus:"",exercises:[]});
   const rotation=gymData.rotation||[];const rotLen=rotation.length>0?rotation.length:1;
   const rotIdx=(gymData.rotIdx||0)%rotLen;const nextSess=rotation.length>0?rotation[rotIdx]:null;
+  // Pre-fill workout form from rotation template (exercise, sets, reps, weight) when tab opens empty
+  useEffect(function(){
+    if(tab!=="workout")return;
+    if(wkt.sets.length>0)return;
+    if(!nextSess||!nextSess.exercises||nextSess.exercises.length===0)return;
+    setWkt(function(w){return{...w,sets:nextSess.exercises.map(function(ex,i){return{id:ex.id||i+1,exercise:ex.exercise||"",sets:ex.sets||"",reps:ex.reps||"",weight:ex.weight||""};})};});
+  },[tab,nextSess]);
   const gs={card:{background:T.bg2,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",border:"0.5px solid "+T.border2,borderRadius:12,padding:"14px 16px",marginBottom:10,boxShadow:"0 4px 24px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.08)"},btn:{padding:"5px 11px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text2,cursor:"pointer",fontSize:12},btnP:{padding:"6px 13px",borderRadius:8,border:"1px solid rgba(199,125,255,0.45)",background:"rgba(199,125,255,0.15)",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,boxShadow:"0 0 10px rgba(199,125,255,0.2)"},inp:{width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"}};
   function addRow(){if(!row.exercise)return;setWkt(function(w){return{...w,sets:[...w.sets,{...row,id:Date.now()}]};});setRow({exercise:"",sets:"",reps:"",weight:""});}
   function removeRow(i){setWkt(function(w){return{...w,sets:w.sets.filter(function(_,j){return j!==i;})};});}
@@ -2094,7 +2101,25 @@ function App(){
           );
         })()}
 
-        {page==="Gym"&&<ErrorBoundary name="Gym"><GymSection mob={mob} gymData={data.gym} onAddEx={function(){setModal("add_exercise");setMForm({});}} onLogW={function(ex){setModal("log_weight");setMForm({exId:ex.id,exName:ex.name});}} onSave={function(wk){setData(function(p){const rl=p.gym.rotation?p.gym.rotation.length:1;return{...p,gym:{...p.gym,workouts:(p.gym.workouts||[]).concat([wk]),rotIdx:((p.gym.rotIdx||0)+1)%Math.max(rl,1)}};});}} onUpdateRot={function(rot,idx){setData(function(p){return{...p,gym:{...p.gym,rotation:rot,rotIdx:idx}};});}} onDeleteBW={deleteBWEntry}/></ErrorBoundary>}
+        {page==="Gym"&&<ErrorBoundary name="Gym"><GymSection mob={mob} gymData={data.gym} onAddEx={function(){setModal("add_exercise");setMForm({});}} onLogW={function(ex){setModal("log_weight");setMForm({exId:ex.id,exName:ex.name});}} onSave={function(wk){setData(function(p){
+  const rl=p.gym.rotation?p.gym.rotation.length:1;
+  const today=wk.date||todayStr();
+  // Write sets back to rotation template so next session pre-fills with updated weights
+  const newRot=(p.gym.rotation||[]).map(function(rt){
+    if(!wk.rotId||rt.id!==wk.rotId)return rt;
+    return{...rt,exercises:(wk.sets||[]).map(function(r){return{id:r.id||Date.now(),exercise:r.exercise,sets:r.sets,reps:r.reps,weight:r.weight};})};
+  });
+  // Log each exercise weight for progressive overload tracking
+  var newExercises=[...(p.gym.exercises||[])];
+  (wk.sets||[]).forEach(function(r){
+    if(!r.exercise)return;
+    var idx=newExercises.findIndex(function(e){return e.name&&e.name.toLowerCase()===r.exercise.toLowerCase();});
+    var logEntry={date:today,weight:Number(r.weight)||0};
+    if(idx>=0){newExercises[idx]={...newExercises[idx],logs:[...(newExercises[idx].logs||[]),logEntry]};}
+    else{newExercises.push({id:'ex_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),name:r.exercise,logs:[logEntry]});}
+  });
+  return{...p,gym:{...p.gym,workouts:(p.gym.workouts||[]).concat([wk]),rotIdx:((p.gym.rotIdx||0)+1)%Math.max(rl,1),rotation:newRot,exercises:newExercises}};
+});}} onUpdateRot={function(rot,idx){setData(function(p){return{...p,gym:{...p.gym,rotation:rot,rotIdx:idx}};});}} onDeleteBW={deleteBWEntry}/></ErrorBoundary>}
 
         {page==="Personal"&&<div style={{maxWidth:640}}>
           <div className="card-rim" style={card()}>
