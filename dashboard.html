@@ -1435,7 +1435,7 @@ function App(){
     // ── Prompt ───────────────────────────────────────────────────────────────
     var prompt='You are Jayden\'s personal coach. You know him — TAFE accounting student, works GoTab shifts, trains at the gym, does weekly reflections.\n\n'+ctx+'\nWrite a personalised morning check-in. Exactly 3 lines:\nLine 1: Acknowledge his specific day — name actual assessments, work, or events if present\nLine 2: One concrete suggestion tied to his context (if reflection data present, connect to the identified pattern or recommendation)\nLine 3: A question that feels personal to his actual situation — not generic\n\nRules: under 65 words. Use his name once. Warm and direct — not cheesy. Plain lines, no bullets or numbers.';
 
-    fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='+key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.75}})})
+    fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key='+key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.75}})})
       .then(function(r){if(!r.ok)throw new Error('Gemini '+r.status);return r.json();})
       .then(function(json){
         var text=json.candidates[0].content.parts[0].text;
@@ -1516,7 +1516,7 @@ function App(){
     setGeminiLoading(true);setGeminiPreview(null);
     try{
       const prompt="Parse this university syllabus. Extract ONLY formal graded assessments (NOT quizzes, NOT self-testing exercises, NOT review questions, NOT resubmissions).\n\nSemester starts: "+syllabusStart+"\nWeek 1 = week of "+syllabusStart+"\nToday: "+todayStr()+"\n\nSubjects (use exact keys): WIA&B, POB, BAS/IAS, FinStmts NRE, Payroll, PFR, Law\n\nFor each assessment:\n- subject: one of the exact keys above\n- name: short descriptive name\n- type: IN-CLASS (supervised/in-class) | SUBMISSION (online submission/assignment) | EXAM\n- date: YYYY-MM-DD calculated from week number and semester start\n- done: false\n- id: short unique slug like 'wiab-at1'\n\nReturn ONLY a raw JSON array. No markdown, no explanation.\n\nSyllabus:\n"+syllabusText;
-      const resp=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key="+key,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.1}})});
+      const resp=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+key,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.1}})});
       if(!resp.ok)throw new Error("Gemini API error "+resp.status);
       const json=await resp.json();
       const text=json.candidates[0].content.parts[0].text;
