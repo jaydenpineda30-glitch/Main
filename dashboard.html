@@ -1344,7 +1344,7 @@ function App(){
 
   function doCheckin(){
     setCheckinLoading(true);setCheckinBlocks([]);
-    var key=localStorage.getItem('__gemini_key__')||'';
+    var key=(geminiKey||localStorage.getItem('__gemini_key__')||'').trim();
     if(!key){setCheckinBlocks(generateCheckinFallback(data));setCheckinLoading(false);return;}
 
     // ── Raw data ─────────────────────────────────────────────────────────────
@@ -2413,7 +2413,7 @@ function App(){
           {/* Gemini API key */}
           <div style={{marginBottom:12}}>
             <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Gemini API key <span style={{color:T.text3,fontWeight:400}}>(saved locally, never sent to our servers)</span></div>
-            <input type="password" style={{...inp,padding:"9px 11px",fontFamily:"monospace",fontSize:12}} placeholder="AIzaSy..." value={geminiKey} onChange={function(ev){var k=ev.target.value;setGeminiKey(k);try{localStorage.setItem('__gemini_key__',k);}catch(_){}}}/>
+            <input type="password" style={{...inp,padding:"9px 11px",fontFamily:"monospace",fontSize:12}} placeholder="AIzaSy..." value={geminiKey} onChange={function(ev){var k=ev.target.value.trim();setGeminiKey(k);try{localStorage.setItem('__gemini_key__',k);}catch(_){}}}/>
           </div>
 
           {/* Semester start */}
