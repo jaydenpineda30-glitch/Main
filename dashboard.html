@@ -1279,7 +1279,7 @@ function App(){
   useEffect(function(){
     if(page!=="Captures"||!window._currentUser||!window._db)return;
     setCapturesLoading(true);
-    _db.collection('captures').where('uid','==',window._currentUser.uid).get().then(function(snap){
+    _db.collection('users').doc(window._currentUser.uid).collection('captures').get().then(function(snap){
       var items=[];
       snap.forEach(function(doc){items.push({id:doc.id,...doc.data()});});
       items.sort(function(a,b){
@@ -1557,7 +1557,7 @@ function App(){
     window.GeminiService.classify(captureText).then(function(result){
       setCaptureResult(result);setCaptureLoading(false);
       if(window._currentUser&&window._db){
-        _db.collection('captures').add({
+        _db.collection('users').doc(window._currentUser.uid).collection('captures').add({
           uid:window._currentUser.uid,
           type:result.type||"thought",
           title:result.title||"",
