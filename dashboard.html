@@ -1454,10 +1454,10 @@ function App(){
     var rounded=Math.ceil(m/30)*30;var h=Math.floor(rounded/60)%24;var min=rounded%60;
     return String(h).padStart(2,"0")+":"+String(min).padStart(2,"0");
   }
-  function openSchedulePicker(taskId,ds){
+  function openSchedulePicker(taskId,ds,existingTime,existingDuration){
     if(!taskId)return;
     setScheduleTaskId(taskId);setScheduleForDay(ds);
-    setScheduleTime(nearestHalfHour());setScheduleDuration(60);
+    setScheduleTime(existingTime||nearestHalfHour());setScheduleDuration(existingDuration||60);
     setShowTimePicker(true);
   }
   function confirmSchedule(justDate){
@@ -1471,6 +1471,14 @@ function App(){
     }
     setShowTimePicker(false);setScheduleTaskId(null);setScheduleForDay(null);
     setDragTaskId(null);setDragOverDay(null);
+  }
+  function unscheduleTask(){
+    if(!scheduleTaskId)return;
+    setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.map(function(t){
+      return t.id!==scheduleTaskId?t:{...t,scheduledDate:null,scheduledTime:null,scheduledDuration:null,editedAt:todayStr()};
+    })}};});
+    showToast("Removed from calendar","success");
+    setShowTimePicker(false);setScheduleTaskId(null);setDragTaskId(null);setDragOverDay(null);
   }
   function dropTaskOnDay(ds){
     if(!dragTaskId)return;
@@ -1630,7 +1638,7 @@ function App(){
                 {hours.map(function(h){return<div key={h} style={{position:"absolute",top:(h-minH)*60*PPM,left:0,right:0,borderTop:"0.5px solid "+T.border}}/>;} )}
                 {isTdy&&nowMins>=minH*60&&nowMins<=maxH*60&&<div style={{position:"absolute",top:(nowMins-minH*60)*PPM,left:0,right:0,borderTop:"1.5px solid "+T.danger,zIndex:10}}><div style={{position:"absolute",left:-3,top:-3,width:6,height:6,borderRadius:"50%",background:T.danger}}/></div>}
                 {timedEvs.map(function(ev){const col=evColor(ev);const tp=parseTimes(ev.time);return(<div key={ev.id} style={{position:"absolute",top:(tp.start-minH*60)*PPM,left:1,right:1,height:Math.max((tp.end-tp.start)*PPM,10),borderRadius:2,background:col+"28",borderLeft:"2px solid "+col,padding:"1px 2px",overflow:"hidden",boxSizing:"border-box",zIndex:5}}><div style={{fontSize:6.5,fontWeight:700,color:col,whiteSpace:"nowrap",overflow:"hidden"}}>{evLabel(ev)}</div></div>);})}
-                {data.personal.tasks.filter(function(t){return !t.done&&t.scheduledDate===ds&&t.scheduledTime;}).map(function(t){const sm=toMins(t.scheduledTime);const em=sm+(t.scheduledDuration||60);return(<div key={"sched_"+t.id} title={t.name+" · "+t.scheduledTime+" ("+( t.scheduledDuration||60)+"min)"} style={{position:"absolute",top:Math.max((sm-minH*60)*PPM,0),left:1,right:1,height:Math.max((em-sm)*PPM,10),borderRadius:2,background:"rgba(199,125,255,0.18)",border:"1px dashed rgba(199,125,255,0.65)",padding:"1px 3px",overflow:"hidden",boxSizing:"border-box",zIndex:6,cursor:"pointer"}} onClick={function(e){e.stopPropagation();setPage("Personal");}}><div style={{fontSize:6.5,fontWeight:700,color:T.accent,whiteSpace:"nowrap",overflow:"hidden"}}>📌 {t.name}</div></div>);})}
+                {data.personal.tasks.filter(function(t){return !t.done&&t.scheduledDate===ds&&t.scheduledTime;}).map(function(t){const sm=toMins(t.scheduledTime);const em=sm+(t.scheduledDuration||60);return(<div key={"sched_"+t.id} title={t.name+" · "+t.scheduledTime+" ("+( t.scheduledDuration||60)+"min)"} style={{position:"absolute",top:Math.max((sm-minH*60)*PPM,0),left:1,right:1,height:Math.max((em-sm)*PPM,10),borderRadius:2,background:"rgba(199,125,255,0.18)",border:"1px dashed rgba(199,125,255,0.65)",padding:"1px 3px",overflow:"hidden",boxSizing:"border-box",zIndex:6,cursor:"pointer"}} onClick={function(e){e.stopPropagation();openSchedulePicker(t.id,t.scheduledDate,t.scheduledTime,t.scheduledDuration);}}><div style={{fontSize:6.5,fontWeight:700,color:T.accent,whiteSpace:"nowrap",overflow:"hidden"}}>📌 {t.name}</div></div>);})}
               </div>
             </div>);
           })}
@@ -1832,8 +1840,8 @@ function App(){
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={sT}>Tasks</div><button style={btn} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+</button></div>
               {urgTasks.length===0&&normTasks.length===0&&doneTasks.length===0&&<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>}
               {(dragTaskId||scheduleTaskId)&&<div style={{fontSize:9,color:T.accent,marginBottom:6,padding:"3px 8px",borderRadius:6,background:T.accentBg,border:"0.5px solid rgba(199,125,255,0.3)"}}>{mob?"Tap a calendar day to schedule":"Drop on a calendar day to schedule as a time block"}</div>}
-              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);const isActive=dragTaskId===t.id||scheduleTaskId===t.id;return(<div key={t.id} draggable={!mob} onDragStart={function(){setDragTaskId(t.id);}} onDragEnd={function(){setDragTaskId(null);setDragOverDay(null);}} onTouchStart={function(){longPressRef.current=setTimeout(function(){setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");},600);}} onTouchEnd={function(){clearTimeout(longPressRef.current);}} onTouchMove={function(){clearTimeout(longPressRef.current);}} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:mob?"pointer":"grab",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div></div>);})}</div>}
-              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);const isActive=dragTaskId===t.id||scheduleTaskId===t.id;return(<div key={t.id} draggable={!mob} onDragStart={function(){setDragTaskId(t.id);}} onDragEnd={function(){setDragTaskId(null);setDragOverDay(null);}} onTouchStart={function(){longPressRef.current=setTimeout(function(){setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");},600);}} onTouchEnd={function(){clearTimeout(longPressRef.current);}} onTouchMove={function(){clearTimeout(longPressRef.current);}} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:mob?"pointer":"grab",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div></div>);})}</div>}
+              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);const isActive=dragTaskId===t.id||scheduleTaskId===t.id;return(<div key={t.id} draggable={!mob} onDragStart={function(){setDragTaskId(t.id);}} onDragEnd={function(){setDragTaskId(null);setDragOverDay(null);}} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:mob?"default":"grab",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:13,flexShrink:0,touchAction:"none",userSelect:"none",lineHeight:1}} title="Schedule on calendar" onTouchStart={function(e){e.stopPropagation();longPressRef.current=setTimeout(function(){setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");},600);}} onTouchEnd={function(e){e.stopPropagation();clearTimeout(longPressRef.current);}} onTouchMove={function(){clearTimeout(longPressRef.current);}} onClick={function(e){e.stopPropagation();if(!mob){setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");}}}>📅</button></div>);})}</div>}
+              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);const isActive=dragTaskId===t.id||scheduleTaskId===t.id;return(<div key={t.id} draggable={!mob} onDragStart={function(){setDragTaskId(t.id);}} onDragEnd={function(){setDragTaskId(null);setDragOverDay(null);}} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:mob?"default":"grab",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:13,flexShrink:0,touchAction:"none",userSelect:"none",lineHeight:1}} title="Schedule on calendar" onTouchStart={function(e){e.stopPropagation();longPressRef.current=setTimeout(function(){setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");},600);}} onTouchEnd={function(e){e.stopPropagation();clearTimeout(longPressRef.current);}} onTouchMove={function(){clearTimeout(longPressRef.current);}} onClick={function(e){e.stopPropagation();if(!mob){setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");}}}>📅</button></div>);})}</div>}
               {doneTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneTasks.map(function(t){return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:5,alignItems:"center",opacity:0.45}}><input type="checkbox" checked={true} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,flexShrink:0}}/><div style={{fontSize:11,color:T.text3,textDecoration:"line-through"}}>{t.name}</div></div>);})}</div>}
             </div>
           </div>
@@ -2170,8 +2178,12 @@ function App(){
       {showTimePicker&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.82)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:250,padding:mob?"0":"16px"}} onClick={function(){setShowTimePicker(false);setScheduleTaskId(null);setDragTaskId(null);setDragOverDay(null);}}>
         <div style={{background:"rgba(14,16,40,0.97)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 32px":"22px",width:mob?"100%":"320px",maxWidth:"100%",border:"0.5px solid rgba(199,125,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.08)"}} onClick={function(e){e.stopPropagation();}}>
           {mob&&<div style={{width:36,height:4,borderRadius:2,background:"rgba(255,255,255,0.2)",margin:"0 auto 20px"}}/>}
-          <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:4}}>Schedule task</div>
-          <div style={{fontSize:11,color:T.text3,marginBottom:16}}>{fmtDate(scheduleForDay)}</div>
+          {(function(){const editingBlock=!!(data.personal.tasks.find(function(tt){return tt.id===scheduleTaskId;})||{}).scheduledDate;return(<React.Fragment>
+          <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:14}}>{editingBlock?"Edit time block":"Schedule task"}</div>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,color:T.text2,marginBottom:6}}>Date</div>
+            <input type="date" style={{...inp,padding:"10px 12px",fontSize:14}} value={scheduleForDay||""} onChange={function(ev){setScheduleForDay(ev.target.value);}}/>
+          </div>
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,color:T.text2,marginBottom:6}}>Start time</div>
             <input type="time" style={{...inp,padding:"10px 12px",fontSize:14}} value={scheduleTime} onChange={function(ev){setScheduleTime(ev.target.value);}}/>
@@ -2181,10 +2193,12 @@ function App(){
             <div style={{display:"flex",gap:6}}>{[30,60,90,120].map(function(d){const active=scheduleDuration===d;return(<button key={d} style={{flex:1,padding:"8px 0",borderRadius:8,border:active?"1px solid "+T.accent:"0.5px solid "+T.border,background:active?T.accentBg:"rgba(255,255,255,0.04)",color:active?T.accent:T.text2,cursor:"pointer",fontSize:12,fontWeight:active?600:400}} onClick={function(){setScheduleDuration(d);}}>{d<60?d+"m":d===60?"1h":d===90?"1.5h":"2h"}</button>);})}</div>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            <button style={{...btnP,padding:"12px",fontSize:14,width:"100%",borderRadius:10}} onClick={function(){confirmSchedule(false);}}>Schedule block →</button>
+            <button style={{...btnP,padding:"12px",fontSize:14,width:"100%",borderRadius:10}} onClick={function(){confirmSchedule(false);}}>{editingBlock?"Update block →":"Schedule block →"}</button>
             <button style={{...btn,padding:"10px",fontSize:12,width:"100%",borderRadius:10,textAlign:"center"}} onClick={function(){confirmSchedule(true);}}>Just set due date</button>
             <button style={{...btn,padding:"10px",fontSize:12,width:"100%",borderRadius:10,textAlign:"center",opacity:0.6}} onClick={function(){setShowTimePicker(false);setScheduleTaskId(null);setDragTaskId(null);setDragOverDay(null);}}>Cancel</button>
+            {editingBlock&&<button style={{...btn,padding:"10px",fontSize:12,width:"100%",borderRadius:10,textAlign:"center",color:T.danger,borderColor:T.danger+"40",marginTop:4}} onClick={unscheduleTask}>Remove from calendar</button>}
           </div>
+          </React.Fragment>);}())}
         </div>
       </div>}
 
