@@ -2226,7 +2226,7 @@ function App(){
           <div className="card-rim" style={card()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
               <div style={sT}>Captures</div>
-              <button style={{...btnP,fontSize:11,padding:"5px 12px"}} onClick={function(){if(page==="Captures"&&window._currentUser&&window._db){setCapturesLoading(true);_db.collection('captures').where('uid','==',window._currentUser.uid).get().then(function(snap){var items=[];snap.forEach(function(doc){items.push({id:doc.id,...doc.data()});});items.sort(function(a,b){var ta=a.date&&a.date.toDate?a.date.toDate().getTime():0;var tb=b.date&&b.date.toDate?b.date.toDate().getTime():0;return tb-ta;});setCapturesData(items);setCapturesLoading(false);}).catch(function(){setCapturesLoading(false);});}}}>↻ Refresh</button>
+              <button style={{...btnP,fontSize:11,padding:"5px 12px"}} onClick={function(){if(page==="Captures"&&window._currentUser&&window._db){setCapturesLoading(true);_db.collection('users').doc(window._currentUser.uid).collection('captures').get().then(function(snap){var items=[];snap.forEach(function(doc){items.push({id:doc.id,...doc.data()});});items.sort(function(a,b){var ta=a.date&&a.date.toDate?a.date.toDate().getTime():0;var tb=b.date&&b.date.toDate?b.date.toDate().getTime():0;return tb-ta;});setCapturesData(items);setCapturesLoading(false);}).catch(function(){setCapturesLoading(false);});}}}>↻ Refresh</button>
             </div>
             <input value={capturesSearch} onChange={function(ev){setCapturesSearch(ev.target.value);}} placeholder="Search captures..." style={{...inp,padding:"9px 12px",marginBottom:12,width:"100%"}}/>
             <div style={{display:"flex",gap:6,marginBottom:14}}>
