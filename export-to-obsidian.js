@@ -55,7 +55,8 @@ function ensureDir(dir) {
 // ── Capture → markdown ────────────────────────────────────────────────────────
 
 function captureToMd(c) {
-  var date = datePrefix(c.date ? c.date.toDate ? c.date.toDate().toISOString() : c.date : null);
+  var rawDate = c.date ? (c.date.toDate ? c.date.toDate().toISOString() : (c.date.seconds ? new Date(c.date.seconds * 1000).toISOString() : c.date)) : null;
+  var date = datePrefix(rawDate);
   var title = c.title || c.rawInput || 'Capture';
   var tags = (c.tags || []).concat(['capture', c.type || 'thought']).filter(Boolean);
   var lines = [];
