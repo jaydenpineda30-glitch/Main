@@ -1417,7 +1417,7 @@ function App(){
     setData(function(p){
       const existing=(p.gym.bodyWeight||[]).filter(function(e){return e.date!==entryDate;});
       const updated=existing.concat([{date:entryDate,weight:Number(bwIn)}]).sort(function(a,b){return a.date.localeCompare(b.date);});
-      return{...p,gym:{...p.gym,bodyWeight:updated,lastBWWeek:thisWeek}};
+      return{...p,gym:{...p.gym,bodyWeight:updated,lastBWWeek:entryDate>=thisWeek?thisWeek:p.gym.lastBWWeek}};
     });
     setBwIn("");setBwDate(todayStr());
     showToast("Body weight logged!","success");
