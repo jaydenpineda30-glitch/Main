@@ -474,7 +474,7 @@ function WeatherWidget(props){
   return(
     <>
       {/* ── Compact dashboard widget ── */}
-      <div style={{background:T.bg2,border:"0.5px solid "+T.border,borderRadius:10,padding:"14px 16px",cursor:"pointer"}} onClick={function(){setOpen(true);}}>
+      <div className="glow-item" style={{background:T.bg2,border:"0.5px solid "+T.border,borderRadius:10,padding:"14px 16px",cursor:"pointer"}} onClick={function(){setOpen(true);}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <div style={{fontSize:10,color:T.text3}}>Melbourne</div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
@@ -1095,6 +1095,17 @@ function App(){
   }
   // Expose globally so FinanceSection and GymSection can reach it without prop drilling
   useEffect(function(){window.showToast=showToast;return function(){window.showToast=null;};},[]);
+  useEffect(function(){
+    function onMove(e){
+      var el=e.target.closest('.card-rim,.glow-item');
+      if(!el)return;
+      var r=el.getBoundingClientRect();
+      el.style.setProperty('--mouse-x',((e.clientX-r.left)/r.width*100)+'%');
+      el.style.setProperty('--mouse-y',((e.clientY-r.top)/r.height*100)+'%');
+    }
+    document.addEventListener('mousemove',onMove);
+    return function(){document.removeEventListener('mousemove',onMove);};
+  },[]);
 
   // Wire GCalSync callbacks so gcal-sync.js can push into React state
   useEffect(function(){
@@ -1804,7 +1815,7 @@ function App(){
           </div>
 
           {/* Check-in full width */}
-          <div style={{...card({background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.1)"}),marginBottom:12}}>
+          <div className="card-rim" style={{...card({background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.1)"}),marginBottom:12}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,marginBottom:10}}>
               <div style={{fontSize:10,color:T.text3,display:"flex",alignItems:"center",gap:5}}><div style={{width:5,height:5,borderRadius:"50%",background:T.accent}}/>Daily Check-in · {new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long"})}</div>
               <button style={{...btn,fontSize:11}} onClick={doCheckin}>↻ Refresh</button>
@@ -1884,8 +1895,8 @@ function App(){
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={sT}>Tasks</div><button style={btn} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+</button></div>
               {urgTasks.length===0&&normTasks.length===0&&doneTasks.length===0&&<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>}
               {scheduleTaskId&&<div style={{fontSize:9,color:T.accent,marginBottom:6,padding:"3px 8px",borderRadius:6,background:T.accentBg,border:"0.5px solid rgba(199,125,255,0.3)"}}>Tap a calendar day to schedule</div>}
-              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:"default",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");}}>⠿</button></div>);})}</div>}
-              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:"default",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");}}>⠿</button></div>);})}</div>}
+              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:"default",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");}}>⠿</button></div>);})}</div>}
+              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:"default",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");}}>⠿</button></div>);})}</div>}
               {doneTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneTasks.map(function(t){return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:5,alignItems:"center",opacity:0.45}}><input type="checkbox" checked={true} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,flexShrink:0}}/><div style={{fontSize:11,color:T.text3,textDecoration:"line-through"}}>{t.name}</div></div>);})}</div>}
             </div>
           </div>
