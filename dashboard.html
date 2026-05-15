@@ -991,13 +991,28 @@ function App(){
   const [activeDay,setActiveDay]=useState(todayStr());
   const [checkinBlocks,setCheckinBlocks]=useState([]);
   const [nxtRows,setNxtRows]=useState([{id:1,exercise:"",sets:"",reps:"",weight:""},{id:2,exercise:"",sets:"",reps:"",weight:""},{id:3,exercise:"",sets:"",reps:"",weight:""}]);
-  // Pre-fill nxtRows whenever the active rotation slot changes
+  // Pre-fill nxtRows — check for a saved draft first, then fall back to rotation template
   useEffect(function(){
     const gr=data.gym.rotation||[];const gl=gr.length>0?gr.length:1;const gi=(data.gym.rotIdx||0)%gl;const nr=gr.length>0?gr[gi]:null;
+    try{
+      var draft=JSON.parse(localStorage.getItem('gym_draft')||'null');
+      if(draft&&nr&&draft.rotId===nr.id&&draft.rows&&draft.rows.some(function(r){return r.exercise;})){
+        setNxtRows(draft.rows);
+        setGymDraftBanner(true);
+        return;
+      }
+    }catch(_){}
+    setGymDraftBanner(false);
     if(nr&&nr.exercises&&nr.exercises.length>0){
       setNxtRows(nr.exercises.map(function(ex,i){return{id:ex.id||i+1,exercise:ex.exercise||"",sets:ex.sets||"",reps:ex.reps||"",weight:ex.weight||""};}).concat(nr.exercises.length<3?[{id:Date.now()+1,exercise:"",sets:"",reps:"",weight:""}].slice(0,3-nr.exercises.length):[]).slice(0,Math.max(nr.exercises.length,3)));
     }
   },[data.gym.rotIdx,data.gym.rotation]);
+  // Auto-save gym session draft whenever rows change
+  useEffect(function(){
+    if(!nxtRows.some(function(r){return r.exercise||r.weight;}))return;
+    const gr=data.gym.rotation||[];const gl=gr.length>0?gr.length:1;const gi=(data.gym.rotIdx||0)%gl;const nr=gr.length>0?gr[gi]:null;
+    try{localStorage.setItem('gym_draft',JSON.stringify({rotId:nr?nr.id:null,rows:nxtRows,savedAt:Date.now()}));}catch(_){}
+  },[nxtRows]);
   const [bwIn,setBwIn]=useState("");
   const [bwDate,setBwDate]=useState(todayStr());
   const [showCapture,setShowCapture]=useState(false);
@@ -1014,6 +1029,13 @@ function App(){
   const [dragOverDay,setDragOverDay]=useState(null);
   const [editTaskId,setEditTaskId]=useState(null);
   const [editTaskForm,setEditTaskForm]=useState({});
+  const [gymDraftBanner,setGymDraftBanner]=useState(false);
+  const [scheduleTaskId,setScheduleTaskId]=useState(null);
+  const [scheduleForDay,setScheduleForDay]=useState(null);
+  const [scheduleTime,setScheduleTime]=useState("09:00");
+  const [scheduleDuration,setScheduleDuration]=useState(60);
+  const [showTimePicker,setShowTimePicker]=useState(false);
+  const longPressRef=useRef(null);
   const [showArch,setShowArch]=useState(false);
   const [reflStep,setReflStep]=useState(0);
   const [reflAns,setReflAns]=useState([]);
@@ -1427,11 +1449,32 @@ function App(){
     });
   }
 
+  function nearestHalfHour(){
+    var d=new Date();var m=d.getHours()*60+d.getMinutes();
+    var rounded=Math.ceil(m/30)*30;var h=Math.floor(rounded/60)%24;var min=rounded%60;
+    return String(h).padStart(2,"0")+":"+String(min).padStart(2,"0");
+  }
+  function openSchedulePicker(taskId,ds){
+    if(!taskId)return;
+    setScheduleTaskId(taskId);setScheduleForDay(ds);
+    setScheduleTime(nearestHalfHour());setScheduleDuration(60);
+    setShowTimePicker(true);
+  }
+  function confirmSchedule(justDate){
+    if(!scheduleTaskId||!scheduleForDay)return;
+    if(justDate){
+      setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.map(function(t){return t.id===scheduleTaskId?{...t,due:scheduleForDay,editedAt:todayStr()}:t;})}}; });
+      showToast("Due date set to "+fmtDate(scheduleForDay),"success");
+    }else{
+      setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.map(function(t){return t.id===scheduleTaskId?{...t,due:scheduleForDay,scheduledDate:scheduleForDay,scheduledTime:scheduleTime,scheduledDuration:scheduleDuration,editedAt:todayStr()}:t;})}}; });
+      showToast("Scheduled for "+fmtDate(scheduleForDay)+" at "+scheduleTime,"success");
+    }
+    setShowTimePicker(false);setScheduleTaskId(null);setScheduleForDay(null);
+    setDragTaskId(null);setDragOverDay(null);
+  }
   function dropTaskOnDay(ds){
     if(!dragTaskId)return;
-    setData(function(p){return{...p,personal:{...p.personal,tasks:p.personal.tasks.map(function(t){return t.id===dragTaskId?{...t,due:ds,editedAt:todayStr()}:t;})}}; });
-    showToast("Due date set to "+fmtDate(ds),"success");
-    setDragTaskId(null);setDragOverDay(null);
+    openSchedulePicker(dragTaskId,ds);
   }
 
   function saveNextSess(){
@@ -1443,8 +1486,30 @@ function App(){
     }
     const name=nextRot?nextRot.name:"Next Session";
     const rotId=nextRot?nextRot.id:null;
-    const wk={id:Date.now(),name:name,date:todayStr(),rotId:rotId,sets:rows.map(function(r,i){return{...r,id:i+1};})};
-    setData(function(p){const rl=p.gym.rotation?p.gym.rotation.length:1;return{...p,gym:{...p.gym,workouts:(p.gym.workouts||[]).concat([wk]),rotIdx:((p.gym.rotIdx||0)+1)%Math.max(rl,1)}};});
+    const today=todayStr();
+    const wk={id:Date.now(),name:name,date:today,rotId:rotId,sets:rows.map(function(r,i){return{...r,id:i+1};})};
+    setData(function(p){
+      const rl=p.gym.rotation?p.gym.rotation.length:1;
+      // Write exercises+weights back to rotation template so next session pre-fills
+      const newRot=(p.gym.rotation||[]).map(function(rt){
+        if(rt.id!==rotId)return rt;
+        return{...rt,exercises:rows.map(function(r){return{id:r.id||Date.now(),exercise:r.exercise,sets:r.sets,reps:r.reps,weight:r.weight};})};
+      });
+      // Log each exercise weight for progression tracking
+      var newExercises=[...(p.gym.exercises||[])];
+      rows.forEach(function(r){
+        var idx=newExercises.findIndex(function(e){return e.name&&e.name.toLowerCase()===r.exercise.toLowerCase();});
+        var logEntry={date:today,weight:Number(r.weight)||0};
+        if(idx>=0){
+          newExercises[idx]={...newExercises[idx],logs:[...(newExercises[idx].logs||[]),logEntry]};
+        }else{
+          newExercises.push({id:'ex_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),name:r.exercise,logs:[logEntry]});
+        }
+      });
+      return{...p,gym:{...p.gym,workouts:(p.gym.workouts||[]).concat([wk]),rotIdx:((p.gym.rotIdx||0)+1)%Math.max(rl,1),rotation:newRot,exercises:newExercises}};
+    });
+    try{localStorage.removeItem('gym_draft');}catch(_){}
+    setGymDraftBanner(false);
     setNxtRows([{id:1,exercise:"",sets:"",reps:"",weight:""},{id:2,exercise:"",sets:"",reps:"",weight:""},{id:3,exercise:"",sets:"",reps:"",weight:""}]);
     showToast("Session saved!","success");
   }
@@ -1554,7 +1619,8 @@ function App(){
             const ds=dStr(d);const isTdy=ds===todayStr();const isPast=new Date(ds)<new Date(todayStr());
             const timedEvs=visibleGcalEvents.filter(function(ev){return ev.date===ds&&!ev.allDay;});
             const allDayEvs=visibleGcalEvents.filter(function(ev){return ev.date===ds&&ev.allDay;});
-            return(<div key={di} style={{display:"flex",flexDirection:"column",cursor:"pointer",borderRadius:6,outline:dragOverDay===ds?"1.5px dashed "+T.accent:"none",background:dragOverDay===ds?"rgba(199,125,255,0.07)":"transparent",transition:"background 0.1s"}} onClick={function(){setActiveDay(ds);}} onDragOver={function(e){e.preventDefault();setDragOverDay(ds);}} onDragLeave={function(){setDragOverDay(null);}} onDrop={function(e){e.preventDefault();dropTaskOnDay(ds);}}>
+            const isSchedTarget=scheduleTaskId&&!dragTaskId;
+            return(<div key={di} style={{display:"flex",flexDirection:"column",cursor:isSchedTarget?"crosshair":"pointer",borderRadius:6,outline:(dragOverDay===ds||isSchedTarget)?"1.5px dashed "+T.accent:"none",background:dragOverDay===ds?"rgba(199,125,255,0.07)":isSchedTarget?"rgba(199,125,255,0.04)":"transparent",transition:"background 0.1s"}} onClick={function(){if(isSchedTarget){openSchedulePicker(scheduleTaskId,ds);}else{setActiveDay(ds);}}} onDragOver={function(e){e.preventDefault();setDragOverDay(ds);}} onDragLeave={function(){setDragOverDay(null);}} onDrop={function(e){e.preventDefault();dropTaskOnDay(ds);}}>
               <div style={{textAlign:"center",marginBottom:2,padding:"2px 0",borderRadius:4,background:activeDay===ds?T.accentBg:"transparent"}}>
                 <div style={{fontSize:8,color:isTdy?T.accent:T.text3}}>{DAYS[di]}</div>
                 <div style={{fontSize:10,fontWeight:isTdy?700:400,color:isTdy?T.accent:isPast?T.text3:T.text,width:16,height:16,borderRadius:"50%",background:isTdy?T.accentBg:"transparent",display:"flex",alignItems:"center",justifyContent:"center",margin:"1px auto"}}>{d.getDate()}</div>
@@ -1564,6 +1630,7 @@ function App(){
                 {hours.map(function(h){return<div key={h} style={{position:"absolute",top:(h-minH)*60*PPM,left:0,right:0,borderTop:"0.5px solid "+T.border}}/>;} )}
                 {isTdy&&nowMins>=minH*60&&nowMins<=maxH*60&&<div style={{position:"absolute",top:(nowMins-minH*60)*PPM,left:0,right:0,borderTop:"1.5px solid "+T.danger,zIndex:10}}><div style={{position:"absolute",left:-3,top:-3,width:6,height:6,borderRadius:"50%",background:T.danger}}/></div>}
                 {timedEvs.map(function(ev){const col=evColor(ev);const tp=parseTimes(ev.time);return(<div key={ev.id} style={{position:"absolute",top:(tp.start-minH*60)*PPM,left:1,right:1,height:Math.max((tp.end-tp.start)*PPM,10),borderRadius:2,background:col+"28",borderLeft:"2px solid "+col,padding:"1px 2px",overflow:"hidden",boxSizing:"border-box",zIndex:5}}><div style={{fontSize:6.5,fontWeight:700,color:col,whiteSpace:"nowrap",overflow:"hidden"}}>{evLabel(ev)}</div></div>);})}
+                {data.personal.tasks.filter(function(t){return !t.done&&t.scheduledDate===ds&&t.scheduledTime;}).map(function(t){const sm=toMins(t.scheduledTime);const em=sm+(t.scheduledDuration||60);return(<div key={"sched_"+t.id} title={t.name+" · "+t.scheduledTime+" ("+( t.scheduledDuration||60)+"min)"} style={{position:"absolute",top:Math.max((sm-minH*60)*PPM,0),left:1,right:1,height:Math.max((em-sm)*PPM,10),borderRadius:2,background:"rgba(199,125,255,0.18)",border:"1px dashed rgba(199,125,255,0.65)",padding:"1px 3px",overflow:"hidden",boxSizing:"border-box",zIndex:6,cursor:"pointer"}} onClick={function(e){e.stopPropagation();setPage("Personal");}}><div style={{fontSize:6.5,fontWeight:700,color:T.accent,whiteSpace:"nowrap",overflow:"hidden"}}>📌 {t.name}</div></div>);})}
               </div>
             </div>);
           })}
@@ -1713,6 +1780,10 @@ function App(){
               <div style={card()}>
                 <div style={sT}>Next session — pre-fill weights</div>
                 <div style={{fontSize:11,color:T.text2,marginBottom:8}}>{nextRot?<span>Next up: <strong style={{color:T.success}}>{nextRot.name}</strong> — {nextRot.focus}</span>:"Set up your rotation in the Gym tab."}</div>
+                {gymDraftBanner&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 10px",borderRadius:8,background:"rgba(255,209,102,0.1)",border:"0.5px solid rgba(255,209,102,0.35)",marginBottom:10}}>
+                  <span style={{fontSize:11,color:T.warn}}>⏸ Unfinished session restored — keep logging or discard</span>
+                  <button onClick={function(){try{localStorage.removeItem('gym_draft');}catch(_){}setGymDraftBanner(false);setNxtRows(nextRot&&nextRot.exercises&&nextRot.exercises.length>0?nextRot.exercises.map(function(ex,i){return{id:ex.id||i+1,exercise:ex.exercise||"",sets:ex.sets||"",reps:ex.reps||"",weight:ex.weight||""};}):[{id:1,exercise:"",sets:"",reps:"",weight:""},{id:2,exercise:"",sets:"",reps:"",weight:""},{id:3,exercise:"",sets:"",reps:"",weight:""}]);}} style={{fontSize:10,padding:"2px 8px",borderRadius:6,border:"0.5px solid rgba(255,209,102,0.4)",background:"transparent",color:T.warn,cursor:"pointer"}}>Discard</button>
+                </div>}
                 {mob?nxtRows.map(function(row,i){return(<div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 52px 52px 64px",gap:5,marginBottom:6}}>
                   <input style={{...inp,padding:"8px 8px",fontSize:12}} placeholder={["Bench Press","Squat","OHP"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
                   <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="Sets" value={row.sets} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,sets:ev.target.value}:x;});});}}/>
@@ -1760,9 +1831,9 @@ function App(){
             <div style={card()}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={sT}>Tasks</div><button style={btn} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+</button></div>
               {urgTasks.length===0&&normTasks.length===0&&doneTasks.length===0&&<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>}
-              {dragTaskId&&<div style={{fontSize:9,color:T.accent,marginBottom:6,padding:"3px 8px",borderRadius:6,background:T.accentBg,border:"0.5px solid rgba(199,125,255,0.3)"}}>Drop on a calendar day to set due date</div>}
-              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);return(<div key={t.id} draggable={!mob} onDragStart={function(){setDragTaskId(t.id);}} onDragEnd={function(){setDragTaskId(null);setDragOverDay(null);}} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:dragTaskId===t.id?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(dragTaskId===t.id?T.accent:TUC[urg]+"30"),cursor:"grab",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div></div>);})}</div>}
-              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);return(<div key={t.id} draggable={!mob} onDragStart={function(){setDragTaskId(t.id);}} onDragEnd={function(){setDragTaskId(null);setDragOverDay(null);}} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:dragTaskId===t.id?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(dragTaskId===t.id?T.accent:TUC[urg]+"30"),cursor:"grab",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div></div>);})}</div>}
+              {(dragTaskId||scheduleTaskId)&&<div style={{fontSize:9,color:T.accent,marginBottom:6,padding:"3px 8px",borderRadius:6,background:T.accentBg,border:"0.5px solid rgba(199,125,255,0.3)"}}>{mob?"Tap a calendar day to schedule":"Drop on a calendar day to schedule as a time block"}</div>}
+              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);const isActive=dragTaskId===t.id||scheduleTaskId===t.id;return(<div key={t.id} draggable={!mob} onDragStart={function(){setDragTaskId(t.id);}} onDragEnd={function(){setDragTaskId(null);setDragOverDay(null);}} onTouchStart={function(){longPressRef.current=setTimeout(function(){setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");},600);}} onTouchEnd={function(){clearTimeout(longPressRef.current);}} onTouchMove={function(){clearTimeout(longPressRef.current);}} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:mob?"pointer":"grab",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div></div>);})}</div>}
+              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);const isActive=dragTaskId===t.id||scheduleTaskId===t.id;return(<div key={t.id} draggable={!mob} onDragStart={function(){setDragTaskId(t.id);}} onDragEnd={function(){setDragTaskId(null);setDragOverDay(null);}} onTouchStart={function(){longPressRef.current=setTimeout(function(){setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule","warn");},600);}} onTouchEnd={function(){clearTimeout(longPressRef.current);}} onTouchMove={function(){clearTimeout(longPressRef.current);}} style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:mob?"pointer":"grab",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div></div>);})}</div>}
               {doneTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneTasks.map(function(t){return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:5,alignItems:"center",opacity:0.45}}><input type="checkbox" checked={true} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,flexShrink:0}}/><div style={{fontSize:11,color:T.text3,textDecoration:"line-through"}}>{t.name}</div></div>);})}</div>}
             </div>
           </div>
@@ -2096,6 +2167,27 @@ function App(){
         </div>
       </div>}
 
+      {showTimePicker&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.82)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:250,padding:mob?"0":"16px"}} onClick={function(){setShowTimePicker(false);setScheduleTaskId(null);setDragTaskId(null);setDragOverDay(null);}}>
+        <div style={{background:"rgba(14,16,40,0.97)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 32px":"22px",width:mob?"100%":"320px",maxWidth:"100%",border:"0.5px solid rgba(199,125,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.08)"}} onClick={function(e){e.stopPropagation();}}>
+          {mob&&<div style={{width:36,height:4,borderRadius:2,background:"rgba(255,255,255,0.2)",margin:"0 auto 20px"}}/>}
+          <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:4}}>Schedule task</div>
+          <div style={{fontSize:11,color:T.text3,marginBottom:16}}>{fmtDate(scheduleForDay)}</div>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,color:T.text2,marginBottom:6}}>Start time</div>
+            <input type="time" style={{...inp,padding:"10px 12px",fontSize:14}} value={scheduleTime} onChange={function(ev){setScheduleTime(ev.target.value);}}/>
+          </div>
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:11,color:T.text2,marginBottom:6}}>Duration</div>
+            <div style={{display:"flex",gap:6}}>{[30,60,90,120].map(function(d){const active=scheduleDuration===d;return(<button key={d} style={{flex:1,padding:"8px 0",borderRadius:8,border:active?"1px solid "+T.accent:"0.5px solid "+T.border,background:active?T.accentBg:"rgba(255,255,255,0.04)",color:active?T.accent:T.text2,cursor:"pointer",fontSize:12,fontWeight:active?600:400}} onClick={function(){setScheduleDuration(d);}}>{d<60?d+"m":d===60?"1h":d===90?"1.5h":"2h"}</button>);})}</div>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <button style={{...btnP,padding:"12px",fontSize:14,width:"100%",borderRadius:10}} onClick={function(){confirmSchedule(false);}}>Schedule block →</button>
+            <button style={{...btn,padding:"10px",fontSize:12,width:"100%",borderRadius:10,textAlign:"center"}} onClick={function(){confirmSchedule(true);}}>Just set due date</button>
+            <button style={{...btn,padding:"10px",fontSize:12,width:"100%",borderRadius:10,textAlign:"center",opacity:0.6}} onClick={function(){setShowTimePicker(false);setScheduleTaskId(null);setDragTaskId(null);setDragOverDay(null);}}>Cancel</button>
+          </div>
+        </div>
+      </div>}
+
       {showCalPicker&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.82)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:200,padding:mob?"0":"16px"}} onClick={function(){setShowCalPicker(false);}}>
         <div style={{background:"rgba(14,16,40,0.97)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 32px":"22px",width:mob?"100%":"380px",maxWidth:"100%",border:"0.5px solid rgba(199,125,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.6)"}} onClick={function(e){e.stopPropagation();}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
@@ -2243,7 +2335,7 @@ function App(){
       </div>}
 
       {/* ── Quick Capture floating button ── */}
-      <button onClick={function(){setShowCapture(true);setCaptureResult(null);}} style={{position:"fixed",bottom:mob?70:24,right:20,zIndex:150,background:"linear-gradient(135deg,#7b2fff,#c77dff)",border:"none",borderRadius:99,padding:"11px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(199,125,255,0.45)",display:"flex",alignItems:"center",gap:7,letterSpacing:0.2}}>
+      <button onClick={function(){setShowCapture(true);setCaptureResult(null);}} style={{position:"fixed",bottom:mob?70:80,right:20,zIndex:150,background:"linear-gradient(135deg,#7b2fff,#c77dff)",border:"none",borderRadius:99,padding:"11px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(199,125,255,0.45)",display:"flex",alignItems:"center",gap:7,letterSpacing:0.2}}>
         <span style={{fontSize:15}}>⚡</span>Capture
       </button>
 
