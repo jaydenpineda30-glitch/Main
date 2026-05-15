@@ -1451,6 +1451,26 @@ function App(){
       a.click();
     }catch(e){showToast("Export failed: "+e.message,"error");}
   }
+  function downloadObsidianExport(){
+    if(!window._currentUser||!window._db){showToast("Sign in first","error");return;}
+    showToast("Fetching captures…","warn");
+    window._db.collection('captures').where('uid','==',window._currentUser.uid).get()
+      .then(function(snap){
+        var captures=snap.docs.map(function(d){return{...d.data(),id:d.id};});
+        var payload={
+          exportedAt:new Date().toISOString(),
+          captures:captures,
+          reflections:data.reflections||[]
+        };
+        var blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+        var a=document.createElement("a");
+        a.href=URL.createObjectURL(blob);
+        a.download="obsidian-export.json";
+        a.click();
+        showToast("Downloaded obsidian-export.json — now run: node export-to-obsidian.js","success");
+      })
+      .catch(function(e){showToast("Export failed: "+e.message,"error");});
+  }
   function restoreFromBackup(){
     var bk=getLatestBackup();
     if(!bk){showToast("No local backup found","error");return;}
@@ -1826,6 +1846,7 @@ function App(){
         </div>
         <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
           <button onClick={exportData} title="Download all your data as JSON backup" style={{padding:"3px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text3,cursor:"pointer",fontSize:11}}>⬇ Export</button>
+          <button onClick={downloadObsidianExport} title="Download export file for Obsidian" style={{padding:"3px 10px",borderRadius:8,border:"0.5px solid rgba(199,125,255,0.3)",background:"rgba(199,125,255,0.08)",color:T.accent,cursor:"pointer",fontSize:11}}>⬇ Obsidian</button>
           {authUser&&authUser.photoURL&&<img src={authUser.photoURL} alt="" style={{width:22,height:22,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.2)"}}/>}
           <button onClick={function(){_auth.signOut();}} style={{padding:"3px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text3,cursor:"pointer",fontSize:11}}>Sign out</button>
         </div>
