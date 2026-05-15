@@ -1346,20 +1346,77 @@ function App(){
     setCheckinLoading(true);setCheckinBlocks([]);
     var key=localStorage.getItem('__gemini_key__')||'';
     if(!key){setCheckinBlocks(generateCheckinFallback(data));setCheckinLoading(false);return;}
+
+    // ── Raw data ─────────────────────────────────────────────────────────────
     var cachedEvs=[];try{var ce=localStorage.getItem('__gcal_events__');if(ce)cachedEvs=JSON.parse(ce);}catch(_){}
     var td=todayStr();
+    var yday=new Date();yday.setDate(yday.getDate()-1);var ydayStr=dStr(yday);
+
     var todayEvs=cachedEvs.filter(function(ev){return ev.date===td&&!ev.allDay;});
+    var workedYesterday=cachedEvs.some(function(ev){return ev.date===ydayStr&&isGoTabEvent(ev);});
+    var workingToday=todayEvs.some(isGoTabEvent);
+    var nonWorkEvs=todayEvs.filter(function(ev){return !isGoTabEvent(ev);});
+
     var tasks=(data.personal&&data.personal.tasks)||[];
-    var overdue=tasks.filter(function(t){return !t.done&&t.due&&t.due<td;});
+    var overdueTasks=tasks.filter(function(t){return !t.done&&t.due&&t.due<td;});
+    var urgentTasks=tasks.filter(function(t){return !t.done&&t.priority==='urgent'&&(!t.due||t.due>=td);});
+
+    var in7=new Date();in7.setDate(in7.getDate()+7);var in7Str=dStr(in7);
+    var upcomingA=(data.uni&&data.uni.assessments||[]).filter(function(a){return !a.done&&a.date>=td&&a.date<=in7Str;}).sort(function(a,b){return a.date.localeCompare(b.date);});
+
     var gymRot=(data.gym&&data.gym.rotation)||[];
     var nextGym=gymRot.length>0?gymRot[((data.gym&&data.gym.rotIdx)||0)%gymRot.length]:null;
-    var ctx={
-      schedule:todayEvs.length>0?todayEvs.map(function(ev){return ev.title+(ev.time?' '+ev.time:'');}).join('\n'):'No events today',
-      tasks:tasks.filter(function(t){return !t.done;}).slice(0,5).map(function(t){return t.name+(overdue.indexOf(t)!==-1?' (OVERDUE)':'');}).join(', ')||'No pending tasks',
-      gym:nextGym?'Next session: '+nextGym.name+(nextGym.focus?' ('+nextGym.focus+')':''):'No gym rotation set'
-    };
-    var prompt='You are a supportive coach helping Jayden start their day.\n\nTODAY\'S CONTEXT:\nCalendar: '+ctx.schedule+'\nPending tasks: '+ctx.tasks+'\nGym: '+ctx.gym+'\n\nWrite a brief, warm check-in. Exactly 3 short lines:\nLine 1: Acknowledge the day ahead\nLine 2: One specific realistic suggestion\nLine 3: One reflection question based on what they\'re facing\n\nUnder 60 words total. Warm but not cheesy. Plain lines, no bullets or numbering.';
-    fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='+key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.7}})})
+    var workouts=(data.gym&&data.gym.workouts)||[];
+    var lastWkt=workouts.length>0?workouts[workouts.length-1]:null;
+    var daysSinceGym=lastWkt?Math.abs(daysBetween(lastWkt.date)):null;
+    var bwThisWeek=!!(data.gym&&data.gym.lastBWWeek===thisWeek);
+
+    var recentRefls=(data.reflections||[]).slice(-2).reverse();
+    var lastRefl=recentRefls[0]||null;
+    var an=(lastRefl&&lastRefl.analysis)||{};
+
+    var subjects=(data.uni&&data.uni.subjects||[]).map(function(s){return s.name;}).join(', ');
+
+    // ── Build context string ─────────────────────────────────────────────────
+    var ctx='WHO: Jayden — TAFE Melbourne accounting student. Subjects: '+subjects+'.\n';
+
+    if(workedYesterday) ctx+='WORK: Had a GoTab shift yesterday — energy may be lower today.\n';
+    if(workingToday)    ctx+='WORK: GoTab shift today.\n';
+
+    ctx+='\nCALENDAR TODAY:\n'+(nonWorkEvs.length>0?nonWorkEvs.map(function(ev){return'- '+ev.title+(ev.time?' at '+ev.time:'');}).join('\n'):'No events today')+'\n';
+
+    if(upcomingA.length>0){
+      ctx+='\nASSESSMENTS DUE SOON:\n';
+      upcomingA.forEach(function(a){ctx+='- '+a.subject+' '+a.name+' in '+daysBetween(a.date)+'d\n';});
+    }
+
+    if(overdueTasks.length>0){
+      ctx+='\nOVERDUE: '+overdueTasks.map(function(t){return t.name;}).join(', ')+'\n';
+    } else if(urgentTasks.length>0){
+      ctx+='\nURGENT TASKS: '+urgentTasks.slice(0,3).map(function(t){return t.name;}).join(', ')+'\n';
+    }
+
+    if(nextGym){
+      var gymLine='Next: '+nextGym.name+(nextGym.focus?' ('+nextGym.focus+')':'');
+      if(daysSinceGym===0) gymLine+=' — logged today';
+      else if(daysSinceGym===1) gymLine+=' — last session yesterday';
+      else if(daysSinceGym!==null) gymLine+=' — '+daysSinceGym+'d since last session';
+      ctx+='\nGYM: '+gymLine+'\n';
+    }
+    if(!bwThisWeek) ctx+='GYM: Body weight not yet logged this week.\n';
+
+    if(lastRefl&&an.dominantPattern){
+      var reflDate=new Date(lastRefl.date).toLocaleDateString('en-AU',{day:'numeric',month:'short'});
+      ctx+='\nLAST REFLECTION ('+reflDate+'):\n';
+      ctx+='  Pattern identified: '+an.dominantPattern+'\n';
+      if(an.recommendation) ctx+='  Recommendation: '+an.recommendation+'\n';
+      if(recentRefls.length>=2&&an.patternHistory) ctx+='  Trend: '+an.patternHistory+'\n';
+    }
+
+    // ── Prompt ───────────────────────────────────────────────────────────────
+    var prompt='You are Jayden\'s personal coach. You know him — TAFE accounting student, works GoTab shifts, trains at the gym, does weekly reflections.\n\n'+ctx+'\nWrite a personalised morning check-in. Exactly 3 lines:\nLine 1: Acknowledge his specific day — name actual assessments, work, or events if present\nLine 2: One concrete suggestion tied to his context (if reflection data present, connect to the identified pattern or recommendation)\nLine 3: A question that feels personal to his actual situation — not generic\n\nRules: under 65 words. Use his name once. Warm and direct — not cheesy. Plain lines, no bullets or numbers.';
+
+    fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='+key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.75}})})
       .then(function(r){if(!r.ok)throw new Error('Gemini '+r.status);return r.json();})
       .then(function(json){
         var text=json.candidates[0].content.parts[0].text;
