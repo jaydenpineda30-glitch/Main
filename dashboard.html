@@ -1053,6 +1053,8 @@ function App(){
   const [capturesSearch,setCapturesSearch]=useState("");
   const [expandedCapture,setExpandedCapture]=useState(null);
   const [expandedRefl,setExpandedRefl]=useState(null);
+  const [editCaptureData,setEditCaptureData]=useState(null);
+  const [editCaptureTagStr,setEditCaptureTagStr]=useState("");
   const [editTaskId,setEditTaskId]=useState(null);
   const [editTaskForm,setEditTaskForm]=useState({});
   const [gymDraftBanner,setGymDraftBanner]=useState(false);
@@ -1595,6 +1597,31 @@ function App(){
       setCaptureLoading(false);
       showToast("Capture failed: "+(e.message||"Check your Gemini API key in settings."),"error");
     });
+  }
+
+  function openEditCapture(c,ev){
+    if(ev)ev.stopPropagation();
+    setEditCaptureData({...c});
+    setEditCaptureTagStr((c.tags||[]).join(", "));
+  }
+  function saveEditCapture(){
+    if(!editCaptureData||!window._currentUser||!window._db)return;
+    var tagsArr=editCaptureTagStr.split(",").map(function(t){return t.trim().toLowerCase();}).filter(Boolean);
+    _db.collection('users').doc(window._currentUser.uid).collection('captures').doc(editCaptureData.id).update({
+      title:editCaptureData.title||"",
+      content:editCaptureData.content||"",
+      formula:editCaptureData.formula||"",
+      example:editCaptureData.example||"",
+      tags:tagsArr,
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+    }).then(function(){
+      setCapturesData(function(prev){return prev.map(function(c){
+        if(c.id!==editCaptureData.id)return c;
+        return{...c,title:editCaptureData.title,content:editCaptureData.content,formula:editCaptureData.formula,example:editCaptureData.example,tags:tagsArr};
+      });});
+      showToast("Capture updated — will re-export on next sync","success");
+      setEditCaptureData(null);
+    }).catch(function(e){showToast("Save failed: "+e.message,"error");});
   }
 
   function nearestHalfHour(){
@@ -2321,6 +2348,9 @@ function App(){
                       {c.formula&&<div style={{padding:"8px 12px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,fontSize:11,color:T.accent,fontFamily:"monospace",marginBottom:8}}>{c.formula}</div>}
                       {c.example&&<div style={{padding:"8px 12px",borderRadius:8,background:"rgba(105,240,174,0.06)",border:"0.5px solid rgba(105,240,174,0.2)",fontSize:11,color:T.text2,lineHeight:1.6,marginBottom:8}}><span style={{fontWeight:600,color:T.success}}>Example: </span>{c.example}</div>}
                       {c.tags&&c.tags.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:6}}>{c.tags.map(function(tag){return<span key={tag} style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.bg3,color:T.text3}}>#{tag}</span>;})}</div>}
+                      <div style={{display:"flex",justifyContent:"flex-end",marginTop:12,paddingTop:10,borderTop:"0.5px solid "+T.border}}>
+                        <button onClick={function(ev){openEditCapture(c,ev);}} style={{padding:"5px 14px",borderRadius:8,border:"0.5px solid rgba(199,125,255,0.3)",background:"rgba(199,125,255,0.08)",color:T.accent,cursor:"pointer",fontSize:11,fontWeight:600}}>✏ Edit</button>
+                      </div>
                     </div>}
                   </div>
                 );
@@ -2579,6 +2609,50 @@ function App(){
             {captureResult.tags&&captureResult.tags.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:8}}>{captureResult.tags.map(function(tag){return<span key={tag} style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.bg3,color:T.text3}}>#{tag}</span>;})}</div>}
             <button style={{marginTop:14,padding:"8px 18px",borderRadius:8,border:"none",background:"linear-gradient(135deg,#7b2fff,#c77dff)",color:"#fff",cursor:"pointer",fontSize:12,fontWeight:600}} onClick={function(){setShowCapture(false);setCaptureResult(null);}}>Done</button>
           </div>}
+        </div>
+      </div>}
+
+      {/* ── Edit Capture modal ── */}
+      {editCaptureData&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.85)",backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:220,padding:mob?"0":"16px"}} onClick={function(){setEditCaptureData(null);}}>
+        <div style={{background:"rgba(14,16,40,0.98)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 36px":"24px",width:mob?"100%":"520px",maxWidth:"100%",border:"0.5px solid rgba(199,125,255,0.3)",boxShadow:"0 8px 40px rgba(0,0,0,0.7)",maxHeight:mob?"90vh":"80vh",overflowY:"auto"}} onClick={function(e){e.stopPropagation();}}>
+          {mob&&<div style={{width:36,height:4,borderRadius:2,background:"rgba(255,255,255,0.2)",margin:"0 auto 20px"}}/>}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:18}}>
+            <span style={{fontSize:16}}>✏</span>
+            <div style={{fontSize:15,fontWeight:700,color:T.text}}>Edit capture</div>
+            <div style={{marginLeft:"auto",padding:"2px 8px",borderRadius:99,fontSize:10,fontWeight:700,background:editCaptureData.type==="learning"?T.accentBg:editCaptureData.type==="reflection"?"rgba(255,209,102,0.15)":T.bg3,color:editCaptureData.type==="learning"?T.accent:editCaptureData.type==="reflection"?T.warn:T.text2}}>{editCaptureData.type||"thought"}</div>
+          </div>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Title</div>
+            <input value={editCaptureData.title||""} onChange={function(ev){setEditCaptureData(function(p){return{...p,title:ev.target.value};});}} style={{...inp,padding:"9px 12px",fontSize:13,width:"100%"}} placeholder="Title..."/>
+          </div>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Content</div>
+            <textarea rows={5} value={editCaptureData.content||""} onChange={function(ev){setEditCaptureData(function(p){return{...p,content:ev.target.value};});}} style={{width:"100%",background:"rgba(255,255,255,0.05)",border:"0.5px solid rgba(199,125,255,0.2)",borderRadius:8,padding:"9px 12px",color:T.text,fontSize:13,lineHeight:1.7,resize:"vertical",fontFamily:"inherit",outline:"none"}} placeholder="Content..."/>
+          </div>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Formula <span style={{color:T.text3,fontWeight:400}}>(optional)</span></div>
+            <input value={editCaptureData.formula||""} onChange={function(ev){setEditCaptureData(function(p){return{...p,formula:ev.target.value};});}} style={{...inp,padding:"9px 12px",fontSize:12,fontFamily:"monospace",width:"100%"}} placeholder="e.g. Revenue – Expenses = Profit"/>
+          </div>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Example <span style={{color:T.text3,fontWeight:400}}>(optional)</span></div>
+            <input value={editCaptureData.example||""} onChange={function(ev){setEditCaptureData(function(p){return{...p,example:ev.target.value};});}} style={{...inp,padding:"9px 12px",fontSize:13,width:"100%"}} placeholder="A real-world example..."/>
+          </div>
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Tags <span style={{color:T.text3,fontWeight:400}}>(comma separated)</span></div>
+            <input value={editCaptureTagStr} onChange={function(ev){setEditCaptureTagStr(ev.target.value);}} style={{...inp,padding:"9px 12px",fontSize:13,width:"100%"}} placeholder="e.g. accounting, tax, gst"/>
+          </div>
+          <div style={{display:"flex",gap:8,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
+            {mob
+              ?<React.Fragment>
+                <button style={{...btnP,padding:"13px",fontSize:14,width:"100%",borderRadius:10}} onClick={saveEditCapture}>Save changes</button>
+                <button style={{...btn,padding:"11px",fontSize:13,width:"100%",borderRadius:10,textAlign:"center"}} onClick={function(){setEditCaptureData(null);}}>Cancel</button>
+              </React.Fragment>
+              :<React.Fragment>
+                <button style={btnP} onClick={saveEditCapture}>Save changes</button>
+                <button style={btn} onClick={function(){setEditCaptureData(null);}}>Cancel</button>
+              </React.Fragment>
+            }
+          </div>
         </div>
       </div>}
 
