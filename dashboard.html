@@ -1055,6 +1055,7 @@ function App(){
   const [expandedRefl,setExpandedRefl]=useState(null);
   const [editCaptureData,setEditCaptureData]=useState(null);
   const [editCaptureTagStr,setEditCaptureTagStr]=useState("");
+  const [appVersion,setAppVersion]=useState(null);
   const [editTaskId,setEditTaskId]=useState(null);
   const [editTaskForm,setEditTaskForm]=useState({});
   const [gymDraftBanner,setGymDraftBanner]=useState(false);
@@ -1297,6 +1298,12 @@ function App(){
   },[geminiKey,gcalSelectedIds,gcalExcludedIds]);
   // Start health monitor (runs checks every 30s)
   useEffect(function(){if(window.HealthMonitor){HealthMonitor.start();}return function(){if(window.HealthMonitor)HealthMonitor.stop();};},[]);
+  // Fetch version badge from version.json written by release workflow
+  useEffect(function(){
+    fetch("version.json?_="+Date.now()).then(function(r){return r.ok?r.json():null;}).then(function(d){
+      if(d&&d.version)setAppVersion(d);
+    }).catch(function(){});
+  },[]);
   useEffect(function(){
     if(page!=="Captures"||!window._currentUser||!window._db)return;
     setCapturesLoading(true);
@@ -1908,6 +1915,7 @@ function App(){
             {obsExportStatus==="running"?"⏳ Exporting…":obsExportStatus==="done"?"✓ Exported":"⬆ Obsidian"}
           </button>
           {authUser&&authUser.photoURL&&<img src={authUser.photoURL} alt="" style={{width:22,height:22,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.2)"}}/>}
+          {appVersion&&<span title={"Released "+appVersion.date} style={{fontSize:10,color:T.text3,padding:"2px 7px",borderRadius:99,border:"0.5px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",letterSpacing:0.3,userSelect:"none"}}>{appVersion.version}</span>}
           <button onClick={function(){_auth.signOut();}} style={{padding:"3px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text3,cursor:"pointer",fontSize:11}}>Sign out</button>
         </div>
         {["Dashboard","Uni","Work","Gym","Personal","Finance","Reflection","Captures"].map(function(s){return<button key={s} style={navBtn(page===s)} onClick={function(){setPage(s);}}>{s}</button>;})}
@@ -2039,6 +2047,10 @@ function App(){
               {doneTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneTasks.map(function(t){return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:5,alignItems:"center",opacity:0.45}}><input type="checkbox" checked={true} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,flexShrink:0}}/><div style={{fontSize:11,color:T.text3,textDecoration:"line-through"}}>{t.name}</div></div>);})}</div>}
             </div>
           </div>
+          {appVersion&&<div style={{textAlign:"center",padding:"10px 0 2px",fontSize:10,color:T.text3,opacity:0.5}}>
+            <span title={"Released "+appVersion.date}>{appVersion.version}</span>
+            {" · "}<a href={"https://github.com/jaydenpineda30-glitch/Main/releases"} target="_blank" rel="noreferrer" style={{color:T.text3,textDecoration:"none"}}>patch notes ↗</a>
+          </div>}
         </div>}
 
         {page==="Uni"&&<div>

@@ -40,6 +40,31 @@ jobs:
           echo "$COMMITS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Write version.json
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          DATE="$(date +'%Y-%m-%d')"
+          COMMITS='${{ steps.notes.outputs.commits }}'
+          cat > version.json <<EOF
+          {
+            "version": "$TAG",
+            "date": "$DATE",
+            "short": "$(git rev-parse --short HEAD)"
+          }
+          EOF
+
+      - name: Commit version.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add version.json
+          if git diff --staged --quiet; then
+            echo "version.json unchanged"
+          else
+            git commit -m "chore: bump version to ${{ steps.version.outputs.tag }}"
+            git push
+          fi
+
       - name: Create release
         uses: actions/github-script@v7
         with:
