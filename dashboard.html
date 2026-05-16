@@ -1864,7 +1864,20 @@ function App(){
       {/* System status bar — shows health, online status, logs button */}
       {window.StatusBar&&<StatusBar onOpenPanel={function(){setShowMonitor(true);}}/>}
       {/* Full monitoring panel modal */}
-      {showMonitor&&window.MonitoringPanel&&<MonitoringPanel onClose={function(){setShowMonitor(false);}}/>}
+      {showMonitor&&window.MonitoringPanel&&<MonitoringPanel
+        onClose={function(){setShowMonitor(false);}}
+        settings={{geminiKey:geminiKey,githubPAT:(data.settings&&data.settings.githubPAT)||""}}
+        onSaveSettings={function(s){
+          if(s.geminiKey!==undefined){
+            var k=s.geminiKey.trim();
+            setGeminiKey(k);
+            try{localStorage.setItem('__gemini_key__',k);}catch(_){}
+          }
+          if(s.githubPAT!==undefined){
+            setData(function(p){return{...p,settings:{...(p.settings||{}),githubPAT:s.githubPAT.trim()}};});
+          }
+        }}
+      />}
       {/* Toast notification — auto-dismisses after 3.5s, never blocks interaction */}
       {toast&&<div style={{position:"fixed",bottom:mob?90:28,left:"50%",transform:"translateX(-50%)",
         background:toast.type==="success"?"rgba(105,240,174,0.97)":toast.type==="warn"?"rgba(255,209,102,0.97)":"rgba(255,107,107,0.97)",
@@ -2525,11 +2538,7 @@ function App(){
           </div>
           <div style={{fontSize:11,color:T.text3,marginBottom:16,lineHeight:1.5}}>Paste your unit outline or assessment schedule below. Gemini AI will extract all assessment due dates and add them to your hub.</div>
 
-          {/* Gemini API key */}
-          <div style={{marginBottom:12}}>
-            <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Gemini API key <span style={{color:T.text3,fontWeight:400}}>(saved locally, never sent to our servers)</span></div>
-            <input type="password" style={{...inp,padding:"9px 11px",fontFamily:"monospace",fontSize:12}} placeholder="AIzaSy..." value={geminiKey} onChange={function(ev){var k=ev.target.value.trim();setGeminiKey(k);try{localStorage.setItem('__gemini_key__',k);}catch(_){}}}/>
-          </div>
+          {!geminiKey.trim()&&<div style={{marginBottom:14,padding:"9px 12px",borderRadius:8,background:"rgba(255,209,102,0.08)",border:"0.5px solid rgba(255,209,102,0.25)",fontSize:11,color:T.warn}}>⚠ No Gemini API key set — add it in <button onClick={function(){setShowSyllabusImport(false);setShowMonitor(true);}} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:11,padding:0,fontWeight:600}}>Logs → Settings</button></div>}
 
           {/* Semester start */}
           <div style={{marginBottom:12}}>

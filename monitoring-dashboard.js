@@ -6,11 +6,15 @@
  * Depends on: React (global), error-handler.js, health-monitor.js, network-monitor.js
  * Exposes globals:
  *   window.StatusBar          — compact always-visible status strip
- *   window.MonitoringPanel    — full monitoring panel (logs, analytics, health)
+ *   window.MonitoringPanel    — full monitoring panel (logs, analytics, health, settings)
  *
  * Usage inside JSX (Babel compiled):
  *   <StatusBar onOpenPanel={function(){ setShowMonitor(true); }} />
- *   {showMonitor && <MonitoringPanel onClose={function(){ setShowMonitor(false); }} />}
+ *   {showMonitor && <MonitoringPanel
+ *     onClose={function(){ setShowMonitor(false); }}
+ *     settings={{ geminiKey, githubPAT }}
+ *     onSaveSettings={function(s){ ... }}
+ *   />}
  */
 (function () {
   'use strict';
@@ -20,9 +24,9 @@
     return;
   }
 
-  var useState   = React.useState;
-  var useEffect  = React.useEffect;
-  var useRef     = React.useRef;
+  var useState      = React.useState;
+  var useEffect     = React.useEffect;
+  var useRef        = React.useRef;
   var createElement = React.createElement;
 
   // ── Theme (matches existing dashboard palette) ─────────────────────────────
@@ -142,6 +146,21 @@
         border: '0.5px solid ' + C.border, background: C.bg2, color: C.text2
       }, style || {})
     }, label);
+  }
+
+  function inp(value, onChange, placeholder, type) {
+    return createElement('input', {
+      type: type || 'text',
+      value: value,
+      onChange: onChange,
+      placeholder: placeholder || '',
+      style: {
+        width: '100%', padding: '9px 12px', borderRadius: 8, fontSize: 12,
+        border: '0.5px solid rgba(255,255,255,0.12)',
+        background: 'rgba(255,255,255,0.05)', color: C.text,
+        fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box'
+      }
+    });
   }
 
   // ── StatusBar component ───────────────────────────────────────────────────
@@ -323,33 +342,120 @@
     );
   }
 
+  // ── Settings sub-component ─────────────────────────────────────────────────
+
+  function SettingsTab(props) {
+    var savedSettings = props.settings || {};
+    var formPair = useState({
+      geminiKey: savedSettings.geminiKey || '',
+      githubPAT: savedSettings.githubPAT || ''
+    });
+    var form = formPair[0]; var setForm = formPair[1];
+    var savedPair = useState(false);
+    var justSaved = savedPair[0]; var setJustSaved = savedPair[1];
+
+    // Sync in when the panel first mounts with settings from parent
+    useEffect(function () {
+      setForm({
+        geminiKey: savedSettings.geminiKey || '',
+        githubPAT: savedSettings.githubPAT || ''
+      });
+    }, [savedSettings.geminiKey, savedSettings.githubPAT]);
+
+    function save() {
+      if (props.onSaveSettings) props.onSaveSettings(form);
+      setJustSaved(true);
+      setTimeout(function () { setJustSaved(false); }, 2000);
+    }
+
+    function field(label, hint, key, placeholder, type) {
+      return createElement('div', { style: { marginBottom: 16 } },
+        createElement('div', { style: { fontSize: 11, color: C.text2, marginBottom: 5, fontWeight: 500 } }, label),
+        hint && createElement('div', { style: { fontSize: 10, color: C.text3, marginBottom: 6, lineHeight: 1.5 } }, hint),
+        inp(
+          form[key],
+          function (ev) { setForm(function (f) { var u = {}; u[key] = ev.target.value; return Object.assign({}, f, u); }); },
+          placeholder,
+          type || 'password'
+        )
+      );
+    }
+
+    return createElement('div', null,
+      card(
+        createElement('div', null,
+          sectionTitle('AI'),
+          field(
+            'Gemini API key',
+            'Used for Quick Capture classification, check-ins, and reflections. Stored locally + synced to your account.',
+            'geminiKey',
+            'AIzaSy…'
+          ),
+          createElement('div', { style: { fontSize: 10, color: C.text3, marginTop: -8, marginBottom: 4 } },
+            'Get a free key at ',
+            createElement('a', {
+              href: 'https://aistudio.google.com/app/apikey',
+              target: '_blank',
+              rel: 'noreferrer',
+              style: { color: C.accent, textDecoration: 'none' }
+            }, 'aistudio.google.com ↗')
+          )
+        )
+      ),
+      card(
+        createElement('div', null,
+          sectionTitle('Integrations'),
+          field(
+            'GitHub PAT',
+            'Personal Access Token used by the ⬆ Obsidian button to trigger your export workflow. Needs Actions (write) scope on the obsidian-notes repo.',
+            'githubPAT',
+            'ghp_…'
+          ),
+          createElement('div', { style: { fontSize: 10, color: C.text3, marginTop: -8, marginBottom: 4 } },
+            'Create one at ',
+            createElement('a', {
+              href: 'https://github.com/settings/personal-access-tokens/new',
+              target: '_blank',
+              rel: 'noreferrer',
+              style: { color: C.accent, textDecoration: 'none' }
+            }, 'github.com/settings/tokens ↗')
+          )
+        )
+      ),
+      createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 } },
+        createElement('button', {
+          onClick: save,
+          style: {
+            padding: '9px 20px', borderRadius: 8, border: '1px solid rgba(199,125,255,0.45)',
+            background: 'rgba(199,125,255,0.15)', color: C.accent, cursor: 'pointer',
+            fontSize: 12, fontWeight: 600, boxShadow: '0 0 10px rgba(199,125,255,0.2)'
+          }
+        }, 'Save settings'),
+        justSaved && createElement('span', { style: { fontSize: 11, color: C.success } }, '✓ Saved')
+      )
+    );
+  }
+
   // ── MonitoringPanel (full modal) ──────────────────────────────────────────
 
   /**
    * Full monitoring panel — show as a modal overlay.
-   * Props: { onClose }
+   * Props: { onClose, settings, onSaveSettings }
    */
   function MonitoringPanel(props) {
-    var health  = useHealthStatus();
-    var net     = useNetworkStatus();
-    var logs    = useErrorFeed();
-    var tabPair = useState('logs');
-    var tab     = tabPair[0]; var setTab = tabPair[1];
+    var health     = useHealthStatus();
+    var net        = useNetworkStatus();
+    var logs       = useErrorFeed();
+    var tabPair    = useState('logs');
+    var tab        = tabPair[0]; var setTab = tabPair[1];
     var filterPair = useState('all');
-    var filter  = filterPair[0]; var setFilter = filterPair[1];
+    var filter     = filterPair[0]; var setFilter = filterPair[1];
 
-    var uptime  = 100; // uptime tracking not implemented — show 100% as default
-
-    var TABS = ['logs', 'health', 'analytics'];
+    var TABS = ['logs', 'health', 'analytics', 'settings'];
 
     var filteredLogs = filter === 'all'
       ? logs
       : logs.filter(function (l) { return l.severity === filter; });
-
-    function handleSync() {
-      if (window.NetworkMonitor) NetworkMonitor.replayQueue();
-      if (window.HealthMonitor)  HealthMonitor.runChecks();
-    }
 
     return createElement('div', {
       style: {
@@ -380,15 +486,11 @@
           createElement('div', null,
             createElement('div', { style: { fontSize: 14, fontWeight: 700, color: C.text } }, '📊 System Monitor'),
             createElement('div', { style: { fontSize: 10, color: C.text3, marginTop: 2 } },
-              'Uptime: ' + uptime + '% · ' +
               (net.online ? 'Online' : 'Offline') +
-              (net.queueSize > 0 ? ' · ' + net.queueSize + ' pending' : '')
+              (net.queueSize > 0 ? ' · ' + net.queueSize + ' pending' : ' · All synced')
             )
           ),
-          createElement('div', { style: { display: 'flex', gap: 8 } },
-            btn('↻ Sync now', handleSync, { color: C.accent, borderColor: 'rgba(199,125,255,0.3)' }),
-            btn('✕', props.onClose)
-          )
+          btn('✕', props.onClose)
         ),
 
         // Tabs
@@ -396,7 +498,7 @@
           style: {
             display: 'flex', gap: 0,
             borderBottom: '0.5px solid ' + C.border,
-            padding: '0 18px'
+            padding: '0 18px', overflowX: 'auto'
           }
         },
           TABS.map(function (t) {
@@ -408,7 +510,8 @@
                 fontSize: 12, cursor: 'pointer', fontWeight: active ? 700 : 400,
                 color: active ? C.accent : C.text3,
                 borderBottom: active ? '2px solid ' + C.accent : '2px solid transparent',
-                marginBottom: -1, textTransform: 'capitalize'
+                marginBottom: -1, textTransform: 'capitalize', whiteSpace: 'nowrap',
+                flexShrink: 0
               }
             }, t);
           })
@@ -419,7 +522,6 @@
 
           // ── LOGS tab ──
           tab === 'logs' && createElement('div', null,
-            // Filter row
             createElement('div', { style: { display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' } },
               ['all', 'critical', 'error', 'warn', 'info'].map(function (f) {
                 return createElement('button', {
@@ -439,7 +541,6 @@
               : filteredLogs.slice().reverse().map(function (l) {
                   return createElement(LogEntry, { key: l.id, log: l });
                 }),
-            // Actions row
             filteredLogs.length > 0 && createElement('div', {
               style: { display: 'flex', gap: 8, marginTop: 16, paddingTop: 12, borderTop: '0.5px solid ' + C.border }
             },
@@ -454,6 +555,7 @@
             card(
               createElement('div', null,
                 sectionTitle('System checks'),
+                createElement('div', { style: { fontSize: 10, color: C.text3, marginBottom: 10 } }, 'Auto-refreshes every 30 seconds'),
                 createElement(HealthChecks, { health: health })
               )
             ),
@@ -466,26 +568,31 @@
                       createElement('div', { style: { fontSize: 12, color: C.warn, marginBottom: 8 } },
                         net.queueSize + ' operation(s) waiting to sync'
                       ),
-                      btn('Sync now', handleSync,
-                        { color: C.accent, borderColor: 'rgba(199,125,255,0.3)' })
+                      btn('↻ Retry now', function () {
+                        if (window.NetworkMonitor) NetworkMonitor.replayQueue();
+                      }, { color: C.accent, borderColor: 'rgba(199,125,255,0.3)' })
                     )
               )
-            ),
-            btn('Run health check now', function () { HealthMonitor && HealthMonitor.runChecks(); },
-              { marginTop: 4, color: C.text2 })
+            )
           ),
 
           // ── ANALYTICS tab ──
           tab === 'analytics' && createElement('div', null,
             card(createElement(Analytics, null))
-          )
+          ),
+
+          // ── SETTINGS tab ──
+          tab === 'settings' && createElement(SettingsTab, {
+            settings: props.settings || {},
+            onSaveSettings: props.onSaveSettings
+          })
         )
       )
     );
   }
 
   // ── Export ─────────────────────────────────────────────────────────────────
-  window.StatusBar        = StatusBar;
-  window.MonitoringPanel  = MonitoringPanel;
+  window.StatusBar       = StatusBar;
+  window.MonitoringPanel = MonitoringPanel;
 
 })();
