@@ -1,0 +1,55 @@
+name: Patch Notes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dashboard.html'
+      - 'gemini-service.js'
+      - 'ollama-service.js'
+      - 'gcal-sync.js'
+      - 'export-to-obsidian.js'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate version tag
+        id: version
+        run: echo "tag=v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Build release notes from commits
+        id: notes
+        run: |
+          # Get commits since last tag, or last 10 if no tags exist
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            COMMITS=$(git log --oneline -10 --pretty=format:"- %s")
+          else
+            COMMITS=$(git log ${LAST_TAG}..HEAD --oneline --pretty=format:"- %s")
+          fi
+          echo "commits<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: '${{ steps.version.outputs.tag }}',
+              name: 'Dashboard ${{ steps.version.outputs.tag }}',
+              body: `## What changed\n\n${{ steps.notes.outputs.commits }}\n\n---\n*Auto-generated on push to main*`,
+              draft: false,
+              prerelease: false
+            });

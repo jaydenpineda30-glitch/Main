@@ -1070,6 +1070,7 @@ function App(){
   const [modal,setModal]=useState(null);
   const [mForm,setMForm]=useState({});
   const [syncStatus,setSyncStatus]=useState("loading");
+  const [obsExportStatus,setObsExportStatus]=useState("idle"); // idle | running | done | error
   const [authUser,setAuthUser]=useState(null);
   const [authLoading,setAuthLoading]=useState(true);
   const _fbReady=useRef(false);
@@ -1585,7 +1586,8 @@ function App(){
           subject:result.subject||"",
           tags:result.tags||[],
           rawInput:captureText,
-          date:firebase.firestore.FieldValue.serverTimestamp()
+          date:firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt:firebase.firestore.FieldValue.serverTimestamp()
         }).catch(function(e){console.error("[Capture] Firestore write failed:",e.message);});
       }
       setCaptureText("");
@@ -1859,7 +1861,25 @@ function App(){
         </div>
         <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
           <button onClick={exportData} title="Download all your data as JSON backup" style={{padding:"3px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text3,cursor:"pointer",fontSize:11}}>⬇ Export</button>
-          <button onClick={downloadObsidianExport} title="Download export file for Obsidian" style={{padding:"3px 10px",borderRadius:8,border:"0.5px solid rgba(199,125,255,0.3)",background:"rgba(199,125,255,0.08)",color:T.accent,cursor:"pointer",fontSize:11}}>⬇ Obsidian</button>
+          <button
+            disabled={obsExportStatus==="running"}
+            title="Trigger Obsidian export now via GitHub Actions"
+            onClick={function(){
+              var pat=(data.settings&&data.settings.githubPAT||"").trim();
+              if(!pat){showToast("GitHub PAT not set — add it in Settings.","error");return;}
+              setObsExportStatus("running");
+              fetch("https://api.github.com/repos/jaydenpineda30-glitch/obsidian-notes/actions/workflows/export.yml/dispatches",{
+                method:"POST",
+                headers:{"Authorization":"Bearer "+pat,"Content-Type":"application/json","Accept":"application/vnd.github+json"},
+                body:JSON.stringify({ref:"main"})
+              }).then(function(r){
+                if(r.status===204){setObsExportStatus("done");showToast("Export triggered — notes will appear in Obsidian in ~30s","success");setTimeout(function(){setObsExportStatus("idle");},4000);}
+                else{setObsExportStatus("error");showToast("Export trigger failed (status "+r.status+")","error");setTimeout(function(){setObsExportStatus("idle");},3000);}
+              }).catch(function(){setObsExportStatus("error");showToast("Export trigger failed — check connection","error");setTimeout(function(){setObsExportStatus("idle");},3000);});
+            }}
+            style={{padding:"3px 10px",borderRadius:8,border:"0.5px solid rgba(199,125,255,0.3)",background:"rgba(199,125,255,0.08)",color:obsExportStatus==="running"?T.text3:obsExportStatus==="done"?T.success:T.accent,cursor:obsExportStatus==="running"?"default":"pointer",fontSize:11}}>
+            {obsExportStatus==="running"?"⏳ Exporting…":obsExportStatus==="done"?"✓ Exported":"⬆ Obsidian"}
+          </button>
           {authUser&&authUser.photoURL&&<img src={authUser.photoURL} alt="" style={{width:22,height:22,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.2)"}}/>}
           <button onClick={function(){_auth.signOut();}} style={{padding:"3px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text3,cursor:"pointer",fontSize:11}}>Sign out</button>
         </div>
