@@ -23,8 +23,9 @@
   }
 
   function extractJson(text) {
+    try { return JSON.parse(text.trim()); } catch (_) {}
     var match = text.trim().match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON found in Gemini response');
+    if (!match) throw new Error('No JSON in Gemini response. Got: ' + text.slice(0, 120));
     return JSON.parse(match[0]);
   }
 
@@ -36,7 +37,7 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.4, maxOutputTokens: 600 }
+        generationConfig: { temperature: 0.4, maxOutputTokens: 1500, responseMimeType: 'application/json' }
       })
     }).then(function (r) {
       if (!r.ok) return r.json().then(function(e){ throw new Error('Gemini ' + r.status + ': ' + ((e.error&&e.error.message)||r.statusText)); });
