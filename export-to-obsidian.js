@@ -1,51 +1,111 @@
 /**
  * export-to-obsidian.js
- * Reads captures and reflections directly from Firestore and writes .md files
- * into the Obsidian vault. Runs fully automated — no browser, no JSON download.
+ * Reads captures + reflections from Firestore, enhances each capture via Gemini
+ * (maturity, topic cluster, wikilinks, related notes), then writes .md files.
  *
- * Usage:    node export-to-obsidian.js
- * Schedule: Windows Task Scheduler — see README or run setup-scheduler.ps1
- *
- * Requires: service account JSON in the same folder as this script.
- *           Set SERVICE_ACCOUNT_PATH below if the filename differs.
+ * Local usage:  node export-to-obsidian.js
+ * GitHub Actions: set FIREBASE_SERVICE_ACCOUNT, GEMINI_API_KEY, VAULT_PATH env vars
  */
 
 const fs    = require('fs');
 const path  = require('path');
 const admin = require('firebase-admin');
 
-// ── Config ────────────────────────────────────────────────────────────────────
+// ── Config ─────────────────────────────────────────────────────────────────────
 
-const UID   = 'hG4uA1WxQJdQ6yyZtvrrh8WyV2v2';   // Jayden's Firebase UID
-const VAULT = 'C:\\Users\\Jayde\\OneDrive\\Documents\\Obsidian Vault';
+const UID  = 'hG4uA1WxQJdQ6yyZtvrrh8WyV2v2';
+const VAULT = process.env.VAULT_PATH
+  || 'C:\\Users\\Jayde\\OneDrive\\Documents\\Obsidian Vault';
+
 const CAPTURES_DIR    = path.join(VAULT, 'Dashboard', 'Captures');
 const REFLECTIONS_DIR = path.join(VAULT, 'Dashboard', 'Reflections');
 
-// Auto-find the service account JSON in the same folder
-function findServiceAccount() {
+const TOPICS = [
+  'Accounting', 'Tax', 'Finance', 'Fitness',
+  'University', 'Work', 'Personal', 'Technology'
+];
+
+// ── Service account: env var (Actions) or local JSON file ──────────────────────
+
+function getServiceAccount() {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  }
   var files = fs.readdirSync(__dirname).filter(function(f) {
     return f.endsWith('.json') && f !== 'package.json' && f !== 'package-lock.json';
   });
   if (files.length === 0) throw new Error('No service account JSON found in ' + __dirname);
-  if (files.length > 1) {
-    var sa = files.find(function(f) { return f.includes('firebase') || f.includes('service'); });
-    if (sa) return path.join(__dirname, sa);
-  }
-  return path.join(__dirname, files[0]);
+  var sa = files.find(function(f) { return f.includes('firebase') || f.includes('service'); }) || files[0];
+  return require(path.join(__dirname, sa));
 }
 
-// ── Init Firebase ─────────────────────────────────────────────────────────────
-
-var serviceAccountPath = findServiceAccount();
-console.log('Using service account: ' + path.basename(serviceAccountPath));
-
-admin.initializeApp({
-  credential: admin.credential.cert(require(serviceAccountPath))
-});
-
+admin.initializeApp({ credential: admin.credential.cert(getServiceAccount()) });
 var db = admin.firestore();
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Gemini enhancement ─────────────────────────────────────────────────────────
+
+async function enhanceCapture(capture, allCaptures, geminiKey) {
+  if (!geminiKey) return {};
+
+  var otherTitles = allCaptures
+    .filter(function(c) {
+      return (c.title || c.rawInput) !== (capture.title || capture.rawInput);
+    })
+    .map(function(c) { return c.title || c.rawInput; })
+    .filter(Boolean)
+    .slice(0, 30);
+
+  var prompt = [
+    'Analyze this Obsidian note for a personal second brain. Return JSON only — no markdown, no explanation.',
+    '',
+    'Note:',
+    'Title: ' + (capture.title || capture.rawInput || 'Untitled'),
+    'Type: ' + (capture.type || 'thought'),
+    'Subject: ' + (capture.subject || ''),
+    'Content: ' + (capture.content || capture.rawInput || '').slice(0, 1000),
+    '',
+    'Other notes already in vault: ' + (otherTitles.length ? otherTitles.join(' | ') : 'none yet'),
+    '',
+    'Valid topics: ' + TOPICS.join(', '),
+    '',
+    'Return exactly this JSON shape:',
+    '{',
+    '  "maturity": "seedling" | "growing" | "evergreen",',
+    '  "topic": "<one topic from the valid list>",',
+    '  "wikilinks": ["[[ConceptA]]", "[[ConceptB]]"],',
+    '  "related": ["Exact title of related note"]',
+    '}',
+    '',
+    'Rules:',
+    '- maturity: seedling = brief thought, growing = partially explained, evergreen = fully explained with examples',
+    '- topic: pick the single best match from the valid list only',
+    '- wikilinks: 2-4 key concepts inside the content worth their own note (not the title itself)',
+    '- related: 0-3 titles from "Other notes in vault" that genuinely connect to this note'
+  ].join('\n');
+
+  try {
+    var res = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + geminiKey,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: 'application/json' }
+        })
+      }
+    );
+    var data = await res.json();
+    var text = (data.candidates && data.candidates[0] && data.candidates[0].content &&
+      data.candidates[0].content.parts && data.candidates[0].content.parts[0].text) || '{}';
+    return JSON.parse(text);
+  } catch (e) {
+    console.warn('  Gemini enhancement skipped for "' + (capture.title || capture.rawInput) + '": ' + e.message);
+    return {};
+  }
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 function safeFilename(str) {
   return (str || 'Untitled').replace(/[\\/:*?"<>|]/g, '-').slice(0, 80).trim();
@@ -71,18 +131,23 @@ function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
-// ── Capture → markdown ────────────────────────────────────────────────────────
+// ── Capture → markdown ─────────────────────────────────────────────────────────
 
-function captureToMd(c) {
+function captureToMd(c, enhancement) {
+  var enh   = enhancement || {};
   var date  = datePrefix(c.date);
   var title = c.title || c.rawInput || 'Capture';
-  var tags  = (c.tags || []).concat(['capture', c.type || 'thought']).filter(Boolean);
+  var baseTags = (c.tags || []).concat(['capture', c.type || 'thought']).filter(Boolean);
   var lines = [];
 
   lines.push('---');
   lines.push('type: ' + (c.type || 'thought'));
-  if (c.subject) lines.push('subject: ' + c.subject);
-  lines.push('tags: [' + tags.map(function(t){ return t.replace(/\s+/g,'-').toLowerCase(); }).join(', ') + ']');
+  if (c.subject)      lines.push('subject: ' + c.subject);
+  if (enh.topic)      lines.push('topic: ' + enh.topic);
+  if (enh.maturity)   lines.push('maturity: ' + enh.maturity);
+  lines.push('tags: [' + baseTags.map(function(t) {
+    return t.replace(/\s+/g, '-').toLowerCase();
+  }).join(', ') + ']');
   lines.push('date: ' + date);
   lines.push('source: dashboard');
   lines.push('---');
@@ -93,12 +158,32 @@ function captureToMd(c) {
   if (c.content)  lines.push(c.content);
   if (c.formula)  { lines.push(''); lines.push('> **Formula:** ' + c.formula); }
   if (c.example)  { lines.push(''); lines.push('**Example:** ' + c.example); }
-  if (c.rawInput && c.rawInput !== title) { lines.push(''); lines.push('---'); lines.push('*Original input: ' + c.rawInput + '*'); }
+
+  // Wikilinks
+  if (enh.wikilinks && enh.wikilinks.length > 0) {
+    lines.push('');
+    lines.push('**Key concepts:** ' + enh.wikilinks.join('  '));
+  }
+
+  // Related notes
+  if (enh.related && enh.related.length > 0) {
+    lines.push('');
+    lines.push('**Related:**');
+    enh.related.forEach(function(r) {
+      lines.push('- [[' + r + ']]');
+    });
+  }
+
+  if (c.rawInput && c.rawInput !== title) {
+    lines.push('');
+    lines.push('---');
+    lines.push('*Original input: ' + c.rawInput + '*');
+  }
 
   return { filename: date + ' ' + safeFilename(title) + '.md', content: lines.join('\n') };
 }
 
-// ── Reflection → markdown ─────────────────────────────────────────────────────
+// ── Reflection → markdown ──────────────────────────────────────────────────────
 
 var AREA_LABELS = ['Academic load', 'Work situation', 'Physical health', 'Work-life balance', 'Personal growth'];
 
@@ -111,7 +196,7 @@ function reflectionToMd(r) {
   lines.push('---');
   lines.push('type: reflection');
   lines.push('date: ' + date);
-  if (an.dominantPattern) lines.push('pattern: "' + an.dominantPattern.replace(/"/g,"'") + '"');
+  if (an.dominantPattern) lines.push('pattern: "' + an.dominantPattern.replace(/"/g, "'") + '"');
   lines.push('tags: [reflection, weekly-reflection]');
   lines.push('---');
   lines.push('');
@@ -142,46 +227,66 @@ function reflectionToMd(r) {
   return { filename: date + ' Weekly Reflection.md', content: lines.join('\n') };
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
+// ── Main ───────────────────────────────────────────────────────────────────────
 
 ensureDir(CAPTURES_DIR);
 ensureDir(REFLECTIONS_DIR);
 
-var capWritten = 0, capSkipped = 0, reflWritten = 0, reflSkipped = 0;
-
 Promise.all([
   db.collection('users').doc(UID).collection('captures').get(),
   db.collection('users').doc(UID).get()
-]).then(function(results) {
+]).then(async function(results) {
   var capSnap  = results[0];
   var userSnap = results[1];
 
-  // Write captures
-  capSnap.forEach(function(doc) {
-    var result = captureToMd(doc.data());
-    var dest   = path.join(CAPTURES_DIR, result.filename);
-    if (fs.existsSync(dest)) { capSkipped++; return; }
-    fs.writeFileSync(dest, result.content, 'utf8');
-    capWritten++;
-  });
+  // Get Gemini key: env var → Firestore settings
+  var userData   = userSnap.data() || {};
+  var geminiKey  = (process.env.GEMINI_API_KEY || (userData.settings && userData.settings.geminiKey) || '').trim();
+  if (!geminiKey) console.log('  No Gemini key found — skipping enhancement');
 
-  // Write reflections from dashData
-  var dashData    = (userSnap.data() || {}).dashData || {};
-  var reflections = dashData.reflections || [];
+  // Build full captures list for cross-referencing
+  var allCaptures = [];
+  capSnap.forEach(function(doc) { allCaptures.push(doc.data()); });
+
+  var capWritten = 0, capSkipped = 0, reflWritten = 0, reflSkipped = 0;
+
+  // Write captures
+  for (var i = 0; i < allCaptures.length; i++) {
+    var c      = allCaptures[i];
+    var title  = c.title || c.rawInput || 'Capture';
+    var dest   = path.join(CAPTURES_DIR, datePrefix(c.date) + ' ' + safeFilename(title) + '.md');
+
+    // Skip if file exists AND hasn't been edited since last export
+    if (fs.existsSync(dest)) {
+      var fileMtime  = fs.statSync(dest).mtimeMs;
+      var updatedAt  = c.updatedAt ? (c.updatedAt.toDate ? c.updatedAt.toDate().getTime() : c.updatedAt._seconds * 1000) : 0;
+      if (!updatedAt || updatedAt <= fileMtime) { capSkipped++; continue; }
+      console.log('  ~ Updated capture (re-exporting): ' + title);
+    }
+
+    var enhancement = await enhanceCapture(c, allCaptures, geminiKey);
+    var result      = captureToMd(c, enhancement);
+    fs.writeFileSync(path.join(CAPTURES_DIR, result.filename), result.content, 'utf8');
+    console.log('  + Capture: ' + result.filename);
+    capWritten++;
+  }
+
+  // Write reflections
+  var reflections = (userData.dashData && userData.dashData.reflections) || [];
   reflections.forEach(function(r) {
     var result = reflectionToMd(r);
     var dest   = path.join(REFLECTIONS_DIR, result.filename);
     if (fs.existsSync(dest)) { reflSkipped++; return; }
     fs.writeFileSync(dest, result.content, 'utf8');
+    console.log('  + Reflection: ' + result.filename);
     reflWritten++;
   });
 
   console.log('');
   console.log('Done!  ' + new Date().toLocaleString('en-AU'));
-  console.log('  Captures:    ' + capWritten + ' written, ' + capSkipped + ' already existed');
-  console.log('  Reflections: ' + reflWritten + ' written, ' + reflSkipped + ' already existed');
+  console.log('  Captures:    ' + capWritten + ' written, ' + capSkipped + ' skipped');
+  console.log('  Reflections: ' + reflWritten + ' written, ' + reflSkipped + ' skipped');
   console.log('  Vault: ' + VAULT);
-  console.log('');
 
 }).catch(function(e) {
   console.error('Export failed:', e.message);
