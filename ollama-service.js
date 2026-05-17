@@ -71,11 +71,9 @@
     });
   }
 
-  // Try Gemini first, fall back to Ollama, resolve null if both fail
+  // Try Gemini; resolve null if it fails (Ollama removed — Gemini is primary)
   function generate(prompt) {
-    return geminiGenerate(prompt).catch(function () {
-      return ollamaGenerate(prompt);
-    }).catch(function (e) {
+    return geminiGenerate(prompt).catch(function (e) {
       if (window.ErrorHandler) ErrorHandler.warn('AI unavailable: ' + e.message, 'ollama-service');
       return null;
     });

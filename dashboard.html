@@ -386,7 +386,36 @@ function generateCheckinFallback(data){
 }
 
 // AI functions are provided by OllamaService (ollama-service.js)
-// which tries Gemini first, then Ollama, then falls back to local rule-based logic.
+// which tries Gemini first, then falls back to local rule-based logic.
+
+function renderMd(text){
+  if(!text)return null;
+  var lines=text.split('\n');
+  var elements=[];
+  var listItems=[];
+  function flushList(){
+    if(listItems.length>0){
+      elements.push(<ul key={'ul'+elements.length} style={{margin:'4px 0 4px 4px',paddingLeft:14}}>{listItems}</ul>);
+      listItems=[];
+    }
+  }
+  lines.forEach(function(line,i){
+    var trimmed=line.trim();
+    if(!trimmed){flushList();return;}
+    var isBullet=trimmed.startsWith('* ')||trimmed.startsWith('- ');
+    var content=isBullet?trimmed.slice(2):trimmed;
+    var parts=content.split(/\*\*(.*?)\*\*/);
+    var inline=parts.map(function(p,j){return j%2===1?<strong key={j}>{p}</strong>:p;});
+    if(isBullet){
+      listItems.push(<li key={i} style={{marginBottom:1}}>{inline}</li>);
+    }else{
+      flushList();
+      elements.push(<div key={i} style={{marginBottom:2}}>{inline}</div>);
+    }
+  });
+  flushList();
+  return elements;
+}
 
 function Sparkline(props){
   const data=props.data||[];const color=props.color||T.accent;const w=props.width||220;const h=props.height||48;
@@ -599,18 +628,21 @@ function GymSection(props){
   const [editRotForm,setEditRotForm]=useState({rName:"",rFocus:"",exercises:[]});
   const rotation=gymData.rotation||[];const rotLen=rotation.length>0?rotation.length:1;
   const rotIdx=(gymData.rotIdx||0)%rotLen;const nextSess=rotation.length>0?rotation[rotIdx]:null;
-  // On mount: restore draft if one exists for this rotation, otherwise pre-fill from template
+  // On mount (and when rotation data arrives from Firebase): restore draft or pre-fill from template
   useEffect(function(){
     try{
       var draft=JSON.parse(localStorage.getItem('gym_tab_draft')||'null');
       if(draft&&nextSess&&draft.rotId===nextSess.id&&draft.sets&&draft.sets.some(function(r){return r.exercise;})){
-        setWkt(function(w){return{...w,sets:draft.sets};});
+        setWkt(function(w){return w.sets.length>0&&w.sets.some(function(r){return r.exercise;})?w:{...w,sets:draft.sets};});
         return;
       }
     }catch(_){}
     if(!nextSess||!nextSess.exercises||nextSess.exercises.length===0)return;
-    setWkt(function(w){return{...w,sets:nextSess.exercises.map(function(ex,i){return{id:ex.id||i+1,exercise:ex.exercise||"",sets:ex.sets||"",reps:ex.reps||"",weight:ex.weight||""};})};});
-  },[]);
+    setWkt(function(w){
+      if(w.sets.length>0&&w.sets.some(function(r){return r.exercise;}))return w;
+      return{...w,sets:nextSess.exercises.map(function(ex,i){return{id:ex.id||i+1,exercise:ex.exercise||"",sets:ex.sets||"",reps:ex.reps||"",weight:ex.weight||""};})};
+    });
+  },[nextSess?nextSess.id:null]);
   // Auto-save draft to localStorage whenever sets change (protects against phone screen off)
   useEffect(function(){
     if(!nextSess||wkt.sets.length===0)return;
@@ -1956,7 +1988,7 @@ function App(){
               {renderWeek()}
               <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8,paddingTop:6,borderTop:"0.5px solid "+T.border}}>
                 {gcalCalendars.slice(0,6).map(function(cal){return<div key={cal.id} style={{display:"flex",alignItems:"center",gap:3}}><div style={{width:6,height:6,borderRadius:2,background:cal.backgroundColor||"#4285F4"}}/><span style={{fontSize:8,color:T.text3}}>{cal.summary}</span></div>;})}
-                {gcalCalendars.length===0&&<span style={{fontSize:8,color:T.text3}}>Connect Google Calendar to see events</span>}
+                {!gcalConnected&&<span style={{fontSize:8,color:T.text3}}>Connect Google Calendar to see events</span>}
               </div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -2369,7 +2401,7 @@ function App(){
                     </div>
                     <div style={{fontSize:12,fontWeight:isExp?700:500,color:T.text,marginBottom:isExp?8:0}}>{c.title||c.rawInput||""}</div>
                     {isExp&&<div>
-                      <div style={{fontSize:12,color:T.text2,lineHeight:1.8,marginBottom:c.formula?10:0}}>{c.content}</div>
+                      <div style={{fontSize:12,color:T.text2,lineHeight:1.8,marginBottom:c.formula?10:0}}>{renderMd(c.content)}</div>
                       {c.formula&&<div style={{padding:"8px 12px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,fontSize:11,color:T.accent,fontFamily:"monospace",marginBottom:8}}>{c.formula}</div>}
                       {c.example&&<div style={{padding:"8px 12px",borderRadius:8,background:"rgba(105,240,174,0.06)",border:"0.5px solid rgba(105,240,174,0.2)",fontSize:11,color:T.text2,lineHeight:1.6,marginBottom:8}}><span style={{fontWeight:600,color:T.success}}>Example: </span>{c.example}</div>}
                       {c.tags&&c.tags.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:6}}>{c.tags.map(function(tag){return<span key={tag} style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.bg3,color:T.text3}}>#{tag}</span>;})}</div>}

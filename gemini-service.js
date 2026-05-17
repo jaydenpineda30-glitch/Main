@@ -36,7 +36,7 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.4 }
+        generationConfig: { temperature: 0.4, maxOutputTokens: 600 }
       })
     }).then(function (r) {
       if (!r.ok) return r.json().then(function(e){ throw new Error('Gemini ' + r.status + ': ' + ((e.error&&e.error.message)||r.statusText)); });
@@ -57,7 +57,7 @@
       'Classify and expand this note:\n"' + rawText + '"\n\n' +
       'Rules:\n' +
       '- type: "learning" if it mentions learning, understanding, or studying something specific. "thought" for reflections, feelings, or daily observations. "reflection" for self-assessment or week reviews.\n' +
-      '- If type is "learning": expand fully with a clear explanation, formula/steps if applicable, and a short example.\n' +
+      '- If type is "learning": write a clear explanation (max 150 words), a formula/steps if applicable, and a concise example (max 80 words).\n' +
       '- If type is "thought" or "reflection": preserve the essence of what was written without adding information they did not state.\n' +
       '- subject: match to one of these if relevant: ' + SUBJECTS_LIST.join(', ') + '. Use "" if not accounting-related.\n' +
       '- tags: 2-5 lowercase keyword tags.\n' +
