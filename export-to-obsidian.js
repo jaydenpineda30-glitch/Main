@@ -180,7 +180,7 @@ function captureToMd(c, enhancement) {
     lines.push('*Original input: ' + c.rawInput + '*');
   }
 
-  return { filename: date + ' ' + safeFilename(title) + '.md', content: lines.join('\n') };
+  return { filename: safeFilename(title) + '.md', content: lines.join('\n') };
 }
 
 // ── Reflection → markdown ──────────────────────────────────────────────────────
@@ -224,7 +224,7 @@ function reflectionToMd(r) {
     if (an.patternHistory)  { lines.push(''); lines.push('**Trend:** ' + an.patternHistory); }
   }
 
-  return { filename: date + ' Weekly Reflection.md', content: lines.join('\n') };
+  return { filename: 'Weekly Reflection ' + date + '.md', content: lines.join('\n') };
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
@@ -254,7 +254,7 @@ Promise.all([
   for (var i = 0; i < allCaptures.length; i++) {
     var c      = allCaptures[i];
     var title  = c.title || c.rawInput || 'Capture';
-    var dest   = path.join(CAPTURES_DIR, datePrefix(c.date) + ' ' + safeFilename(title) + '.md');
+    var dest   = path.join(CAPTURES_DIR, safeFilename(title) + '.md');
 
     // Skip if file exists AND hasn't been edited since last export
     if (fs.existsSync(dest)) {
