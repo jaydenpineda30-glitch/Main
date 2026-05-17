@@ -23,24 +23,49 @@ Obsidian Vault/
 - Open Claude.ai desktop app → your work project → **Project Instructions**
 - Paste the full contents of `project-instructions.md`
 
-### 2. Save Script
-- Copy `save-work-note.ps1` to somewhere easy: `C:\Users\Jayde\my-project\save-work-note.ps1`
-- Right-click → **Run with PowerShell** (or pin to taskbar)
+### 2. Copy scripts to your machine
+Copy both scripts to `C:\Users\Jayde\my-project\`:
+- `clipboard-watcher.ps1` — runs in background, auto-saves on copy
+- `save-work-note.ps1` — manual fallback if needed
 
-### 3. Optional — Desktop Shortcut
-Right-click desktop → New Shortcut → Target:
-```
-powershell.exe -ExecutionPolicy Bypass -File "C:\Users\Jayde\my-project\save-work-note.ps1"
-```
+### 3. Start the clipboard watcher at login (Task Scheduler)
 
-## Daily Workflow
+Open **Task Scheduler** → Create Basic Task:
+
+| Field | Value |
+|-------|-------|
+| Name | Obsidian Clipboard Watcher |
+| Trigger | When I log on |
+| Action | Start a program |
+| Program | `powershell.exe` |
+| Arguments | `-WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\Users\Jayde\my-project\clipboard-watcher.ps1"` |
+
+Tick **"Run whether user is logged on or not"** → OK.
+
+The watcher starts silently at login with a tray notification confirming it's active.
+
+---
+
+## Daily Workflow (fully automated)
 
 1. Finish a Claude work session
 2. Ask Claude: **"log notes"** or **"save notes"**
-3. Claude outputs one structured note per topic
-4. Select all → Copy
-5. Run `save-work-note.ps1`
-6. Done — notes appear in Obsidian instantly
+3. Claude outputs structured notes — `Ctrl+A` → `Ctrl+C`
+4. Done — notes appear in Obsidian within 2 seconds, Windows notification confirms
+
+No scripts to run. No manual steps.
+
+---
+
+## How It Works
+
+- `clipboard-watcher.ps1` checks your clipboard every 1.5 seconds
+- It only acts when it detects content with `type: work-note` in the frontmatter
+- Multiple notes separated by `---NOTE---` are each saved to their correct folder
+- Duplicate content is skipped silently
+- A Windows tray notification confirms each save
+
+---
 
 ## Feeding Notes Back as Memory
 
@@ -49,4 +74,4 @@ To give Claude access to past notes in future sessions:
 - Upload relevant `.md` files from the vault
 - Claude will reference them automatically in future conversations
 
-Tip: re-upload after every few sessions to keep knowledge current.
+Re-upload every few sessions to keep knowledge current.
