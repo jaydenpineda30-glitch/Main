@@ -19,7 +19,6 @@ const VAULT = process.env.VAULT_PATH
 
 const CAPTURES_DIR    = path.join(VAULT, 'Dashboard', 'Captures');
 const REFLECTIONS_DIR = path.join(VAULT, 'Dashboard', 'Reflections');
-const TICKETS_DIR     = path.join(VAULT, 'Dashboard', 'Tickets');
 
 const TOPICS = [
   'Accounting', 'Tax', 'Finance', 'Fitness',
@@ -272,69 +271,17 @@ function reflectionToMd(r) {
   return { filename: 'Weekly Reflection ' + date + '.md', content: lines.join('\n') };
 }
 
-// ── Ticket → markdown ──────────────────────────────────────────────────────────
-
-function ticketDate(t) {
-  // Tickets store date as ISO string "YYYY-MM-DD" or Firestore Timestamp.
-  if (!t.date) return datePrefix(t.createdAt) !== '0000-00-00' ? datePrefix(t.createdAt) : new Date().toISOString().slice(0, 10);
-  if (typeof t.date === 'string') {
-    var m = t.date.match(/^(\d{4}-\d{2}-\d{2})/);
-    if (m) return m[1];
-  }
-  return datePrefix(t.date);
-}
-
-function ticketToMd(t) {
-  var date  = ticketDate(t);
-  var title = t.title || 'Untitled Ticket';
-  var tags  = (t.tags || []).slice();
-  if (t.category) tags.push(t.category);
-  if (t.status)   tags.push(t.status);
-  tags.push('ticket');
-  // Dedupe + normalize
-  var seen = {};
-  tags = tags
-    .filter(function(x) { return !!x; })
-    .map(function(t) { return String(t).trim().toLowerCase().replace(/\s+/g, '-'); })
-    .filter(function(t) { if (seen[t]) return false; seen[t] = true; return true; });
-
-  var lines = [];
-  lines.push('---');
-  lines.push('type: ticket');
-  lines.push('title: ' + title.replace(/"/g, "'"));
-  lines.push('date: ' + date);
-  if (t.venue)    lines.push('venue: ' + String(t.venue).replace(/"/g, "'"));
-  if (t.operator) lines.push('operator: ' + String(t.operator).replace(/"/g, "'"));
-  if (t.status)   lines.push('status: ' + t.status);
-  if (t.category) lines.push('category: ' + t.category);
-  lines.push('tags: [' + tags.join(', ') + ']');
-  lines.push('source: dashboard');
-  lines.push('---');
-  lines.push('');
-  lines.push('# ' + title);
-  lines.push('');
-  if (t.content) lines.push(t.content);
-
-  return {
-    filename: date + ' ' + safeFilename(title) + '.md',
-    content:  lines.join('\n')
-  };
-}
-
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 ensureDir(CAPTURES_DIR);
 ensureDir(REFLECTIONS_DIR);
-ensureDir(TICKETS_DIR);
 
 Promise.all([
   db.collection('users').doc(UID).collection('captures').get(),
-  db.collection('users').doc(UID).get(),
-  db.collection('users').doc(UID).collection('tickets').get()
+  db.collection('users').doc(UID).get()
 ]).then(async function(results) {
   var capSnap  = results[0];
   var userSnap = results[1];
-  var tktSnap  = results[2];
 
   // Get Gemini key: env var → Firestore settings
   var userData   = userSnap.data() || {};
@@ -349,7 +296,7 @@ Promise.all([
   var vaultNotes = scanVaultNotes(VAULT);
   console.log('  Vault notes indexed: ' + vaultNotes.length);
 
-  var capWritten = 0, capSkipped = 0, reflWritten = 0, reflSkipped = 0, tktWritten = 0, tktSkipped = 0;
+  var capWritten = 0, capSkipped = 0, reflWritten = 0, reflSkipped = 0;
 
   // Write captures
   for (var i = 0; i < allCaptures.length; i++) {
@@ -408,32 +355,10 @@ Promise.all([
     reflWritten++;
   });
 
-  // Write tickets
-  tktSnap.forEach(function(doc) {
-    var t      = doc.data();
-    var result = ticketToMd(t);
-    var dest   = path.join(TICKETS_DIR, result.filename);
-
-    // Idempotent: skip if file exists and ticket hasn't been updated since
-    if (fs.existsSync(dest)) {
-      var fileMtime = fs.statSync(dest).mtimeMs;
-      var updatedAt = t.updatedAt
-        ? (t.updatedAt.toDate ? t.updatedAt.toDate().getTime() : (t.updatedAt._seconds || 0) * 1000)
-        : 0;
-      if (!updatedAt || updatedAt <= fileMtime) { tktSkipped++; return; }
-      console.log('  ~ Updated ticket (re-exporting): ' + (t.title || doc.id));
-    }
-
-    fs.writeFileSync(dest, result.content, 'utf8');
-    console.log('  + Ticket: ' + result.filename);
-    tktWritten++;
-  });
-
   console.log('');
   console.log('Done!  ' + new Date().toLocaleString('en-AU'));
   console.log('  Captures:    ' + capWritten + ' written, ' + capSkipped + ' skipped');
   console.log('  Reflections: ' + reflWritten + ' written, ' + reflSkipped + ' skipped');
-  console.log('  Tickets:     ' + tktWritten + ' written, ' + tktSkipped + ' skipped');
   console.log('  Vault: ' + VAULT);
 
 }).catch(function(e) {
