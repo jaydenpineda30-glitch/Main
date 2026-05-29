@@ -46,6 +46,134 @@
     text3:    'rgba(255,255,255,0.3)',
   };
 
+  // ── Usage tracker ──────────────────────────────────────────────────────────
+  // Local-only counter for every meaningful interaction in the dashboard.
+  // Stored in localStorage["dash_usage_v1"] — never written to Firestore so it
+  // cannot affect dashData under any circumstance. Purpose: spot which tabs and
+  // features are actually used vs ignored, so the UI can be trimmed accordingly.
+
+  var USAGE_EVENTS = {
+    // Top-level tabs
+    'tab.Dashboard':              { cat: 'Tab',         label: 'Dashboard tab' },
+    'tab.Uni':                    { cat: 'Tab',         label: 'Uni tab' },
+    'tab.Work':                   { cat: 'Tab',         label: 'Work tab' },
+    'tab.Gym':                    { cat: 'Tab',         label: 'Gym tab' },
+    'tab.Personal':               { cat: 'Tab',         label: 'Personal tab' },
+    'tab.Finance':                { cat: 'Tab',         label: 'Finance tab' },
+    'tab.Journal':                { cat: 'Tab',         label: 'Journal tab' },
+    'subtab.Journal.Captures':    { cat: 'Sub-tab',     label: 'Journal → Captures' },
+    'subtab.Journal.Reflection':  { cat: 'Sub-tab',     label: 'Journal → Reflection' },
+
+    // Tasks
+    'task.add':                   { cat: 'Tasks',       label: 'Add new task' },
+    'task.complete':              { cat: 'Tasks',       label: 'Mark task done' },
+    'task.uncomplete':            { cat: 'Tasks',       label: 'Un-complete a task' },
+    'task.schedule':              { cat: 'Tasks',       label: 'Schedule task to calendar' },
+    'task.archive':               { cat: 'Tasks',       label: 'Archive done tasks' },
+    'task.restore':               { cat: 'Tasks',       label: 'Restore archived task' },
+    'task.edit':                  { cat: 'Tasks',       label: 'Edit task' },
+    'task.delete':                { cat: 'Tasks',       label: 'Delete task' },
+
+    // Quick Capture + captures list
+    'capture.quick_open':         { cat: 'Captures',    label: 'Open Quick Capture' },
+    'capture.save':               { cat: 'Captures',    label: 'Save a capture' },
+    'capture.edit':               { cat: 'Captures',    label: 'Edit a capture' },
+    'capture.expand':             { cat: 'Captures',    label: 'Expand a capture card' },
+    'capture.search':             { cat: 'Captures',    label: 'Search captures' },
+    'capture.filter':             { cat: 'Captures',    label: 'Change captures filter' },
+    'capture.refresh':            { cat: 'Captures',    label: 'Manual refresh of captures' },
+
+    // Reflections
+    'reflection.start':           { cat: 'Reflection',  label: 'Start weekly reflection' },
+    'reflection.submit':          { cat: 'Reflection',  label: 'Submit reflection' },
+    'reflection.expand_past':     { cat: 'Reflection',  label: 'Expand past reflection' },
+
+    // Gym
+    'gym.workout_save':           { cat: 'Gym',         label: 'Save a workout session' },
+    'gym.set_log':                { cat: 'Gym',         label: 'Log a set' },
+    'gym.bodyweight_log':         { cat: 'Gym',         label: 'Log body weight' },
+    'gym.exercise_add':           { cat: 'Gym',         label: 'Add a new exercise' },
+    'gym.exercise_picker':        { cat: 'Gym',         label: 'Pick exercise from history' },
+    'gym.rotation_edit':          { cat: 'Gym',         label: 'Edit rotation template' },
+    'gym.rotation_advance':       { cat: 'Gym',         label: 'Advance rotation index' },
+
+    // Finance
+    'finance.expense_add':        { cat: 'Finance',     label: 'Add expense' },
+    'finance.expense_edit':       { cat: 'Finance',     label: 'Edit expense' },
+    'finance.income_edit':        { cat: 'Finance',     label: 'Edit income source' },
+    'finance.budget_edit':        { cat: 'Finance',     label: 'Edit budget category' },
+
+    // Uni
+    'uni.assessment_complete':    { cat: 'Uni',         label: 'Mark assessment done' },
+    'uni.gcal_event_toggle':      { cat: 'Uni',         label: 'Toggle calendar event done' },
+    'uni.subject_add':            { cat: 'Uni',         label: 'Add a subject' },
+
+    // Knowledge base (Dashboard tab docs)
+    'kb.doc_add':                 { cat: 'Knowledge',   label: 'Add a knowledge doc' },
+    'kb.doc_delete':              { cat: 'Knowledge',   label: 'Delete a knowledge doc' },
+
+    // Modals — opens
+    'modal.add_task':             { cat: 'Modal',       label: 'Open Add task modal' },
+    'modal.add_exercise':         { cat: 'Modal',       label: 'Open Add exercise modal' },
+    'modal.add_subject':          { cat: 'Modal',       label: 'Open Add subject modal' },
+    'modal.log_weight':           { cat: 'Modal',       label: 'Open Log weight modal' },
+    'modal.edit_rotation':        { cat: 'Modal',       label: 'Open Edit rotation modal' },
+    'modal.monitoring':           { cat: 'Modal',       label: 'Open Monitoring panel' },
+
+    // AI / external
+    'checkin.generate':           { cat: 'AI',          label: 'Generate daily check-in (Gemini)' },
+    'weather.refresh':            { cat: 'Misc',        label: 'Refresh weather' },
+    'version.click':              { cat: 'Misc',        label: 'Click version badge' },
+
+    // Export + settings
+    'export.manual':              { cat: 'Export',      label: 'Trigger manual Obsidian export' },
+    'settings.open':              { cat: 'Settings',    label: 'Open Settings tab' },
+    'settings.gemini_set':        { cat: 'Settings',    label: 'Set Gemini API key' },
+    'settings.gcal_change':       { cat: 'Settings',    label: 'Change Google Calendar selection' }
+  };
+
+  var USAGE_KEY = 'dash_usage_v1';
+  function _loadUsage() {
+    try {
+      var s = localStorage.getItem(USAGE_KEY);
+      if (s) {
+        var p = JSON.parse(s);
+        return {
+          counts:    p.counts    || {},
+          firstSeen: p.firstSeen || {},
+          lastSeen:  p.lastSeen  || {},
+          startDate: p.startDate || new Date().toISOString()
+        };
+      }
+    } catch (_) {}
+    return { counts: {}, firstSeen: {}, lastSeen: {}, startDate: new Date().toISOString() };
+  }
+  function _persistUsage(state) {
+    try { localStorage.setItem(USAGE_KEY, JSON.stringify(state)); } catch (_) {}
+  }
+  var _usageState = _loadUsage();
+  var _usageListeners = [];
+
+  window.UsageTracker = {
+    track: function (eventName) {
+      if (!USAGE_EVENTS[eventName]) { console.warn('[UsageTracker] Unknown event:', eventName); return; }
+      var now = new Date().toISOString();
+      _usageState.counts[eventName] = (_usageState.counts[eventName] || 0) + 1;
+      if (!_usageState.firstSeen[eventName]) _usageState.firstSeen[eventName] = now;
+      _usageState.lastSeen[eventName] = now;
+      _persistUsage(_usageState);
+      _usageListeners.forEach(function (fn) { try { fn(); } catch (_) {} });
+    },
+    reset: function () {
+      _usageState = { counts: {}, firstSeen: {}, lastSeen: {}, startDate: new Date().toISOString() };
+      _persistUsage(_usageState);
+      _usageListeners.forEach(function (fn) { try { fn(); } catch (_) {} });
+    },
+    getState:  function () { return JSON.parse(JSON.stringify(_usageState)); },
+    getEvents: function () { return USAGE_EVENTS; },
+    subscribe: function (fn) { _usageListeners.push(fn); return function () { _usageListeners = _usageListeners.filter(function (x) { return x !== fn; }); }; }
+  };
+
   // ── Helper: severity → colour ──────────────────────────────────────────────
 
   function sevColor(sev) {
@@ -363,6 +491,7 @@
     }, [savedSettings.geminiKey, savedSettings.githubPAT]);
 
     function save() {
+      if (window.UsageTracker) window.UsageTracker.track('settings.gemini_set');
       if (props.onSaveSettings) props.onSaveSettings(form);
       setJustSaved(true);
       setTimeout(function () { setJustSaved(false); }, 2000);
@@ -439,6 +568,167 @@
   // ── MonitoringPanel (full modal) ──────────────────────────────────────────
 
   /**
+   * Usage view — renders every tracked event with its count, grouped by category.
+   * Zero-count events are shown deliberately so unused features stand out.
+   */
+  function UsageView() {
+    var tick = useState(0); var bump = tick[1];
+    useEffect(function () {
+      return window.UsageTracker.subscribe(function () { bump(function (n) { return n + 1; }); });
+    }, []);
+    var sortPair = useState('count_desc'); var sort = sortPair[0]; var setSort = sortPair[1];
+
+    var state  = window.UsageTracker.getState();
+    var events = window.UsageTracker.getEvents();
+    var counts = state.counts || {};
+    var lastSeen = state.lastSeen || {};
+
+    // Build rows: [key, label, cat, count, lastSeenISO]
+    var rows = Object.keys(events).map(function (k) {
+      return {
+        key: k,
+        label: events[k].label,
+        cat: events[k].cat,
+        count: counts[k] || 0,
+        last: lastSeen[k] || null
+      };
+    });
+
+    var totalEvents = rows.reduce(function (a, r) { return a + r.count; }, 0);
+    var usedEvents  = rows.filter(function (r) { return r.count > 0; }).length;
+    var unusedEvents = rows.length - usedEvents;
+
+    // Sort
+    if (sort === 'count_desc')      rows.sort(function (a, b) { return b.count - a.count || a.label.localeCompare(b.label); });
+    else if (sort === 'count_asc')  rows.sort(function (a, b) { return a.count - b.count || a.label.localeCompare(b.label); });
+    else if (sort === 'category')   rows.sort(function (a, b) { return a.cat.localeCompare(b.cat) || b.count - a.count; });
+    else if (sort === 'recent')     rows.sort(function (a, b) {
+      if (!a.last && !b.last) return 0;
+      if (!a.last) return 1;
+      if (!b.last) return -1;
+      return b.last.localeCompare(a.last);
+    });
+
+    var maxCount = Math.max.apply(null, rows.map(function (r) { return r.count; }).concat([1]));
+
+    function fmtLast(iso) {
+      if (!iso) return '—';
+      var d = new Date(iso);
+      var now = new Date();
+      var diff = Math.floor((now - d) / 1000);
+      if (diff < 60) return diff + 's ago';
+      if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+      if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+      return Math.floor(diff / 86400) + 'd ago';
+    }
+
+    return createElement('div', null,
+      // Summary header
+      createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 12 } },
+        [
+          { label: 'Total events',  value: totalEvents },
+          { label: 'Features used', value: usedEvents },
+          { label: 'Unused',        value: unusedEvents, color: unusedEvents > 0 ? C.warn : C.success },
+          { label: 'Since',         value: new Date(state.startDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) }
+        ].map(function (s) {
+          return createElement('div', {
+            key: s.label,
+            style: { background: C.bg3, borderRadius: 8, padding: '10px 12px', textAlign: 'center' }
+          },
+            createElement('div', { style: { fontSize: 16, fontWeight: 700, color: s.color || C.text } }, s.value),
+            createElement('div', { style: { fontSize: 9, color: C.text3, marginTop: 3 } }, s.label)
+          );
+        })
+      ),
+      // Sort controls
+      createElement('div', { style: { display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' } },
+        [
+          { k: 'count_desc', l: 'Most used' },
+          { k: 'count_asc',  l: 'Least used' },
+          { k: 'recent',     l: 'Recent' },
+          { k: 'category',   l: 'By category' }
+        ].map(function (s) {
+          var active = sort === s.k;
+          return createElement('button', {
+            key: s.k, onClick: function () { setSort(s.k); },
+            style: {
+              padding: '4px 10px', borderRadius: 99, fontSize: 10, cursor: 'pointer',
+              border: '0.5px solid ' + (active ? C.accent : C.border),
+              background: active ? C.accentBg : 'transparent',
+              color: active ? C.accent : C.text3
+            }
+          }, s.l);
+        }),
+        createElement('div', { style: { flex: 1 } }),
+        createElement('button', {
+          onClick: function () { if (confirm('Reset all usage counts? This cannot be undone.')) window.UsageTracker.reset(); },
+          style: {
+            padding: '4px 10px', borderRadius: 99, fontSize: 10, cursor: 'pointer',
+            border: '0.5px solid ' + C.border, background: 'transparent', color: C.text3
+          }
+        }, '↻ Reset')
+      ),
+      // Rows — every event, with bar
+      createElement('div', null,
+        rows.map(function (r) {
+          var pct = r.count === 0 ? 0 : Math.max(2, Math.round((r.count / maxCount) * 100));
+          var unused = r.count === 0;
+          return createElement('div', {
+            key: r.key,
+            style: {
+              display: 'grid',
+              gridTemplateColumns: '70px 1fr 60px 60px',
+              gap: 8, alignItems: 'center',
+              padding: '6px 8px',
+              borderBottom: '0.5px solid ' + C.border,
+              opacity: unused ? 0.55 : 1
+            }
+          },
+            createElement('span', {
+              style: {
+                fontSize: 9, padding: '2px 6px', borderRadius: 99,
+                background: C.bg3, color: C.text3, textAlign: 'center'
+              }
+            }, r.cat),
+            createElement('div', { style: { position: 'relative', height: 18 } },
+              createElement('div', {
+                style: {
+                  position: 'absolute', left: 0, top: 0, bottom: 0,
+                  width: pct + '%',
+                  background: unused ? 'transparent' : C.accentBg,
+                  borderLeft: unused ? '1px dashed ' + C.border : '2px solid ' + C.accent,
+                  borderRadius: 2
+                }
+              }),
+              createElement('div', {
+                style: {
+                  position: 'relative', fontSize: 11,
+                  color: unused ? C.text3 : C.text,
+                  padding: '2px 6px', whiteSpace: 'nowrap',
+                  overflow: 'hidden', textOverflow: 'ellipsis'
+                }
+              }, r.label)
+            ),
+            createElement('div', {
+              style: {
+                fontSize: 12, fontWeight: 700, textAlign: 'right',
+                color: unused ? C.text3 : C.accent
+              }
+            }, r.count),
+            createElement('div', {
+              style: { fontSize: 9, color: C.text3, textAlign: 'right' }
+            }, fmtLast(r.last))
+          );
+        })
+      ),
+      // Footer note
+      createElement('div', {
+        style: { fontSize: 9, color: C.text3, marginTop: 12, lineHeight: 1.5 }
+      }, 'Tracked locally only (localStorage). Never written to Firestore. Dim rows = never used. Counts persist across sessions on this browser.')
+    );
+  }
+
+  /**
    * Full monitoring panel — show as a modal overlay.
    * Props: { onClose, settings, onSaveSettings }
    */
@@ -451,7 +741,11 @@
     var filterPair = useState('all');
     var filter     = filterPair[0]; var setFilter = filterPair[1];
 
-    var TABS = ['logs', 'health', 'analytics', 'settings'];
+    useEffect(function () {
+      if (window.UsageTracker) window.UsageTracker.track('modal.monitoring');
+    }, []);
+
+    var TABS = ['logs', 'health', 'analytics', 'usage', 'settings'];
 
     var filteredLogs = filter === 'all'
       ? logs
@@ -504,7 +798,7 @@
           TABS.map(function (t) {
             var active = t === tab;
             return createElement('button', {
-              key: t, onClick: function () { setTab(t); },
+              key: t, onClick: function () { if (t === 'settings' && window.UsageTracker) window.UsageTracker.track('settings.open'); setTab(t); },
               style: {
                 padding: '10px 14px', border: 'none', background: 'none',
                 fontSize: 12, cursor: 'pointer', fontWeight: active ? 700 : 400,
@@ -579,6 +873,11 @@
           // ── ANALYTICS tab ──
           tab === 'analytics' && createElement('div', null,
             card(createElement(Analytics, null))
+          ),
+
+          // ── USAGE tab ──
+          tab === 'usage' && createElement('div', null,
+            card(createElement(UsageView, null))
           ),
 
           // ── SETTINGS tab ──

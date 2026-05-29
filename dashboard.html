@@ -102,6 +102,8 @@ window.addEventListener('error', function(e) {
 </script>
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
+// Usage tracking helper — safe wrapper around window.UsageTracker.track. No-op if module not loaded.
+function trk(name){try{if(window.UsageTracker)window.UsageTracker.track(name);}catch(_){}}
 // Use the enhanced ErrorBoundary from error-boundary.js if it loaded, otherwise inline fallback
 const ErrorBoundary = window.ErrorBoundary || class extends React.Component {
   constructor(props) { super(props); this.state = { err: null }; }
@@ -530,7 +532,7 @@ function WeatherWidget(props){
   return(
     <>
       {/* ── Compact dashboard widget ── */}
-      <div className="glow-item" style={{background:T.bg2,border:"0.5px solid "+T.border,borderRadius:10,padding:"14px 16px",cursor:"pointer"}} onClick={function(){setOpen(true);}}>
+      <div className="glow-item" style={{background:T.bg2,border:"0.5px solid "+T.border,borderRadius:10,padding:"14px 16px",cursor:"pointer"}} onClick={function(){trk("weather.refresh");setOpen(true);}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <div style={{fontSize:10,color:T.text3}}>Melbourne</div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
@@ -676,7 +678,7 @@ function GymSection(props){
     try{localStorage.setItem('gym_tab_draft',JSON.stringify({rotId:nextSess?nextSess.id:null,sets:wkt.sets,savedAt:Date.now()}));}catch(_){}
   },[wkt.sets]);
   const gs={card:{background:T.bg2,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",border:"0.5px solid "+T.border2,borderRadius:12,padding:"14px 16px",marginBottom:10,boxShadow:"0 4px 24px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.08)"},btn:{padding:"5px 11px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text2,cursor:"pointer",fontSize:12},btnP:{padding:"6px 13px",borderRadius:8,border:"1px solid rgba(199,125,255,0.45)",background:"rgba(199,125,255,0.15)",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,boxShadow:"0 0 10px rgba(199,125,255,0.2)"},inp:{width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"}};
-  function addRow(){if(!row.exercise)return;setWkt(function(w){return{...w,sets:[...w.sets,{...row,id:Date.now()}]};});setRow({exercise:"",sets:"",reps:"",weight:""});}
+  function addRow(){if(!row.exercise)return;trk("gym.set_log");setWkt(function(w){return{...w,sets:[...w.sets,{...row,id:Date.now()}]};});setRow({exercise:"",sets:"",reps:"",weight:""});}
   function removeRow(i){setWkt(function(w){return{...w,sets:w.sets.filter(function(_,j){return j!==i;})};});}
   function saveWkt(){
     if(window.DataValidator){
@@ -686,7 +688,7 @@ function GymSection(props){
     }else if(wkt.sets.length===0)return;
     const name=wkt.name||(nextSess?nextSess.name:"Workout");
     const rotId=nextSess?nextSess.id:null;
-    if(onSave)onSave({...wkt,name:name,id:Date.now(),rotId:rotId});
+    if(onSave){trk("gym.workout_save");onSave({...wkt,name:name,id:Date.now(),rotId:rotId});}
     try{localStorage.removeItem('gym_tab_draft');}catch(_){}
     setWkt({name:"",date:todayStr(),sets:[]});
     if(window.showToast)window.showToast("Workout saved!","success");
@@ -779,7 +781,7 @@ function GymSection(props){
             <span style={{fontSize:14,color:T.text3,cursor:"grab",userSelect:"none",flexShrink:0}}>⠿</span>
             <div style={{width:22,height:22,borderRadius:"50%",background:isCur?T.success:T.bg2,border:"1px solid "+(isCur?T.success:T.border2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:isCur?T.bg:T.text3,flexShrink:0}}>{i+1}</div>
             <div style={{flex:1}}><div style={{fontSize:13,fontWeight:isCur?600:400,color:T.text}}>{r.name}{isCur&&<span style={{fontSize:10,color:T.success,marginLeft:8}}>← next</span>}</div><div style={{fontSize:10,color:T.text2}}>{r.focus}{(r.exercises&&r.exercises.length>0)&&<span style={{marginLeft:6,color:T.text3}}>{r.exercises.length} exercise{r.exercises.length!==1?"s":""}</span>}</div></div>
-            <button onClick={function(e){e.stopPropagation();if(onUpdateRot)onUpdateRot(rotation,i);}} style={{...gs.btn,fontSize:10,padding:"2px 7px"}}>Set current</button>
+            <button onClick={function(e){e.stopPropagation();trk("gym.rotation_advance");if(onUpdateRot)onUpdateRot(rotation,i);}} style={{...gs.btn,fontSize:10,padding:"2px 7px"}}>Set current</button>
             <button onClick={function(e){e.stopPropagation();const exs=(r.exercises&&r.exercises.length>0)?r.exercises.map(function(ex){return{...ex};}):Array(3).fill(null).map(function(_,j){return{id:j+1,exercise:"",sets:"",reps:"",weight:""};});setEditRotIdx(editRotIdx===i?null:i);setEditRotForm({rName:r.name,rFocus:r.focus||"",exercises:exs});}} style={{...gs.btn,fontSize:10,padding:"2px 7px",color:editRotIdx===i?T.accent:T.text2,border:editRotIdx===i?"0.5px solid "+T.accent:"0.5px solid rgba(255,255,255,0.14)"}}>Edit</button>
             <button onClick={function(e){e.stopPropagation();removeRotItem(r.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:14}}>×</button>
           </div>
@@ -800,6 +802,7 @@ function GymSection(props){
             <div style={{display:"flex",gap:6,marginTop:6}}>
               <button style={{...gs.btn,fontSize:10,padding:"2px 8px"}} onClick={function(){setEditRotForm(function(f){return{...f,exercises:(f.exercises||[]).concat([{id:Date.now(),exercise:"",sets:"",reps:"",weight:""}])};});}}>+ Row</button>
               <button style={{...gs.btnP,fontSize:10,padding:"3px 10px"}} onClick={function(){
+                trk("gym.rotation_edit");
                 var nr=rotation.map(function(rt,ri){return ri===i?{...rt,name:editRotForm.rName||rt.name,focus:editRotForm.rFocus,exercises:(editRotForm.exercises||[]).filter(function(ex){return ex.exercise&&ex.exercise.trim();})}:rt;});
                 if(onUpdateRot)onUpdateRot(nr,rotIdx);
                 setEditRotIdx(null);
@@ -882,12 +885,13 @@ function FinanceSection({data,onUpdate,mob,gcalEvents}){
       const r=DataValidator.validate("financeEntry",{amount:Number(expForm.amount),category:expForm.cat||"Other",date:month+"-01"});
       if(!r.valid){if(window.showToast)showToast(r.firstError);else alert(r.firstError);return;}
     }else if(!expForm.name||!expForm.amount)return;
+    trk("finance.expense_add");
     onUpdate({...data,expenses:allExpenses.concat([{id:Date.now(),name:expForm.name,amount:Number(expForm.amount),cat:expForm.cat,month:month}])});
     setExpForm({name:"",amount:"",cat:"Other"});
     if(window.showToast)showToast("Expense added!","success");
   }
   function removeOneOff(id){onUpdate({...data,expenses:allExpenses.filter(function(e){return e.id!==id;})});}
-  function saveEditExp(){if(!editExpForm.name||!editExpForm.amount)return;onUpdate({...data,expenses:allExpenses.map(function(e){return e.id===editExpId?{...e,name:editExpForm.name,amount:Number(editExpForm.amount),cat:editExpForm.cat}:e;})});setEditExpId(null);}
+  function saveEditExp(){if(!editExpForm.name||!editExpForm.amount)return;trk("finance.expense_edit");onUpdate({...data,expenses:allExpenses.map(function(e){return e.id===editExpId?{...e,name:editExpForm.name,amount:Number(editExpForm.amount),cat:editExpForm.cat}:e;})});setEditExpId(null);}
   function skipRecurring(tId){const mo={...monthOverrides,[tId]:{...(monthOverrides[tId]||{}),excluded:true}};onUpdate({...data,monthlyRecurringOverrides:{...monthlyRecurringOverrides,[month]:mo}});}
   function restoreRecurring(tId){const mo={...monthOverrides};if(mo[tId]){const n={...mo[tId]};delete n.excluded;mo[tId]=n;}onUpdate({...data,monthlyRecurringOverrides:{...monthlyRecurringOverrides,[month]:mo}});}
   function deleteTemplate(tId){onUpdate({...data,recurringTemplates:recurringTemplates.filter(function(t){return t.id!==tId;})});}
@@ -916,7 +920,7 @@ function FinanceSection({data,onUpdate,mob,gcalEvents}){
       <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:10,marginBottom:10}}>
         <div style={fCard()}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>Income Sources</div><button style={fBtn} onClick={function(){setEditSrc(function(s){return !s;});}}>{editSrc?"Done":"Edit"}</button></div>
-          {sources.map(function(s){const val=srcAmounts[s.id]!==undefined?srcAmounts[s.id]:(s.amount||"");return(<div key={s.id} style={{marginBottom:10}}>{editSrc&&<input style={{...fInp,marginBottom:4}} placeholder={"Source "+s.id} value={s.name} onChange={function(ev){updateSourceName(s.id,ev.target.value);}}/>}{!editSrc&&<div style={{fontSize:11,color:T.text2,marginBottom:4}}>{s.name||"Source "+s.id}</div>}<input style={fInp} type="number" step="0.01" placeholder="0.00" value={val} onChange={function(ev){updateSourceIncome(s.id,ev.target.value);}}/></div>);})}
+          {sources.map(function(s){const val=srcAmounts[s.id]!==undefined?srcAmounts[s.id]:(s.amount||"");return(<div key={s.id} style={{marginBottom:10}}>{editSrc&&<input style={{...fInp,marginBottom:4}} placeholder={"Source "+s.id} value={s.name} onChange={function(ev){updateSourceName(s.id,ev.target.value);}}/>}{!editSrc&&<div style={{fontSize:11,color:T.text2,marginBottom:4}}>{s.name||"Source "+s.id}</div>}<input style={fInp} type="number" step="0.01" placeholder="0.00" value={val} onBlur={function(){trk("finance.income_edit");}} onChange={function(ev){updateSourceIncome(s.id,ev.target.value);}}/></div>);})}
           <div style={{marginBottom:10}}><div style={{fontSize:11,color:T.text2,marginBottom:4}}>Hourly rate ($/hr)</div><input style={fInp} type="number" step="0.01" placeholder="e.g. 23.50" value={hourlyRate||""} onChange={function(ev){updateHourlyRate(ev.target.value);}}/></div>
           {hourlyRate>0&&<div style={{marginBottom:10,padding:"8px 10px",borderRadius:8,background:calcGoTabIncome>0?"rgba(105,240,174,0.08)":"rgba(255,209,102,0.08)",border:"0.5px solid "+(calcGoTabIncome>0?"rgba(105,240,174,0.25)":"rgba(255,209,102,0.25)")}}>
             {calcGoTabIncome>0?(<div><div style={{fontSize:10,color:T.success,fontWeight:600,marginBottom:2}}>GoTab auto-calculated</div><div style={{fontSize:13,fontWeight:700,color:T.success}}>${calcGoTabIncome.toFixed(2)}</div><div style={{fontSize:9,color:T.text3,marginTop:2}}>{monthShifts.length} shift{monthShifts.length!==1?"s":""} · {monthShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.totalEquiv:0);},0).toFixed(1)} equiv hrs @ ${hourlyRate}/hr</div></div>):(<div style={{fontSize:11,color:T.warn}}>No GoTab shifts found for {fmtM(month)} — enter income manually above.</div>)}
@@ -973,7 +977,7 @@ function FinanceSection({data,onUpdate,mob,gcalEvents}){
         <div style={fCard()}>
           <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:6}}>Monthly Budget</div>
           <div style={{fontSize:10,color:T.text3,marginBottom:8}}>Set a spending limit to see how much you have left</div>
-          <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:11,color:T.text3}}>$</span><input style={{...fInp,flex:1}} type="number" step="10" placeholder="e.g. 1500" value={monthBudget||""} onChange={function(ev){updateBudget(ev.target.value);}}/></div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:11,color:T.text3}}>$</span><input style={{...fInp,flex:1}} type="number" step="10" placeholder="e.g. 1500" value={monthBudget||""} onBlur={function(){trk("finance.budget_edit");}} onChange={function(ev){updateBudget(ev.target.value);}}/></div>
           {monthBudget>0&&<div style={{marginTop:10,padding:"8px 10px",borderRadius:8,background:budgetLeft>=0?"rgba(255,209,102,0.1)":"rgba(255,107,107,0.1)",border:"0.5px solid "+(budgetLeft>=0?T.warn:T.danger)+"40"}}><div style={{fontSize:10,color:T.text2,marginBottom:2}}>{budgetLeft>=0?"Spending money left this month":"Over budget by"}</div><div style={{fontSize:20,fontWeight:700,color:budgetLeft>=0?T.warn:T.danger}}>{budgetLeft>=0?"$"+budgetLeft.toFixed(2):"$"+Math.abs(budgetLeft).toFixed(2)}</div></div>}
         </div>
         <div style={fCard()}>
@@ -1183,6 +1187,10 @@ function App(){
     window.addEventListener("keydown",onKey);
     return function(){window.removeEventListener("keydown",onKey);};
   },[scheduleTaskId]);
+  // Usage tracking — auto-instrument tab/sub-tab/modal switches (see monitoring-dashboard.js).
+  useEffect(function(){trk("tab."+page);},[page]);
+  useEffect(function(){if(page==="Journal")trk("subtab.Journal."+(journalTab==="reflection"?"Reflection":"Captures"));},[page,journalTab]);
+  useEffect(function(){if(modal)trk("modal."+modal);},[modal]);
   useEffect(function(){
     function onMove(e){
       var el=e.target.closest('.card-rim,.glow-item');
@@ -1557,7 +1565,7 @@ function App(){
       })
       .catch(function(e){showToast('Check-in failed: '+(e&&e.message?e.message:'unknown error'),'error');setCheckinBlocks(generateCheckinFallback(data));setCheckinLoading(false);});
   }
-  function toggleCalEv(id){setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
+  function toggleCalEv(id){trk("uni.gcal_event_toggle");setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
   // ── Backup & restore helpers ───────────────────────────────────────────────
   function getLatestBackup(){
     try{
@@ -1607,7 +1615,7 @@ function App(){
       showToast("Restored from backup ("+bk.key.replace("dash_backup_","")+"). Reconnect to sync to cloud.","success");
     }
   }
-  function toggleAssessmentDone(id){setData(function(p){const as=p.uni.assessments||[];return{...p,uni:{...p.uni,assessments:as.map(function(a){return a.id===id?{...a,done:!a.done}:a;})}};}); }
+  function toggleAssessmentDone(id){trk("uni.assessment_complete");setData(function(p){const as=p.uni.assessments||[];return{...p,uni:{...p.uni,assessments:as.map(function(a){return a.id===id?{...a,done:!a.done}:a;})}};}); }
   function removeAssessment(id){setData(function(p){return{...p,uni:{...p.uni,assessments:(p.uni.assessments||[]).filter(function(a){return a.id!==id;})}};}); }
   function addAssessment(){
     if(!addAssessForm.name||!addAssessForm.date)return;
@@ -1642,16 +1650,16 @@ function App(){
     showToast("Assessments saved!","success");
   }
   function updateProg(id,val){setData(function(p){return{...p,uni:{...p.uni,subjects:p.uni.subjects.map(function(s){return s.id===id?{...s,progress:Number(val)}:s;})}}; });}
-  function toggleTask(id){setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.map(function(t){return t.id===id?{...t,done:!t.done}:t;})}}; });}
-  function archiveDone(){setData(function(p){const ts=p.personal.tasks||[];const done=ts.filter(function(t){return t.done;}).map(function(t){return{...t,archivedAt:todayStr()};});return{...p,personal:{...p.personal,tasks:ts.filter(function(t){return !t.done;}),archived:(p.personal.archived||[]).concat(done)}};});}
-  function restoreTask(id){setData(function(p){const arch=p.personal.archived||[];const match=arch.filter(function(t){return t.id===id;});if(match.length===0)return p;const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.concat([{...match[0],done:false,archivedAt:undefined}]),archived:arch.filter(function(x){return x.id!==id;})}};});}
+  function toggleTask(id){setData(function(p){const ts=p.personal.tasks||[];const cur=ts.find(function(t){return t.id===id;});trk(cur&&cur.done?"task.uncomplete":"task.complete");return{...p,personal:{...p.personal,tasks:ts.map(function(t){return t.id===id?{...t,done:!t.done}:t;})}}; });}
+  function archiveDone(){trk("task.archive");setData(function(p){const ts=p.personal.tasks||[];const done=ts.filter(function(t){return t.done;}).map(function(t){return{...t,archivedAt:todayStr()};});return{...p,personal:{...p.personal,tasks:ts.filter(function(t){return !t.done;}),archived:(p.personal.archived||[]).concat(done)}};});}
+  function restoreTask(id){trk("task.restore");setData(function(p){const arch=p.personal.archived||[];const match=arch.filter(function(t){return t.id===id;});if(match.length===0)return p;const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.concat([{...match[0],done:false,archivedAt:undefined}]),archived:arch.filter(function(x){return x.id!==id;})}};});}
   function saveEditTask(){
     if(window.DataValidator){
       const r=DataValidator.validate("task",{name:editTaskForm.name,priority:editTaskForm.priority||"normal",due:editTaskForm.due||null,cat:editTaskForm.cat});
       if(!r.valid){showToast(r.firstError);return;}
     }
     setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.map(function(t){return t.id===editTaskId?{...t,...editTaskForm,editedAt:todayStr()}:t;})}}; });
-    setEditTaskId(null);setEditTaskForm({});
+    trk("task.edit");setEditTaskId(null);setEditTaskForm({});
     showToast("Task updated!","success");
   }
   function logBW(){
@@ -1660,6 +1668,7 @@ function App(){
       const r=DataValidator.validate("bodyWeight",{weight:Number(bwIn),date:bwDate||todayStr()});
       if(!r.valid){showToast(r.firstError);return;}
     }
+    trk("gym.bodyweight_log");
     const entryDate=bwDate||todayStr();
     setData(function(p){
       const existing=(p.gym.bodyWeight||[]).filter(function(e){return e.date!==entryDate;});
@@ -1676,7 +1685,7 @@ function App(){
     });
     showToast("Entry removed","success");
   }
-  function submitCapture(){
+  function submitCapture(){trk("capture.save");
     if(!captureText.trim())return;
     if(!window.GeminiService){showToast("Gemini service not loaded.","error");return;}
     setCaptureLoading(true);setCaptureResult(null);
@@ -1709,7 +1718,7 @@ function App(){
     setEditCaptureData({...c});
     setEditCaptureTagStr((c.tags||[]).join(", "));
   }
-  function saveEditCapture(){
+  function saveEditCapture(){trk("capture.edit");
     if(!editCaptureData||!window._currentUser||!window._db)return;
     var tagsArr=editCaptureTagStr.split(",").map(function(t){return t.trim().toLowerCase();}).filter(Boolean);
     _db.collection('users').doc(window._currentUser.uid).collection('captures').doc(editCaptureData.id).update({
@@ -1815,10 +1824,10 @@ function App(){
         if(!r.valid){showToast(r.firstError);return;}
       }
     }
-    if(modal==="add_subject")setData(function(p){return{...p,uni:{...p.uni,subjects:p.uni.subjects.concat([{id:Date.now(),name:mForm.name,progress:0}])}};});
-    else if(modal==="add_exercise")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.concat([{id:Date.now(),name:mForm.name,logs:[]}])}};});
+    if(modal==="add_subject"){trk("uni.subject_add");setData(function(p){return{...p,uni:{...p.uni,subjects:p.uni.subjects.concat([{id:Date.now(),name:mForm.name,progress:0}])}};});}
+    else if(modal==="add_exercise"){trk("gym.exercise_add");setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.concat([{id:Date.now(),name:mForm.name,logs:[]}])}};});}
     else if(modal==="log_weight")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.map(function(ex){return ex.id===mForm.exId?{...ex,logs:ex.logs.concat([{date:todayStr(),weight:Number(mForm.weight)}])}:ex;})}};});
-    else if(modal==="add_task")setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.concat([{id:Date.now(),name:mForm.name,cat:mForm.cat||"Errands",priority:mForm.priority||"normal",due:mForm.due||null,done:false,addedAt:todayStr(),editedAt:null}])}};});
+    else if(modal==="add_task"){trk("task.add");setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.concat([{id:Date.now(),name:mForm.name,cat:mForm.cat||"Errands",priority:mForm.priority||"normal",due:mForm.due||null,done:false,addedAt:todayStr(),editedAt:null}])}};});}
     else if(modal==="edit_rotation"){
       var ri=mForm.rotIdx;
       setData(function(p){
@@ -1846,6 +1855,7 @@ function App(){
         const r=DataValidator.validate("reflection",{answers:na});
         if(!r.valid){showToast(r.firstError);return;}
       }
+      trk("reflection.submit");
       setReflStep(REFL_QS.length+1);
       setReflAnalysisLoading(true);
       OllamaService.analyzeReflection(na,data.reflections).then(function(an){
@@ -2012,6 +2022,7 @@ function App(){
             onClick={function(){
               var pat=(data.settings&&data.settings.githubPAT||"").trim();
               if(!pat){showToast("GitHub PAT not set — add it in Settings.","error");return;}
+              trk("export.manual");
               setObsExportStatus("running");
               fetch("https://api.github.com/repos/jaydenpineda30-glitch/obsidian-notes/actions/workflows/export.yml/dispatches",{
                 method:"POST",
@@ -2026,7 +2037,7 @@ function App(){
             {obsExportStatus==="running"?"⏳ Exporting…":obsExportStatus==="done"?"✓ Exported":"⬆ Obsidian"}
           </button>
           {authUser&&authUser.photoURL&&<img src={authUser.photoURL} alt="" style={{width:22,height:22,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.2)"}}/>}
-          {appVersion&&<span title={"Released "+appVersion.date} style={{fontSize:10,color:T.text3,padding:"2px 7px",borderRadius:99,border:"0.5px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",letterSpacing:0.3,userSelect:"none"}}>{appVersion.version}</span>}
+          {appVersion&&<span onClick={function(){trk("version.click");}} title={"Released "+appVersion.date} style={{fontSize:10,color:T.text3,padding:"2px 7px",borderRadius:99,border:"0.5px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",letterSpacing:0.3,userSelect:"none",cursor:"pointer"}}>{appVersion.version}</span>}
           <button onClick={function(){_auth.signOut();}} style={{padding:"3px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text3,cursor:"pointer",fontSize:11}}>Sign out</button>
         </div>
         {["Dashboard","Uni","Work","Gym","Personal","Finance","Journal"].map(function(s){return<button key={s} style={navBtn(page===s)} onClick={function(){setPage(s);}}>{s}</button>;})}
@@ -2076,7 +2087,7 @@ function App(){
           <div className="card-rim" style={{...card({background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.1)"}),marginBottom:12}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,marginBottom:10}}>
               <div style={{fontSize:10,color:T.text3,display:"flex",alignItems:"center",gap:5}}><div style={{width:5,height:5,borderRadius:"50%",background:T.accent}}/>Daily Check-in · {new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long"})}</div>
-              <button style={{...btn,fontSize:11}} onClick={doCheckin}>↻ Refresh</button>
+              <button style={{...btn,fontSize:11}} onClick={function(){trk("checkin.generate");doCheckin();}}>↻ Refresh</button>
             </div>
             {checkinLoading?<div style={{fontSize:12,color:T.accent,display:"flex",alignItems:"center",gap:6}}><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:T.accent,animation:"pulse 1.2s ease-in-out infinite"}}/>AI is thinking...</div>:checkinBlocks.length===0?<div style={{fontSize:12,color:T.text3}}>Press ↻ Refresh to generate today's check-in.</div>:checkinBlocks.map(function(block,bi){return(<div key={bi} style={{marginBottom:10}}>{block.header&&<div style={{fontSize:11,fontWeight:600,color:T.accent,marginBottom:4}}>{block.header}</div>}{block.items.map(function(item,ii){return<div key={ii} style={{fontSize:13,lineHeight:1.7,color:T.text}}>{item}</div>;})}</div>);})}
             {todayEvs.length>0&&<div style={{marginTop:12,paddingTop:10,borderTop:"0.5px solid "+T.border,display:"flex",gap:6,flexWrap:"wrap"}}>{todayEvs.map(function(ev){const col=evColor(ev);return(<div key={ev.id} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 9px",borderRadius:6,background:col+"18",border:"0.5px solid "+col+"40",flexShrink:0}}><div><div style={{fontSize:10,fontWeight:600,color:col}}>{evLabel(ev)}<span style={{fontWeight:400,color:T.text3}}> · {ev.time}</span></div><div style={{fontSize:9,color:T.text2}}>{ev.title.slice(0,32)}</div></div></div>);})}</div>}
@@ -2153,13 +2164,13 @@ function App(){
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={sT}>Tasks</div><button style={btn} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+</button></div>
               {urgTasks.length===0&&normTasks.length===0&&doneTasks.length===0&&<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>}
               {scheduleTaskId&&<div style={{fontSize:9,color:T.accent,marginBottom:6,padding:"3px 8px",borderRadius:6,background:T.accentBg,border:"0.5px solid rgba(199,125,255,0.3)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}><span>Tap a calendar day to schedule (or ESC)</span><button onClick={function(){setScheduleTaskId(null);}} title="Cancel scheduling" style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:14,padding:"0 4px",lineHeight:1,fontWeight:700}}>×</button></div>}
-              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:"default",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();if(scheduleTaskId===t.id){setScheduleTaskId(null);}else{setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button></div>);})}</div>}
-              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:"default",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();if(scheduleTaskId===t.id){setScheduleTaskId(null);}else{setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button></div>);})}</div>}
+              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:"default",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();if(scheduleTaskId===t.id){setScheduleTaskId(null);}else{trk("task.schedule");setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button></div>);})}</div>}
+              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:7,marginBottom:7,alignItems:"flex-start",padding:"6px 8px",borderRadius:6,background:isActive?"rgba(199,125,255,0.12)":TUB[urg],border:"0.5px solid "+(isActive?T.accent:TUC[urg]+"30"),cursor:"default",transition:"background 0.1s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();if(scheduleTaskId===t.id){setScheduleTaskId(null);}else{trk("task.schedule");setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button></div>);})}</div>}
               {doneTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneTasks.map(function(t){return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:5,alignItems:"center",opacity:0.45}}><input type="checkbox" checked={true} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,flexShrink:0}}/><div style={{fontSize:11,color:T.text3,textDecoration:"line-through"}}>{t.name}</div></div>);})}</div>}
             </div>
           </div>
           {appVersion&&<div style={{textAlign:"center",padding:"10px 0 2px",fontSize:10,color:T.text3,opacity:0.5}}>
-            <span title={"Released "+appVersion.date}>{appVersion.version}</span>
+            <span onClick={function(){trk("version.click");}} title={"Released "+appVersion.date} style={{cursor:"pointer"}}>{appVersion.version}</span>
             {" · "}<a href={"https://github.com/jaydenpineda30-glitch/Main/releases"} target="_blank" rel="noreferrer" style={{color:T.text3,textDecoration:"none"}}>patch notes ↗</a>
           </div>}
         </div>}
@@ -2310,7 +2321,7 @@ function App(){
             {["urgent","normal"].map(function(pri){const tasks=data.personal.tasks.filter(function(t){return t.priority===pri;}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});if(tasks.length===0)return null;return(<div key={pri} style={{marginBottom:14}}><div style={{fontSize:9,fontWeight:700,color:pri==="urgent"?T.danger:T.text3,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>{pri}</div>{tasks.map(function(t){const urg=taskUrg(t);const col=TUC[urg];const bg=TUB[urg];return(<div key={t.id} style={{display:"flex",alignItems:"flex-start",gap:8,marginBottom:8,padding:"8px 10px",borderRadius:7,background:bg,border:"0.5px solid "+col+"30"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:10,color:col,marginTop:1}}>{t.cat} · {taskLabel(t)}</div></div><button onClick={function(){setEditTaskId(t.id);setEditTaskForm({name:t.name,cat:t.cat,priority:t.priority,due:t.due});}} style={{...btn,fontSize:10,padding:"2px 7px"}}>Edit</button></div>);})}</div>);})}
           </div>
           {(data.personal.archived||[]).length>0&&<div className="card-rim" style={card()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:12,fontWeight:500,color:T.text3}}>Archived ({(data.personal.archived||[]).length})</div><button style={btn} onClick={function(){setShowArch(function(a){return !a;});}}>{showArch?"Hide":"Show"}</button></div>{showArch&&(data.personal.archived||[]).slice().reverse().map(function(t){return(<div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"6px 0",borderBottom:"0.5px solid "+T.border}}><div><span style={{color:T.text3,textDecoration:"line-through"}}>{t.name}</span><span style={{fontSize:10,color:T.text3,marginLeft:8}}>{fmtDate(t.archivedAt)}</span></div><button onClick={function(){restoreTask(t.id);}} style={{...btn,fontSize:10,padding:"2px 8px",color:T.accent,borderColor:T.accent+"50"}}>Restore</button></div>);})}</div>}
-          <div className="card-rim" style={card()}><div style={sT}>Knowledge base</div><div style={{fontSize:11,color:T.text2,marginBottom:10}}>Notes here feed your daily check-in context.</div>{(data.docs||[]).map(function(d){return(<div key={d.id} style={{marginBottom:8,padding:"8px 10px",background:T.bg3,borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><div style={{fontSize:12,fontWeight:500,color:T.text}}>{d.title}</div><div style={{fontSize:10,color:T.text3,marginTop:2}}>{d.content.slice(0,80)}...</div><div style={{marginTop:4,display:"flex",gap:4}}>{(d.tags||[]).map(function(tag){return<span key={tag} style={{fontSize:9,padding:"1px 6px",borderRadius:99,background:T.accentBg,color:T.accent}}>{tag}</span>;})}</div></div><button onClick={function(){setData(function(p){return{...p,docs:(p.docs||[]).filter(function(x){return x.id!==d.id;})};});}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,marginLeft:8}}>×</button></div>);})}<div style={{marginTop:12,display:"flex",flexDirection:"column",gap:6}}><input style={inp} placeholder="Title" value={docIn.title} onChange={function(ev){setDocIn(function(p){return{...p,title:ev.target.value};});}}/><input style={inp} placeholder="Tags (comma separated)" value={docIn.tags} onChange={function(ev){setDocIn(function(p){return{...p,tags:ev.target.value};});}}/><textarea style={{...inp,resize:"vertical"}} rows={3} placeholder="Content..." value={docIn.content} onChange={function(ev){setDocIn(function(p){return{...p,content:ev.target.value};});}}/><button style={btnP} onClick={function(){if(!docIn.title||!docIn.content)return;setData(function(p){return{...p,docs:(p.docs||[]).concat([{id:"doc"+Date.now(),title:docIn.title,tags:docIn.tags.split(",").map(function(t){return t.trim();}),content:docIn.content}])};});setDocIn({title:"",tags:"",content:""});}}>Add document</button></div></div>
+          <div className="card-rim" style={card()}><div style={sT}>Knowledge base</div><div style={{fontSize:11,color:T.text2,marginBottom:10}}>Notes here feed your daily check-in context.</div>{(data.docs||[]).map(function(d){return(<div key={d.id} style={{marginBottom:8,padding:"8px 10px",background:T.bg3,borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><div style={{fontSize:12,fontWeight:500,color:T.text}}>{d.title}</div><div style={{fontSize:10,color:T.text3,marginTop:2}}>{d.content.slice(0,80)}...</div><div style={{marginTop:4,display:"flex",gap:4}}>{(d.tags||[]).map(function(tag){return<span key={tag} style={{fontSize:9,padding:"1px 6px",borderRadius:99,background:T.accentBg,color:T.accent}}>{tag}</span>;})}</div></div><button onClick={function(){trk("kb.doc_delete");setData(function(p){return{...p,docs:(p.docs||[]).filter(function(x){return x.id!==d.id;})};});}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,marginLeft:8}}>×</button></div>);})}<div style={{marginTop:12,display:"flex",flexDirection:"column",gap:6}}><input style={inp} placeholder="Title" value={docIn.title} onChange={function(ev){setDocIn(function(p){return{...p,title:ev.target.value};});}}/><input style={inp} placeholder="Tags (comma separated)" value={docIn.tags} onChange={function(ev){setDocIn(function(p){return{...p,tags:ev.target.value};});}}/><textarea style={{...inp,resize:"vertical"}} rows={3} placeholder="Content..." value={docIn.content} onChange={function(ev){setDocIn(function(p){return{...p,content:ev.target.value};});}}/><button style={btnP} onClick={function(){if(!docIn.title||!docIn.content)return;trk("kb.doc_add");setData(function(p){return{...p,docs:(p.docs||[]).concat([{id:"doc"+Date.now(),title:docIn.title,tags:docIn.tags.split(",").map(function(t){return t.trim();}),content:docIn.content}])};});setDocIn({title:"",tags:"",content:""});}}>Add document</button></div></div>
         </div>}
 
         {page==="Finance"&&<div style={{maxWidth:mob?undefined:900}}><ErrorBoundary name="Finance"><FinanceSection mob={mob} data={data.finance||{}} onUpdate={updateFinance} gcalEvents={visibleGcalEvents}/></ErrorBoundary></div>}
@@ -2325,7 +2336,7 @@ function App(){
             {reflStep===0&&<div>
               <div style={{fontSize:12,color:T.text2,marginBottom:14,lineHeight:1.6}}>5 focused questions. ~5 minutes. Honest answers only.{data.reflections.length>0&&<span style={{marginLeft:8,color:T.text3}}>Last: {new Date(data.reflections[data.reflections.length-1].date).toLocaleDateString("en-AU")}</span>}</div>
               <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14}}>{REFL_LABELS.map(function(l,i){return<div key={i} style={{fontSize:10,padding:"3px 10px",borderRadius:99,background:T.accentBg,border:"0.5px solid rgba(199,125,255,0.25)",color:T.accent}}>{l}</div>;})}</div>
-              <button style={btnP} onClick={function(){setReflStep(1);setReflAns([]);setReflAnalysis(null);}}>Start this week's reflection →</button>
+              <button style={btnP} onClick={function(){trk("reflection.start");setReflStep(1);setReflAns([]);setReflAnalysis(null);}}>Start this week's reflection →</button>
               {data.reflections.length>0&&<div style={{marginTop:20}}>
                 <div style={{fontSize:10,fontWeight:700,color:T.text3,textTransform:"uppercase",letterSpacing:0.5,marginBottom:10}}>Previous Reflections</div>
                 {data.reflections.slice().reverse().map(function(r,i){
@@ -2334,7 +2345,7 @@ function App(){
                   const sentCol=sc>=0.1?T.success:sc<=-0.1?T.danger:T.warn;
                   const sentLabel=sc>=0.1?"↑ Positive":sc<=-0.1?"↓ Stressed":"→ Neutral";
                   return<div key={i} style={{marginBottom:8,borderRadius:10,border:"0.5px solid "+(isExp?T.accent:T.border),overflow:"hidden"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",background:isExp?T.accentBg:T.bg3,cursor:"pointer"}} onClick={function(){setExpandedRefl(isExp?null:i);}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",background:isExp?T.accentBg:T.bg3,cursor:"pointer"}} onClick={function(){if(!isExp)trk("reflection.expand_past");setExpandedRefl(isExp?null:i);}}>
                       <div style={{display:"flex",alignItems:"center",gap:10}}>
                         <div style={{fontSize:11,fontWeight:600,color:T.text}}>{new Date(r.date).toLocaleDateString("en-AU",{day:"numeric",month:"short",year:"numeric"})}</div>
                         {a&&<div style={{fontSize:10,color:T.accent}}>{a.dominantPattern}</div>}
@@ -2436,12 +2447,12 @@ function App(){
           <div className="card-rim" style={card()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
               <div style={sT}>Captures</div>
-              <button style={{...btnP,fontSize:11,padding:"5px 12px"}} onClick={function(){if(window._currentUser&&window._db){setCapturesLoading(true);_db.collection('users').doc(window._currentUser.uid).collection('captures').get().then(function(snap){var items=[];snap.forEach(function(doc){items.push({id:doc.id,...doc.data()});});items.sort(function(a,b){var ta=a.date&&a.date.toDate?a.date.toDate().getTime():0;var tb=b.date&&b.date.toDate?b.date.toDate().getTime():0;return tb-ta;});setCapturesData(items);setCapturesLoading(false);}).catch(function(){setCapturesLoading(false);});}}}>↻ Refresh</button>
+              <button style={{...btnP,fontSize:11,padding:"5px 12px"}} onClick={function(){trk("capture.refresh");if(window._currentUser&&window._db){setCapturesLoading(true);_db.collection('users').doc(window._currentUser.uid).collection('captures').get().then(function(snap){var items=[];snap.forEach(function(doc){items.push({id:doc.id,...doc.data()});});items.sort(function(a,b){var ta=a.date&&a.date.toDate?a.date.toDate().getTime():0;var tb=b.date&&b.date.toDate?b.date.toDate().getTime():0;return tb-ta;});setCapturesData(items);setCapturesLoading(false);}).catch(function(){setCapturesLoading(false);});}}}>↻ Refresh</button>
             </div>
-            <input value={capturesSearch} onChange={function(ev){setCapturesSearch(ev.target.value);}} placeholder="Search captures..." style={{...inp,padding:"9px 12px",marginBottom:12,width:"100%"}}/>
+            <input value={capturesSearch} onBlur={function(){if(capturesSearch.trim())trk("capture.search");}} onChange={function(ev){setCapturesSearch(ev.target.value);}} placeholder="Search captures..." style={{...inp,padding:"9px 12px",marginBottom:12,width:"100%"}}/>
             <div style={{display:"flex",gap:6,marginBottom:14}}>
               {["all","learning","thought","reflection"].map(function(f){return(
-                <button key={f} onClick={function(){setCapturesFilter(f);}} style={{padding:"4px 12px",borderRadius:99,fontSize:11,cursor:"pointer",border:capturesFilter===f?"1px solid "+T.accent:"0.5px solid "+T.border,background:capturesFilter===f?T.accentBg:"transparent",color:capturesFilter===f?T.accent:T.text2,fontWeight:capturesFilter===f?600:400}}>
+                <button key={f} onClick={function(){trk("capture.filter");setCapturesFilter(f);}} style={{padding:"4px 12px",borderRadius:99,fontSize:11,cursor:"pointer",border:capturesFilter===f?"1px solid "+T.accent:"0.5px solid "+T.border,background:capturesFilter===f?T.accentBg:"transparent",color:capturesFilter===f?T.accent:T.text2,fontWeight:capturesFilter===f?600:400}}>
                   {f==="all"?"All":f.charAt(0).toUpperCase()+f.slice(1)+"s"}
                 </button>
               );})}
@@ -2462,7 +2473,7 @@ function App(){
                 var typeColor=c.type==="learning"?T.accent:c.type==="reflection"?T.warn:T.text3;
                 var typeBg=c.type==="learning"?T.accentBg:c.type==="reflection"?"rgba(255,209,102,0.12)":T.bg3;
                 return(
-                  <div key={c.id} style={{marginBottom:10,padding:"12px 14px",borderRadius:10,background:T.bg2,border:"0.5px solid "+(isExp?T.accent:T.border),cursor:"pointer",transition:"border 0.15s"}} onClick={function(){setExpandedCapture(isExp?null:c.id);}}>
+                  <div key={c.id} style={{marginBottom:10,padding:"12px 14px",borderRadius:10,background:T.bg2,border:"0.5px solid "+(isExp?T.accent:T.border),cursor:"pointer",transition:"border 0.15s"}} onClick={function(){if(!isExp)trk("capture.expand");setExpandedCapture(isExp?null:c.id);}}>
                     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:isExp?10:4}}>
                       <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:typeBg,color:typeColor}}>{c.type||"thought"}</span>
                       {c.subject&&<span style={{fontSize:10,color:T.text3}}>{c.subject}</span>}
@@ -2500,7 +2511,7 @@ function App(){
             return(<div style={{marginBottom:12}}>
               <div style={{fontSize:11,color:T.text2,marginBottom:6}}>Pick from history</div>
               <div style={{display:"flex",gap:5,flexWrap:"wrap",maxHeight:140,overflowY:"auto",paddingRight:4}}>
-                {names.map(function(n){var active=(mForm.name||"").toLowerCase()===n.toLowerCase();return(<button key={n} type="button" onClick={function(){setMForm(function(f){return{...f,name:n};});}} style={{padding:"4px 10px",borderRadius:99,border:active?"1px solid "+T.accent:"0.5px solid "+T.border,background:active?T.accentBg:"transparent",color:active?T.accent:T.text2,fontSize:11,cursor:"pointer",fontWeight:active?600:400,whiteSpace:"nowrap"}}>{n}</button>);})}
+                {names.map(function(n){var active=(mForm.name||"").toLowerCase()===n.toLowerCase();return(<button key={n} type="button" onClick={function(){trk("gym.exercise_picker");setMForm(function(f){return{...f,name:n};});}} style={{padding:"4px 10px",borderRadius:99,border:active?"1px solid "+T.accent:"0.5px solid "+T.border,background:active?T.accentBg:"transparent",color:active?T.accent:T.text2,fontSize:11,cursor:"pointer",fontWeight:active?600:400,whiteSpace:"nowrap"}}>{n}</button>);})}
               </div>
             </div>);
           })()}
@@ -2580,7 +2591,7 @@ function App(){
                   <div style={{fontSize:10,color:T.text3,fontWeight:600}}>{email}</div>
                   <div style={{display:"flex",gap:6,alignItems:"center"}}>
                     {multiAccount&&<button style={{fontSize:9,color:isSolo?T.accent:T.text3,background:isSolo?"rgba(199,125,255,0.1)":"none",border:isSolo?"0.5px solid rgba(199,125,255,0.3)":"none",cursor:"pointer",padding:"2px 7px",borderRadius:5,fontWeight:isSolo?700:400}} onClick={function(){if(window.GCalSync)window.GCalSync.setSingleAccountMode(isSolo?null:email);}}>Solo</button>}
-                    <button style={{fontSize:9,color:allSelected?T.warn:T.success,background:"none",border:"none",cursor:"pointer",padding:"2px 6px"}} onClick={function(){var next=allSelected?gcalSelectedIds.filter(function(id){return accountCalIds.indexOf(id)===-1;}):[].concat(gcalSelectedIds,accountCalIds.filter(function(id){return gcalSelectedIds.indexOf(id)===-1;}));if(window.GCalSync)window.GCalSync.setSelectedIds(next);}}>{allSelected?"Mute all":"Enable all"}</button>
+                    <button style={{fontSize:9,color:allSelected?T.warn:T.success,background:"none",border:"none",cursor:"pointer",padding:"2px 6px"}} onClick={function(){trk("settings.gcal_change");var next=allSelected?gcalSelectedIds.filter(function(id){return accountCalIds.indexOf(id)===-1;}):[].concat(gcalSelectedIds,accountCalIds.filter(function(id){return gcalSelectedIds.indexOf(id)===-1;}));if(window.GCalSync)window.GCalSync.setSelectedIds(next);}}>{allSelected?"Mute all":"Enable all"}</button>
                     <button style={{fontSize:9,color:T.danger,background:"none",border:"none",cursor:"pointer",padding:"2px 6px"}} onClick={function(){if(window.GCalSync)window.GCalSync.disconnect(email);}}>Remove</button>
                   </div>
                 </div>
@@ -2588,10 +2599,10 @@ function App(){
                   var sel=gcalSelectedIds.indexOf(cal.id)!==-1;
                   var excl=gcalExcludedIds.indexOf(cal.id)!==-1;
                   return(<div key={cal.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:8,background:excl?"rgba(247,111,111,0.04)":sel?"rgba(255,255,255,0.06)":"rgba(255,255,255,0.02)",marginBottom:4,border:"0.5px solid "+(excl?"rgba(247,111,111,0.2)":sel?"rgba(255,255,255,0.1)":"transparent"),transition:"all 0.15s"}}>
-                    <div style={{width:12,height:12,borderRadius:3,background:cal.backgroundColor||"#4285F4",flexShrink:0,opacity:excl?0.2:sel?1:0.35,cursor:"pointer"}} onClick={function(){var next=sel?gcalSelectedIds.filter(function(id){return id!==cal.id;}):[].concat(gcalSelectedIds,[cal.id]);if(window.GCalSync)window.GCalSync.setSelectedIds(next);}}/>
-                    <div style={{flex:1,fontSize:13,color:excl?T.text3:sel?T.text:T.text2,textDecoration:excl?"line-through":"none",cursor:"pointer"}} onClick={function(){var next=sel?gcalSelectedIds.filter(function(id){return id!==cal.id;}):[].concat(gcalSelectedIds,[cal.id]);if(window.GCalSync)window.GCalSync.setSelectedIds(next);}}>{cal.summary}</div>
+                    <div style={{width:12,height:12,borderRadius:3,background:cal.backgroundColor||"#4285F4",flexShrink:0,opacity:excl?0.2:sel?1:0.35,cursor:"pointer"}} onClick={function(){trk("settings.gcal_change");var next=sel?gcalSelectedIds.filter(function(id){return id!==cal.id;}):[].concat(gcalSelectedIds,[cal.id]);if(window.GCalSync)window.GCalSync.setSelectedIds(next);}}/>
+                    <div style={{flex:1,fontSize:13,color:excl?T.text3:sel?T.text:T.text2,textDecoration:excl?"line-through":"none",cursor:"pointer"}} onClick={function(){trk("settings.gcal_change");var next=sel?gcalSelectedIds.filter(function(id){return id!==cal.id;}):[].concat(gcalSelectedIds,[cal.id]);if(window.GCalSync)window.GCalSync.setSelectedIds(next);}}>{cal.summary}</div>
                     <button style={{fontSize:12,background:"none",border:"none",cursor:"pointer",color:excl?T.danger:T.text3,padding:"2px 4px",opacity:excl?1:0.5,flexShrink:0}} title={excl?"Show calendar":"Hide calendar"} onClick={function(e){e.stopPropagation();toggleExclude(cal.id);}}>👁</button>
-                    <div style={{width:18,height:18,borderRadius:"50%",border:"1.5px solid "+(sel&&!excl?"#34A853":"rgba(255,255,255,0.2)"),background:sel&&!excl?"#34A853":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer"}} onClick={function(){var next=sel?gcalSelectedIds.filter(function(id){return id!==cal.id;}):[].concat(gcalSelectedIds,[cal.id]);if(window.GCalSync)window.GCalSync.setSelectedIds(next);}}>
+                    <div style={{width:18,height:18,borderRadius:"50%",border:"1.5px solid "+(sel&&!excl?"#34A853":"rgba(255,255,255,0.2)"),background:sel&&!excl?"#34A853":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer"}} onClick={function(){trk("settings.gcal_change");var next=sel?gcalSelectedIds.filter(function(id){return id!==cal.id;}):[].concat(gcalSelectedIds,[cal.id]);if(window.GCalSync)window.GCalSync.setSelectedIds(next);}}>
                       {sel&&!excl&&<div style={{fontSize:9,color:"#fff",fontWeight:700}}>✓</div>}
                     </div>
                   </div>);
@@ -2700,7 +2711,7 @@ function App(){
       </div>}
 
       {/* ── Quick Capture floating button ── */}
-      <button onClick={function(){setShowCapture(true);setCaptureResult(null);}} style={{position:"fixed",bottom:mob?70:80,right:20,zIndex:150,background:"linear-gradient(135deg,#7b2fff,#c77dff)",border:"none",borderRadius:99,padding:"11px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(199,125,255,0.45)",display:"flex",alignItems:"center",gap:7,letterSpacing:0.2}}>
+      <button onClick={function(){trk("capture.quick_open");setShowCapture(true);setCaptureResult(null);}} style={{position:"fixed",bottom:mob?70:80,right:20,zIndex:150,background:"linear-gradient(135deg,#7b2fff,#c77dff)",border:"none",borderRadius:99,padding:"11px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(199,125,255,0.45)",display:"flex",alignItems:"center",gap:7,letterSpacing:0.2}}>
         <span style={{fontSize:15}}>⚡</span>Capture
       </button>
 
