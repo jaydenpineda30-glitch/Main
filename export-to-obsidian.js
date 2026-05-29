@@ -118,7 +118,7 @@ async function enhanceCapture(capture, allCaptures, vaultNotes, geminiKey) {
     '- maturity: seedling = brief thought, growing = partially explained, evergreen = fully explained with examples',
     '- topic: pick the single best match from the valid list only',
     '- situationTags: 1-2 tags from the valid situation tags list that describe WHY you would open this note (not what it is about). to-review = needs revisiting, insight = key realization, formula = equation/method, goal = something to work toward, study-note = concept to memorise, reference = look-up table, workflow = process or procedure',
-    '- wikilinks: 2-4 key concepts — prefer broad concept nodes (e.g. Payments, Accounting, Fitness) and granular concept nodes (e.g. Tabs, Debits, Budgeting) when available in the vault notes list; fall back to specific notes only if no concept node fits. ONLY use names from the vault notes list; skip if no match',
+    '- wikilinks: ALWAYS return 2-4 key concepts from this note worth their own node. Prefer names from the vault notes list when one fits (broad concept nodes first, then granular); if none fit, propose a concise new concept name (1-3 words, Title Case). Never return an empty list — every note gets wikilinks.',
     '- related: 0-3 note names from the vault notes list that genuinely connect to this note; prefer concept nodes first (broad then granular), then specific notes. Exact filename, no .md',
     '- suggestedConcept: if this note belongs to a concept that does NOT exist in the vault notes list, return the concept name it SHOULD link to (one or two words, title case, e.g. "Photography", "Travel", "Sleep"). Otherwise return null'
   ].join('\n');
@@ -149,6 +149,13 @@ async function enhanceCapture(capture, allCaptures, vaultNotes, geminiKey) {
 
 function safeFilename(str) {
   return (str || 'Untitled').replace(/[\\/:*?"<>|]/g, '-').slice(0, 80).trim();
+}
+
+// Strip a leading "YYYY-MM-DD " date prefix so dated and undated filenames for the
+// same capture collapse to one key. Makes dedup robust to date-prefix drift (the
+// exact bug that produced the dated/undated duplicate notes).
+function stripDate(filename) {
+  return filename.replace(/^\d{4}-\d{2}-\d{2} /, '');
 }
 
 function fmtDate(ts) {
@@ -353,23 +360,43 @@ Promise.all([
   for (var i = 0; i < allCaptures.length; i++) {
     var c      = allCaptures[i];
     var title  = c.title || c.rawInput || 'Capture';
-    var dest        = path.join(CAPTURES_DIR, safeFilename(title) + '.md');
-    // Pre-2026-05-17 export naming. Prefer it if found so we don't duplicate.
-    var legacyDest  = path.join(CAPTURES_DIR, datePrefix(c.date) + ' ' + safeFilename(title) + '.md');
-    var existing    = fs.existsSync(dest) ? dest : (fs.existsSync(legacyDest) ? legacyDest : null);
-
-    // Skip if file exists AND hasn't been edited since last export
-    if (existing) {
-      var fileMtime  = fs.statSync(existing).mtimeMs;
-      var updatedAt  = c.updatedAt ? (c.updatedAt.toDate ? c.updatedAt.toDate().getTime() : c.updatedAt._seconds * 1000) : 0;
-      if (!updatedAt || updatedAt <= fileMtime) { capSkipped++; continue; }
-      console.log('  ~ Updated capture (re-exporting): ' + title);
+    var LINK_RE       = /\*\*Key concepts:|## Related|\*\*Related/;
+    var canonicalName = safeFilename(title) + '.md';                 // single undated name we converge on
+    var canonicalPath = path.join(CAPTURES_DIR, canonicalName);
+    // All existing files for this capture, regardless of date prefix (date-agnostic dedup).
+    var variants = fs.readdirSync(CAPTURES_DIR).filter(function (f) {
+      return f.endsWith('.md') && stripDate(f) === canonicalName;
+    });
+    function readCap(f) { try { return fs.readFileSync(path.join(CAPTURES_DIR, f), 'utf8'); } catch (_) { return ''; } }
+    function cleanStrays() {
+      variants.forEach(function (f) {
+        if (f !== canonicalName) {
+          try { fs.unlinkSync(path.join(CAPTURES_DIR, f)); console.log('  - Removed duplicate: ' + f); } catch (_) {}
+        }
+      });
     }
+    var canonicalExists   = variants.indexOf(canonicalName) !== -1;
+    var canonicalHasLinks = canonicalExists && LINK_RE.test(readCap(canonicalName));
+    var canonicalMtime    = canonicalExists ? fs.statSync(canonicalPath).mtimeMs : 0;
+    var updatedAt = c.updatedAt ? (c.updatedAt.toDate ? c.updatedAt.toDate().getTime() : c.updatedAt._seconds * 1000) : 0;
+
+    // Canonical note already has wikilinks and the capture wasn't edited since →
+    // just drop any stray dated duplicates (no Gemini call needed). A note MISSING
+    // wikilinks is always re-enhanced (backfill) so a past keyless run can't leave
+    // it link-less forever.
+    if (canonicalHasLinks && (!updatedAt || updatedAt <= canonicalMtime)) {
+      cleanStrays();
+      capSkipped++;
+      continue;
+    }
+    if (variants.length) console.log('  ~ Re-exporting (' + (canonicalHasLinks ? 'edited' : 'missing wikilinks') + '): ' + title);
 
     var enhancement = await enhanceCapture(c, allCaptures, vaultNotes, geminiKey);
 
-    // Auto-create a concept stub if Gemini flagged a missing concept
-    if (enhancement.suggestedConcept) {
+    // Auto-create a concept stub if Gemini flagged a missing concept — only when the
+    // FULL vault is present (local runs). In the GitHub Action the repo holds just
+    // Dashboard/, so skip stub creation there to avoid polluting the export repo.
+    if (enhancement.suggestedConcept && vaultNotes.length > 20) {
       var conceptName = enhancement.suggestedConcept.trim();
       var conceptFile = safeFilename(conceptName) + '.md';
       var conceptPath = path.join(VAULT, 'Concepts', 'Personal', conceptFile);
@@ -384,11 +411,25 @@ Promise.all([
       }
     }
 
-    var result = captureToMd(c, enhancement);
-    // Write back to the existing legacy filename if found, otherwise use new naming.
-    var writePath = existing || path.join(CAPTURES_DIR, result.filename);
-    fs.writeFileSync(writePath, result.content, 'utf8');
-    console.log('  + Capture: ' + path.basename(writePath));
+    var result      = captureToMd(c, enhancement);
+    var newHasLinks = LINK_RE.test(result.content);
+
+    // NEVER DOWNGRADE: if this run produced no wikilinks but an existing variant already
+    // has them, keep that linked content (a keyless/failed Gemini call must not strip links).
+    if (!newHasLinks) {
+      var linkedVariant = variants.filter(function (f) { return LINK_RE.test(readCap(f)); })[0];
+      if (linkedVariant) {
+        fs.writeFileSync(canonicalPath, readCap(linkedVariant), 'utf8');
+        cleanStrays();
+        console.log('  = Kept existing wikilinks (enhancement returned none): ' + title);
+        capWritten++;
+        continue;
+      }
+    }
+
+    fs.writeFileSync(canonicalPath, result.content, 'utf8');
+    cleanStrays(); // converge: only the canonical undated file remains
+    console.log('  + Capture: ' + canonicalName);
     capWritten++;
   }
 
