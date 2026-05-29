@@ -154,6 +154,62 @@
   var _usageState = _loadUsage();
   var _usageListeners = [];
 
+  // ── Per-device cloud sync ───────────────────────────────────────────────────
+  // Each device writes ONLY its own doc at users/{uid}/usage/{deviceId}. Because
+  // no two devices ever touch the same doc there is no merge/race/double-count.
+  // This is a separate document — never a field on the dashData doc — so the
+  // dashData full-document set() and the seed-state guard can never affect it.
+  var DEVICE_KEY = 'dash_device_id';
+  function _deviceId() {
+    var id;
+    try { id = localStorage.getItem(DEVICE_KEY); } catch (_) {}
+    if (!id) {
+      id = 'dev_' + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+      try { localStorage.setItem(DEVICE_KEY, id); } catch (_) {}
+    }
+    return id;
+  }
+  function _deviceLabel() {
+    var ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+    var os = /Windows/.test(ua)             ? 'Windows'
+           : /iPhone|iPad|iPod/.test(ua)    ? 'iOS'
+           : /Android/.test(ua)             ? 'Android'
+           : /Mac OS X|Macintosh/.test(ua)  ? 'macOS'
+           : /Linux/.test(ua)               ? 'Linux'
+           : 'device';
+    var browser = /Edg\//.test(ua)            ? 'Edge'
+                : /OPR\/|Opera/.test(ua)      ? 'Opera'
+                : /Chrome\//.test(ua)         ? 'Chrome'
+                : /Firefox\//.test(ua)        ? 'Firefox'
+                : /Safari\//.test(ua)         ? 'Safari'
+                : 'Browser';
+    return browser + ' on ' + os;
+  }
+  function _usageDocRef() {
+    var doc = window.DASH_DOC;
+    if (!doc || typeof doc.collection !== 'function') return null; // not signed in yet
+    try { return doc.collection('usage').doc(_deviceId()); } catch (_) { return null; }
+  }
+  function _pushToCloud() {
+    var ref = _usageDocRef();
+    if (!ref) return;
+    try {
+      ref.set({
+        label:     _deviceLabel(),
+        counts:    _usageState.counts,
+        firstSeen: _usageState.firstSeen,
+        lastSeen:  _usageState.lastSeen,
+        startDate: _usageState.startDate,
+        updatedAt: new Date().toISOString()
+      }).catch(function () {}); // no-throw: offline/permission/etc. just retries on next event
+    } catch (_) {}
+  }
+  var _syncTimer = null;
+  function _scheduleSync() {
+    if (_syncTimer) clearTimeout(_syncTimer);
+    _syncTimer = setTimeout(_pushToCloud, 3000); // debounce: batch rapid events into one write
+  }
+
   window.UsageTracker = {
     track: function (eventName) {
       if (!USAGE_EVENTS[eventName]) { console.warn('[UsageTracker] Unknown event:', eventName); return; }
@@ -162,15 +218,48 @@
       if (!_usageState.firstSeen[eventName]) _usageState.firstSeen[eventName] = now;
       _usageState.lastSeen[eventName] = now;
       _persistUsage(_usageState);
+      _scheduleSync();
       _usageListeners.forEach(function (fn) { try { fn(); } catch (_) {} });
     },
     reset: function () {
       _usageState = { counts: {}, firstSeen: {}, lastSeen: {}, startDate: new Date().toISOString() };
       _persistUsage(_usageState);
+      _pushToCloud(); // reflect the cleared state in this device's cloud doc immediately
       _usageListeners.forEach(function (fn) { try { fn(); } catch (_) {} });
     },
     getState:  function () { return JSON.parse(JSON.stringify(_usageState)); },
     getEvents: function () { return USAGE_EVENTS; },
+    getDeviceId: function () { return _deviceId(); },
+    // Resolve all devices' usage. Current device uses LIVE local state; others use
+    // their last-synced cloud snapshot. Falls back to local-only if signed out or
+    // the read fails — never throws.
+    fetchDevices: function () {
+      var live = {
+        deviceId: _deviceId(), label: _deviceLabel(),
+        counts: _usageState.counts, firstSeen: _usageState.firstSeen,
+        lastSeen: _usageState.lastSeen, startDate: _usageState.startDate,
+        isCurrent: true
+      };
+      var doc = window.DASH_DOC;
+      if (!doc || typeof doc.collection !== 'function') return Promise.resolve([live]);
+      try {
+        return doc.collection('usage').get().then(function (snap) {
+          var devices = []; var sawLocal = false;
+          snap.forEach(function (d) {
+            if (d.id === live.deviceId) { sawLocal = true; devices.push(live); return; }
+            var data = d.data() || {};
+            devices.push({
+              deviceId: d.id, label: data.label || 'Unknown device',
+              counts: data.counts || {}, firstSeen: data.firstSeen || {},
+              lastSeen: data.lastSeen || {}, startDate: data.startDate || null,
+              updatedAt: data.updatedAt || null, isCurrent: false
+            });
+          });
+          if (!sawLocal) devices.unshift(live);
+          return devices;
+        }).catch(function () { return [live]; });
+      } catch (_) { return Promise.resolve([live]); }
+    },
     subscribe: function (fn) { _usageListeners.push(fn); return function () { _usageListeners = _usageListeners.filter(function (x) { return x !== fn; }); }; }
   };
 
@@ -577,11 +666,37 @@
       return window.UsageTracker.subscribe(function () { bump(function (n) { return n + 1; }); });
     }, []);
     var sortPair = useState('count_desc'); var sort = sortPair[0]; var setSort = sortPair[1];
+    var devPair = useState(null); var devices = devPair[0]; var setDevices = devPair[1];
+    var selPair = useState(null); var selId = selPair[0]; var setSelId = selPair[1];
+    var curId = window.UsageTracker.getDeviceId();
 
-    var state  = window.UsageTracker.getState();
+    function loadDevices() {
+      window.UsageTracker.fetchDevices().then(function (list) { setDevices(list); });
+    }
+    useEffect(function () { loadDevices(); }, []);
+
+    function labelFor(d) {
+      if (d.deviceId === curId) return (d.label && d.label !== 'This device') ? 'This device (' + d.label + ')' : 'This device';
+      return d.label || 'Unknown device';
+    }
+
     var events = window.UsageTracker.getEvents();
-    var counts = state.counts || {};
-    var lastSeen = state.lastSeen || {};
+    var live   = window.UsageTracker.getState();
+    // Active device's data. Default (no selection) = current device, shown live.
+    var activeId = selId || curId;
+    var viewingCurrent = activeId === curId;
+    var active;
+    if (viewingCurrent) {
+      active = { counts: live.counts || {}, lastSeen: live.lastSeen || {}, startDate: live.startDate };
+    } else {
+      var match = (devices || []).filter(function (d) { return d.deviceId === activeId; })[0];
+      active = match
+        ? { counts: match.counts || {}, lastSeen: match.lastSeen || {}, startDate: match.startDate }
+        : { counts: {}, lastSeen: {}, startDate: null };
+    }
+    var state    = { startDate: active.startDate };
+    var counts   = active.counts;
+    var lastSeen = active.lastSeen;
 
     // Build rows: [key, label, cat, count, lastSeenISO]
     var rows = Object.keys(events).map(function (k) {
@@ -623,13 +738,36 @@
     }
 
     return createElement('div', null,
+      // Device selector
+      createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 } },
+        createElement('span', { style: { fontSize: 10, color: C.text3 } }, 'Device'),
+        createElement('select', {
+          value: activeId,
+          onChange: function (e) { setSelId(e.target.value); },
+          style: {
+            flex: 1, padding: '5px 8px', borderRadius: 8, fontSize: 11,
+            border: '0.5px solid ' + C.border, background: C.bg3, color: C.text
+          }
+        },
+          (devices || [{ deviceId: curId, label: 'This device' }]).map(function (d) {
+            return createElement('option', { key: d.deviceId, value: d.deviceId }, labelFor(d));
+          })
+        ),
+        createElement('button', {
+          onClick: loadDevices, title: 'Refresh device list',
+          style: {
+            padding: '5px 10px', borderRadius: 8, fontSize: 10, cursor: 'pointer',
+            border: '0.5px solid ' + C.border, background: 'transparent', color: C.text3
+          }
+        }, '↻')
+      ),
       // Summary header
       createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 12 } },
         [
           { label: 'Total events',  value: totalEvents },
           { label: 'Features used', value: usedEvents },
           { label: 'Unused',        value: unusedEvents, color: unusedEvents > 0 ? C.warn : C.success },
-          { label: 'Since',         value: new Date(state.startDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) }
+          { label: 'Since',         value: state.startDate ? new Date(state.startDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : '—' }
         ].map(function (s) {
           return createElement('div', {
             key: s.label,
@@ -660,13 +798,13 @@
           }, s.l);
         }),
         createElement('div', { style: { flex: 1 } }),
-        createElement('button', {
-          onClick: function () { if (confirm('Reset all usage counts? This cannot be undone.')) window.UsageTracker.reset(); },
+        viewingCurrent && createElement('button', {
+          onClick: function () { if (confirm('Reset usage counts for THIS device? This cannot be undone.')) window.UsageTracker.reset(); },
           style: {
             padding: '4px 10px', borderRadius: 99, fontSize: 10, cursor: 'pointer',
             border: '0.5px solid ' + C.border, background: 'transparent', color: C.text3
           }
-        }, '↻ Reset')
+        }, '↻ Reset this device')
       ),
       // Rows — every event, with bar
       createElement('div', null,
@@ -724,7 +862,9 @@
       // Footer note
       createElement('div', {
         style: { fontSize: 9, color: C.text3, marginTop: 12, lineHeight: 1.5 }
-      }, 'Tracked locally only (localStorage). Never written to Firestore. Dim rows = never used. Counts persist across sessions on this browser.')
+      }, viewingCurrent
+        ? 'This device — tracked locally and synced to your account so it shows on your other devices. Dim rows = never used. Reset affects this device only.'
+        : 'Another device (read-only, last synced when it was online). Dim rows = never used.')
     );
   }
 

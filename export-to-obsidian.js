@@ -293,23 +293,26 @@ function captureToJsonSafe(doc) {
   return out;
 }
 
-function writeFullBackup(userData, capSnap) {
+function writeFullBackup(userData, capSnap, usageSnap) {
   ensureDir(BACKUPS_DIR);
   var today = new Date().toISOString().slice(0, 10);
   var dest  = path.join(BACKUPS_DIR, 'dashboard-' + today + '.json');
   var captures = [];
   capSnap.forEach(function(d) { captures.push(captureToJsonSafe(d)); });
+  var usage = [];
+  if (usageSnap) usageSnap.forEach(function(d) { usage.push(captureToJsonSafe(d)); });
   var payload = {
-    backupVersion:    1,
+    backupVersion:    2,
     exportedAt:       new Date().toISOString(),
     uid:              UID,
     dashData:         (userData && userData.dashData) || null,
     settings:         (userData && userData.settings) || null,
-    capturesSubcollection: captures
+    capturesSubcollection: captures,
+    usageSubcollection:    usage
   };
   fs.writeFileSync(dest, JSON.stringify(payload, null, 2), 'utf8');
   var sizeKb = Math.round(fs.statSync(dest).size / 1024);
-  console.log('  + Backup: ' + path.basename(dest) + ' (' + sizeKb + ' KB, ' + captures.length + ' captures)');
+  console.log('  + Backup: ' + path.basename(dest) + ' (' + sizeKb + ' KB, ' + captures.length + ' captures, ' + usage.length + ' usage devices)');
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
@@ -319,17 +322,19 @@ ensureDir(REFLECTIONS_DIR);
 
 Promise.all([
   db.collection('users').doc(UID).collection('captures').get(),
-  db.collection('users').doc(UID).get()
+  db.collection('users').doc(UID).get(),
+  db.collection('users').doc(UID).collection('usage').get()
 ]).then(async function(results) {
-  var capSnap  = results[0];
-  var userSnap = results[1];
+  var capSnap   = results[0];
+  var userSnap  = results[1];
+  var usageSnap = results[2];
 
   // Get Gemini key: env var → Firestore settings
   var userData   = userSnap.data() || {};
 
   // Write the daily full-data backup FIRST, before any other work. This way the snapshot
   // is captured even if downstream Gemini calls fail or the script crashes mid-export.
-  try { writeFullBackup(userData, capSnap); }
+  try { writeFullBackup(userData, capSnap, usageSnap); }
   catch (e) { console.error('  ! Backup write failed:', e.message); }
   var geminiKey  = (process.env.GEMINI_API_KEY || (userData.settings && userData.settings.geminiKey) || '').trim();
   if (!geminiKey) console.log('  No Gemini key found — skipping enhancement');

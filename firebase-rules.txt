@@ -17,6 +17,7 @@
 //   users/{uid}/gym/{docId}
 //   users/{uid}/finance/{docId}
 //   users/{uid}/personal/{docId}
+//   users/{uid}/usage/{deviceId}
 // ════════════════════════════════════════════════════════════════════════════
 
 rules_version = '2';
@@ -115,6 +116,16 @@ service cloud.firestore {
 
       // ── Personal (notes, knowledge base, etc.) ───────────────────────────
       match /personal/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+
+
+      // ── Usage analytics (per-device interaction counts) ──────────────────
+      // One doc per device: users/{uid}/usage/{deviceId}. A SEPARATE document
+      // from dashData, so it can never affect your real data. Already covered by
+      // the catch-all below — listed explicitly for documentation; no redeploy
+      // is strictly required for usage sync to work.
+      match /usage/{deviceId} {
         allow read, write: if isOwner(uid);
       }
 
