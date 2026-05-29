@@ -202,6 +202,22 @@ function mergeWithDefaults(cloud){
     reflections:(Array.isArray(cloud.reflections)&&cloud.reflections.length>0)?cloud.reflections:SEED_REFL,
   };
 }
+// Returns true if `d` looks like a freshly-seeded state with no user-generated content.
+// Used as a safety net to refuse Firestore writes that would wipe real cloud data.
+// Add fields here if you introduce new user-generated arrays elsewhere in INIT.
+function isLikelySeedState(d){
+  if(!d||typeof d!=="object")return true;
+  var n=function(arr){return Array.isArray(arr)?arr.length:0;};
+  return n(d.reflections)===0
+      && n(d.personal&&d.personal.tasks)===0
+      && n(d.personal&&d.personal.archived)===0
+      && n(d.gym&&d.gym.exercises)===0
+      && n(d.gym&&d.gym.workouts)===0
+      && n(d.gym&&d.gym.bodyWeight)===0
+      && n(d.finance&&d.finance.expenses)===0
+      && n(d.uni&&d.uni.completedEvents)===0
+      && n(d.docs)===0;
+}
 function localDateStr(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 function todayStr(){return localDateStr(new Date());}
 function futureDateStr(n){const d=new Date();d.setDate(d.getDate()+n);return localDateStr(d);}
@@ -1240,6 +1256,7 @@ function App(){
 
     function loadFromFirestore(){
       window.DASH_DOC.get().then(function(doc){
+        var safeToEnableSaves=true;
         if(doc.exists){
           var cloud=doc.data().dashData;
           if(cloud){
@@ -1254,6 +1271,12 @@ function App(){
               while(bks.length>3){try{localStorage.removeItem(bks.shift());}catch(_){}}
             }catch(_){}
             setData(mergeWithDefaults(cloud));
+          }else{
+            // Doc exists but dashData field is missing/falsy. This is the wipe edge case:
+            // enabling saves here would let the next state change overwrite Firestore with
+            // React seed defaults. Refuse to enable saves and surface the failure mode loudly.
+            console.error("[Firestore] Doc exists but dashData is missing — refusing to enable saves to prevent overwrite. Investigate the doc manually.");
+            safeToEnableSaves=false;
           }
           // Restore cross-device settings if not already set locally
           var settings=doc.data().settings||{};
@@ -1272,10 +1295,14 @@ function App(){
             try{localStorage.setItem('__gcal_excluded__',JSON.stringify(settings.gcalExcluded));}catch(_){}
           }
         }
-        // Safe to save now — we've confirmed what Firestore holds (real data or empty new user)
-        _dataLoaded.current=true;
-        _fbReady.current=true;
-        setSyncStatus("synced");
+        if(safeToEnableSaves){
+          _dataLoaded.current=true;
+          _fbReady.current=true;
+          setSyncStatus("synced");
+        }else{
+          setSyncStatus("offline");
+          try{showToast("Cloud data field missing — saves disabled. Contact dev to investigate.","error");}catch(_){}
+        }
       }).catch(function(err){
         console.error("[Firestore] Load failed:",err);
         // IMPORTANT: do NOT set _fbReady or _dataLoaded on error.
@@ -1287,7 +1314,6 @@ function App(){
 
     // Run migration only if: not already migrated AND local data exists
     if(!alreadyMigrated&&rawLocal){
-      showToast("Migrating your saved data to the cloud…","warn");
       var parsed;
       try{ parsed=JSON.parse(rawLocal); }catch(e){
         console.warn("[Migration] Failed to parse localStorage data:",e);
@@ -1295,6 +1321,19 @@ function App(){
         loadFromFirestore();
         return;
       }
+
+      // SAFETY: refuse to migrate seed-shaped local data. dash_v1 is written from React
+      // state by the save effect — including the initial seed state — so on a fresh browser
+      // it contains defaults, not real user data. Uploading that to Firestore would wipe
+      // whatever the user actually has in the cloud.
+      if(isLikelySeedState(mergeWithDefaults(parsed))){
+        console.warn("[Migration] localStorage data looks seed-shaped — skipping upload to prevent Firestore overwrite. Loading from Firestore instead.");
+        localStorage.setItem(MIGRATED_KEY,'1');
+        loadFromFirestore();
+        return;
+      }
+
+      showToast("Migrating your saved data to the cloud…","warn");
 
       // Log what we found
       var tasks=(parsed.personal&&parsed.personal.tasks)||[];
@@ -1336,6 +1375,15 @@ function App(){
     // This prevents the race condition where empty initial state saves over real Firestore data
     // when opening the dashboard on a new device before Firebase finishes loading.
     if(!_fbReady.current||!_dataLoaded.current||!window.DASH_DOC)return;
+    // SAFETY: never save seed-shaped state. If ALL user-generated arrays are empty, this is
+    // almost certainly React initial state and saving would wipe real cloud data. The 2026-05-29
+    // wipe happened here. Refuse the write and surface it loudly.
+    if(isLikelySeedState(data)){
+      console.error("[SAFETY] Refused to save seed-shaped state to Firestore — would have wiped real data. State:",data);
+      try{showToast("Refused to save empty state — possible bug, data not synced.","error");}catch(_){}
+      setSyncStatus("offline");
+      return;
+    }
     setSyncStatus("syncing");
     if(_saveTimer.current)clearTimeout(_saveTimer.current);
     _saveTimer.current=setTimeout(function(){

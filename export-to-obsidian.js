@@ -19,6 +19,7 @@ const VAULT = process.env.VAULT_PATH
 
 const CAPTURES_DIR    = path.join(VAULT, 'Dashboard', 'Captures');
 const REFLECTIONS_DIR = path.join(VAULT, 'Dashboard', 'Reflections');
+const BACKUPS_DIR     = path.join(VAULT, 'Dashboard', 'Backups');
 
 const TOPICS = [
   'Accounting', 'Tax', 'Finance', 'Fitness',
@@ -271,6 +272,46 @@ function reflectionToMd(r) {
   return { filename: 'Weekly Reflection ' + date + '.md', content: lines.join('\n') };
 }
 
+// ── Full-data backup ───────────────────────────────────────────────────────────
+// Writes a complete snapshot of dashData + the captures subcollection to a single
+// JSON file per day under Dashboard/Backups/. All days are retained (never pruned)
+// so that any past state is restorable via restore-from-backup.js. This exists
+// because the 2026-05-29 incident wiped tasks/gym/uni/finance/docs from Firestore
+// and there was no recovery source — captures+reflections were the only fields
+// the markdown export ever covered.
+
+function captureToJsonSafe(doc) {
+  // Convert Firestore Timestamps to ISO strings so the JSON survives a round trip.
+  var data = doc.data();
+  var out  = { id: doc.id };
+  Object.keys(data).forEach(function(k) {
+    var v = data[k];
+    if (v && typeof v.toDate === 'function')      out[k] = v.toDate().toISOString();
+    else if (v && typeof v._seconds === 'number') out[k] = new Date(v._seconds * 1000).toISOString();
+    else                                          out[k] = v;
+  });
+  return out;
+}
+
+function writeFullBackup(userData, capSnap) {
+  ensureDir(BACKUPS_DIR);
+  var today = new Date().toISOString().slice(0, 10);
+  var dest  = path.join(BACKUPS_DIR, 'dashboard-' + today + '.json');
+  var captures = [];
+  capSnap.forEach(function(d) { captures.push(captureToJsonSafe(d)); });
+  var payload = {
+    backupVersion:    1,
+    exportedAt:       new Date().toISOString(),
+    uid:              UID,
+    dashData:         (userData && userData.dashData) || null,
+    settings:         (userData && userData.settings) || null,
+    capturesSubcollection: captures
+  };
+  fs.writeFileSync(dest, JSON.stringify(payload, null, 2), 'utf8');
+  var sizeKb = Math.round(fs.statSync(dest).size / 1024);
+  console.log('  + Backup: ' + path.basename(dest) + ' (' + sizeKb + ' KB, ' + captures.length + ' captures)');
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 ensureDir(CAPTURES_DIR);
@@ -285,6 +326,11 @@ Promise.all([
 
   // Get Gemini key: env var → Firestore settings
   var userData   = userSnap.data() || {};
+
+  // Write the daily full-data backup FIRST, before any other work. This way the snapshot
+  // is captured even if downstream Gemini calls fail or the script crashes mid-export.
+  try { writeFullBackup(userData, capSnap); }
+  catch (e) { console.error('  ! Backup write failed:', e.message); }
   var geminiKey  = (process.env.GEMINI_API_KEY || (userData.settings && userData.settings.geminiKey) || '').trim();
   if (!geminiKey) console.log('  No Gemini key found — skipping enhancement');
 
