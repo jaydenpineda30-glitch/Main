@@ -1577,6 +1577,22 @@ function App(){
       .catch(function(e){showToast('Check-in failed: '+(e&&e.message?e.message:'unknown error'),'error');setCheckinBlocks(generateCheckinFallback(data));setCheckinLoading(false);});
   }
   function toggleCalEv(id){trk("uni.gcal_event_toggle");setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
+  function brOpener(mode){
+    var b=data.boardroom||{};
+    if(mode==="evening"){
+      if(b.lastCommit&&b.lastCommit.date===todayStr()&&b.lastCommit.items&&b.lastCommit.items.length){
+        return [{role:"assistant",persona:"Alex",text:"This morning you committed to: "+b.lastCommit.items.join(", ")+". Straight up — done or not?",ts:Date.now()}];
+      }
+      return [{role:"assistant",persona:"Chris",text:"Walk me through your day. What actually happened — not the highlight reel?",ts:Date.now()}];
+    }
+    if(mode==="morning"){
+      return [{role:"assistant",persona:"Alex",text:"Morning. Look at what's due and what matters. What are the 1-3 things you're committing to today?",ts:Date.now()}];
+    }
+    if(mode==="drift"){
+      return [{role:"assistant",persona:"Chris",text:"You opened this in the middle of the day. That usually means something's off. What's going on right now?",ts:Date.now()}];
+    }
+    return [];
+  }
   function brOpen(){
     trk("boardroom.open");
     setShowBoardroom(true);
@@ -1589,6 +1605,9 @@ function App(){
         {role:"assistant",persona:"Chris",text:"Before we get into tasks — I want to understand you, not just your to-do list. What does \"better\" actually look like for you right now?",ts:Date.now()},
         {role:"assistant",persona:"Alex",text:"And let's get specific. Career, body, money, skills — what are you actually trying to hit, and by when?",ts:Date.now()+1}
       ]);
+    } else {
+      var seed=brOpener(brSessionMode());
+      if(seed.length) setBrMessages(seed);
     }
   }
   function brSessionMode(){

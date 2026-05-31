@@ -99,6 +99,7 @@
       + (keyMoments && keyMoments.length ? '\nWHAT YOU REMEMBER:\n' + keyMoments.map(function (m) { return '- ' + m.date + ': ' + m.summary; }).join('\n') + '\n' : '')
       + '\nSESSION MODE: ' + mode + '\n'
       + (mode === 'onboarding' ? '\nThis is the FIRST consultation — you don\'t know Jayden yet. Dig into his concrete goals and timelines: career, body, money, skills. One sharp question at a time, build on his last answer.\n' : '')
+      + '\nWhen it fits, connect what he did today to where he\'s going (his North Star) — not just whether he ticked the box.\n'
       + '\nReply in under 70 words. No preamble, no "as Alex". Talk straight to Jayden.';
   }
 
@@ -109,6 +110,7 @@
       + (keyMoments && keyMoments.length ? '\nWHAT YOU REMEMBER:\n' + keyMoments.map(function (m) { return '- ' + m.date + ': ' + m.summary; }).join('\n') + '\n' : '')
       + '\nSESSION MODE: ' + mode + '\n'
       + (mode === 'onboarding' ? '\nThis is the FIRST consultation — you don\'t know Jayden yet. Explore what "better" means to him, his values, and what has been holding him back. Go beneath the surface before any advice.\n' : '')
+      + '\nWhen it fits, connect what he did today to where he\'s going (his North Star) — not just whether he ticked the box.\n'
       + '\nReply in under 70 words. No preamble, no "as Chris". End with one genuine question.';
   }
 
