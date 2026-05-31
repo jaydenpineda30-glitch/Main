@@ -32,9 +32,14 @@
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
       body: JSON.stringify({ model: MODEL, messages: messages, temperature: 0.8, max_tokens: 500 })
     }).then(function (r) {
-      if (!r.ok) return r.json().then(function (e) {
-        throw new Error('Groq ' + r.status + ': ' + ((e.error && e.error.message) || r.statusText));
-      });
+      if (!r.ok) {
+        var status = r.status, statusText = r.statusText;
+        return r.json().then(function (e) {
+          throw new Error('Groq ' + status + ': ' + ((e.error && e.error.message) || statusText));
+        }, function () {
+          throw new Error('Groq ' + status + ': ' + statusText);
+        });
+      }
       return r.json();
     }).then(function (json) {
       if (!json.choices || !json.choices[0]) throw new Error('Empty Groq response');
