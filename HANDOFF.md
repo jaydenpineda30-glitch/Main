@@ -131,3 +131,84 @@ node "C:\Users\Jayde\my-project\export-to-obsidian.js"
 - Mobile UX matters — he uses his phone at the gym
 - Short responses, no padding
 - When using the browser via Claude in Chrome: the dashboard is at `https://jaydenpineda30-glitch.github.io/Main/dashboard.html`
+
+---
+
+## Boardroom (added 2026-05-31)
+
+Two AI coaches that both reply to every message, available via a 🧠 floating action button on the dashboard.
+
+- **Alex** — Hormozi-style: direct, logic-based, zero fluff, pushes for action and concrete numbers.
+- **Chris** — Williamson-style: psychologically deep, seeks root cause, ends every reply with one genuine question.
+
+Both run via **Groq** (model: `llama-3.3-70b-versatile`).
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `boardroom-service.js` | `window.BoardroomService` API: `chat`, `_model`, `buildContext`, `alexPrompt`, `chrisPrompt`, `summarizeSession`, `buildNorthStar`, `amalgamate` |
+| `boardroom-nudge.js` | Node script — sets `boardroom.nudgePending = true` in Firestore |
+| `.github/workflows/evening-nudge.yml` | GitHub Actions cron (~8pm AEST) that runs `boardroom-nudge.js` |
+| `dashboard.html` | All UI state + logic (see below) |
+| `monitoring-dashboard.js` | Groq key field in Settings |
+| `dashboard.css` | Glow CSS for the 🧠 FAB |
+
+**`dashboard.html` internals:** state — `showBoardroom`, `brMessages`, `brInput`, `brLoading`; functions — `brOpen`, `brOpener`, `brSessionMode`, `brSend`, `brEndSession`, `brFinishOnboarding`, `brGlow`; the 🧠 FAB + slide-in panel.
+
+### Groq API Key
+
+Stored in `localStorage.__groq_key__` and synced to Firestore `settings.groqKey`. Set via Settings panel in the dashboard.
+
+### Data Model
+
+`dashData.boardroom`:
+
+```js
+{
+  onboarded:       boolean,          // false until North Star is set
+  northStar:       string,           // one-paragraph direction statement
+  messages:        [{role, persona, text, ts}],  // current session (cleared on end)
+  sessionStartedAt: ISO string | null,
+  keyMoments:      [{date, summary, commitments[], mode}],  // compressed session memory
+  lastCommit:      {date: "YYYY-MM-DD", items: string[]} | null,  // morning commitments
+  nudgePending:    boolean           // cleared when Boardroom is opened
+}
+```
+
+### Session Modes
+
+Determined by `brSessionMode()` — time-of-day + onboarded state:
+
+| Mode | Condition | Opener persona |
+|------|-----------|----------------|
+| `onboarding` | `!boardroom.onboarded` | Chris + Alex (goals/values) |
+| `morning` | onboarded + hour < 11 | Alex (commit to 1-3 things) |
+| `evening` | onboarded + hour ≥ 17 | Alex (review last commit) or Chris (walk through day) |
+| `drift` | onboarded + 11 ≤ hour < 17 | Chris (something's off?) |
+
+Mode is passed to both persona prompts and shapes their coaching angle. Both prompts also carry a "connect today to North Star" instruction added in Phase 10.
+
+### Memory
+
+Each turn, `buildContext()` injects live `dashData` (calendar, tasks, gym, assessments, last reflection). At session end, `summarizeSession()` compresses the conversation into a `keyMoment` (one sentence + commitments array). When `keyMoments.length >= 15`, the oldest 10 are `amalgamate()`-d into 2-3 durable pattern strings.
+
+### Glow States (🧠 FAB)
+
+| Glow | Trigger |
+|------|---------|
+| `urgent` | `nudgePending` is true, OR past midday with no check-in |
+| `soft` | No task marked done today |
+| `none` | Otherwise |
+
+Opening the Boardroom clears `nudgePending`.
+
+### Evening Nudge — Manual Setup Required
+
+The GitHub Actions workflow (`evening-nudge.yml`) needs one repo secret to run:
+
+1. Go to repo Settings → Secrets → Actions
+2. Add secret `FIREBASE_SA_JSON` — paste the full contents of the service-account JSON file
+3. Merge the workflow file to the default branch (GitHub only schedules cron jobs on the default branch)
+
+Once set up, it runs automatically ~8pm AEST daily and sets `nudgePending = true` in Firestore.

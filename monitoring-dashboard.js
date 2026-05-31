@@ -565,6 +565,7 @@
     var savedSettings = props.settings || {};
     var formPair = useState({
       geminiKey: savedSettings.geminiKey || '',
+      groqKey: savedSettings.groqKey || '',
       githubPAT: savedSettings.githubPAT || ''
     });
     var form = formPair[0]; var setForm = formPair[1];
@@ -575,9 +576,10 @@
     useEffect(function () {
       setForm({
         geminiKey: savedSettings.geminiKey || '',
+        groqKey: savedSettings.groqKey || '',
         githubPAT: savedSettings.githubPAT || ''
       });
-    }, [savedSettings.geminiKey, savedSettings.githubPAT]);
+    }, [savedSettings.geminiKey, savedSettings.groqKey, savedSettings.githubPAT]);
 
     function save() {
       if (window.UsageTracker) window.UsageTracker.track('settings.gemini_set');
@@ -617,6 +619,21 @@
               rel: 'noreferrer',
               style: { color: C.accent, textDecoration: 'none' }
             }, 'aistudio.google.com ↗')
+          ),
+          field(
+            'Groq API Key',
+            'Used for Boardroom AI coaching (Llama 3.3 70B). Stored locally + synced to your account.',
+            'groqKey',
+            'gsk_…'
+          ),
+          createElement('div', { style: { fontSize: 10, color: C.text3, marginTop: -8, marginBottom: 4 } },
+            'Get a free key at ',
+            createElement('a', {
+              href: 'https://console.groq.com/keys',
+              target: '_blank',
+              rel: 'noreferrer',
+              style: { color: C.accent, textDecoration: 'none' }
+            }, 'console.groq.com ↗')
           )
         )
       ),

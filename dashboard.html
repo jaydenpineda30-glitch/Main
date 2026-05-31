@@ -17,6 +17,7 @@
 <script src="monitoring-dashboard.js"></script>
 <script src="ollama-service.js"></script>
 <script src="gemini-service.js"></script>
+<script src="boardroom-service.js"></script>
 <!-- Google Calendar sync -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://apis.google.com/js/api.js" async defer></script>
@@ -1110,6 +1111,10 @@ function App(){
   const [captureText,setCaptureText]=useState("");
   const [captureLoading,setCaptureLoading]=useState(false);
   const [captureResult,setCaptureResult]=useState(null);
+  const [showBoardroom,setShowBoardroom]=useState(false);
+  const [brMessages,setBrMessages]=useState([]);
+  const [brInput,setBrInput]=useState("");
+  const [brLoading,setBrLoading]=useState(false);
   const [capturesData,setCapturesData]=useState([]);
   const [capturesLoading,setCapturesLoading]=useState(false);
   const [capturesFilter,setCapturesFilter]=useState("all");
@@ -1166,6 +1171,7 @@ function App(){
   const [syllabusText,setSyllabusText]=useState("");
   const [syllabusStart,setSyllabusStart]=useState("2026-04-20");
   const [geminiKey,setGeminiKey]=useState(function(){try{return localStorage.getItem('__gemini_key__')||"";}catch(_){return "";}});
+  const [groqKey,setGroqKey]=useState(function(){try{return localStorage.getItem('__groq_key__')||"";}catch(_){return "";}});
   const [geminiLoading,setGeminiLoading]=useState(false);
   const [geminiPreview,setGeminiPreview]=useState(null);
   const [showAddAssess,setShowAddAssess]=useState(false);
@@ -1253,6 +1259,27 @@ function App(){
     });
     return unsub;
   },[]);
+  // Re-read the evening-nudge flag from Firestore when the tab regains focus,
+  // so the cron's nudgePending survives the dashboard's full-document auto-save.
+  useEffect(function(){
+    function checkNudge(){
+      if(document.hidden||!window.DASH_DOC) return;
+      window.DASH_DOC.get().then(function(doc){
+        var sd=doc&&doc.exists?doc.data():null;
+        var pending=sd&&sd.dashData&&sd.dashData.boardroom&&sd.dashData.boardroom.nudgePending;
+        if(pending){
+          setData(function(p){
+            if(p.boardroom&&p.boardroom.nudgePending) return p;
+            return {...p,boardroom:{...(p.boardroom||{}),nudgePending:true}};
+          });
+        }
+      }).catch(function(){});
+    }
+    document.addEventListener("visibilitychange",checkNudge);
+    window.addEventListener("focus",checkNudge);
+    checkNudge();
+    return function(){document.removeEventListener("visibilitychange",checkNudge);window.removeEventListener("focus",checkNudge);};
+  },[]);
   // Load from Firestore once auth user is known — runs migration first if needed
   useEffect(function(){
     if(!authUser||!window.DASH_DOC){if(!authLoading)setSyncStatus("offline");return;}
@@ -1292,6 +1319,11 @@ function App(){
             var restoredKey=settings.geminiKey.trim();
             setGeminiKey(restoredKey);
             try{localStorage.setItem('__gemini_key__',restoredKey);}catch(_){}
+          }
+          if(settings.groqKey&&!localStorage.getItem('__groq_key__')){
+            var restoredGroq=settings.groqKey.trim();
+            setGroqKey(restoredGroq);
+            try{localStorage.setItem('__groq_key__',restoredGroq);}catch(_){}
           }
           if(settings.gcalSelected&&!localStorage.getItem('__gcal_selected__')){
             setGcalSelectedIds(settings.gcalSelected);
@@ -1400,8 +1432,8 @@ function App(){
   },[data]);
   useEffect(function(){
     if(!_fbReady.current||!_dataLoaded.current||!window.DASH_DOC)return;
-    window.DASH_DOC.set({settings:{geminiKey:geminiKey,gcalSelected:gcalSelectedIds,gcalExcluded:gcalExcludedIds}},{merge:true}).catch(function(){});
-  },[geminiKey,gcalSelectedIds,gcalExcludedIds]);
+    window.DASH_DOC.set({settings:{geminiKey:geminiKey,groqKey:groqKey,gcalSelected:gcalSelectedIds,gcalExcluded:gcalExcludedIds}},{merge:true}).catch(function(){});
+  },[geminiKey,groqKey,gcalSelectedIds,gcalExcludedIds]);
   // Start health monitor (runs checks every 30s)
   useEffect(function(){if(window.HealthMonitor){HealthMonitor.start();}return function(){if(window.HealthMonitor)HealthMonitor.stop();};},[]);
   // Fetch version badge from version.json written by release workflow
@@ -1566,6 +1598,113 @@ function App(){
       .catch(function(e){showToast('Check-in failed: '+(e&&e.message?e.message:'unknown error'),'error');setCheckinBlocks(generateCheckinFallback(data));setCheckinLoading(false);});
   }
   function toggleCalEv(id){trk("uni.gcal_event_toggle");setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
+  function brOpener(mode){
+    var b=data.boardroom||{};
+    if(mode==="evening"){
+      if(b.lastCommit&&b.lastCommit.date===todayStr()&&b.lastCommit.items&&b.lastCommit.items.length){
+        return [{role:"assistant",persona:"Alex",text:"This morning you committed to: "+b.lastCommit.items.join(", ")+". Straight up — done or not?",ts:Date.now()}];
+      }
+      return [{role:"assistant",persona:"Chris",text:"Walk me through your day. What actually happened — not the highlight reel?",ts:Date.now()}];
+    }
+    if(mode==="morning"){
+      return [{role:"assistant",persona:"Alex",text:"Morning. Look at what's due and what matters. What are the 1-3 things you're committing to today?",ts:Date.now()}];
+    }
+    if(mode==="drift"){
+      return [{role:"assistant",persona:"Chris",text:"You opened this in the middle of the day. That usually means something's off. What's going on right now?",ts:Date.now()}];
+    }
+    return [];
+  }
+  function brOpen(){
+    trk("boardroom.open");
+    setShowBoardroom(true);
+    var b=data.boardroom||{};
+    if(b.nudgePending){setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),nudgePending:false}};});}
+    if(brMessages&&brMessages.length) return;
+    if(b.messages&&b.messages.length){setBrMessages(b.messages);return;}
+    if(!b.onboarded){
+      setBrMessages([
+        {role:"assistant",persona:"Chris",text:"Before we get into tasks — I want to understand you, not just your to-do list. What does \"better\" actually look like for you right now?",ts:Date.now()},
+        {role:"assistant",persona:"Alex",text:"And let's get specific. Career, body, money, skills — what are you actually trying to hit, and by when?",ts:Date.now()+1}
+      ]);
+    } else {
+      var seed=brOpener(brSessionMode());
+      if(seed.length) setBrMessages(seed);
+    }
+  }
+  function brSessionMode(){
+    var h=new Date().getHours();
+    if(!(data.boardroom&&data.boardroom.onboarded)) return "onboarding";
+    if(h<11) return "morning";
+    if(h>=17) return "evening";
+    return "drift";
+  }
+  function brGlow(){
+    var b=data.boardroom||{};
+    if(b.nudgePending) return "urgent";
+    var h=new Date().getHours();
+    var didCheckin=(checkinBlocks&&checkinBlocks.length>0);
+    if(h>=12&&!didCheckin) return "urgent";
+    var tasks=(data.personal&&data.personal.tasks)||[];
+    var doneToday=tasks.some(function(t){return t.done;});
+    if(!doneToday) return "soft";
+    return "none";
+  }
+  function brSend(){
+    var text=brInput.trim();
+    if(!text||brLoading) return;
+    if(!groqKey.trim()){showToast("Add your Groq API key in Settings first","warn");return;}
+    setBrLoading(true);
+    var mode=brSessionMode();
+    var cachedEvs=[];try{var ce=localStorage.getItem('__gcal_events__');if(ce)cachedEvs=JSON.parse(ce);}catch(_){}
+    var ctx=BoardroomService.buildContext(data,{todayStr:todayStr,dStr:dStr,daysBetween:daysBetween,isGoTabEvent:isGoTabEvent,thisWeek:thisWeek,cachedEvs:cachedEvs});
+    var ns=(data.boardroom&&data.boardroom.northStar)||"";
+    var km=(data.boardroom&&data.boardroom.keyMoments)||[];
+    var hist=brMessages.map(function(m){return m.role==="user"?{role:"user",content:m.text}:{role:"assistant",content:m.persona+": "+m.text};});
+    var userMsg={role:"user",persona:null,text:text,ts:Date.now()};
+    setBrMessages(function(p){return p.concat([userMsg]);});
+    setBrInput("");
+    Promise.all([
+      BoardroomService.chat(BoardroomService.alexPrompt(ctx,ns,km,mode),hist,text),
+      BoardroomService.chat(BoardroomService.chrisPrompt(ctx,ns,km,mode),hist,text)
+    ]).then(function(r){
+      var alexMsg={role:"assistant",persona:"Alex",text:r[0],ts:Date.now()};
+      var chrisMsg={role:"assistant",persona:"Chris",text:r[1],ts:Date.now()+1};
+      setBrMessages(function(p){return p.concat([alexMsg,chrisMsg]);});
+      setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),messages:(brMessages||[]).concat([userMsg,alexMsg,chrisMsg]),sessionStartedAt:(p.boardroom&&p.boardroom.sessionStartedAt)||new Date().toISOString()}};});
+      setBrLoading(false);
+    }).catch(function(e){showToast("Boardroom: "+(e&&e.message||"error"),"error");setBrLoading(false);});
+  }
+  function brEndSession(){
+    if(brMessages.filter(function(m){return m.role==="user";}).length<1){setShowBoardroom(false);return;}
+    var mode=brSessionMode();
+    BoardroomService.summarizeSession(brMessages,mode).then(function(km){
+      var newMoment={date:todayStr(),summary:km.summary,commitments:km.commitments||[],mode:mode};
+      var prev=(data.boardroom&&data.boardroom.keyMoments)||[];
+      function save(moments){
+        setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),keyMoments:moments,messages:[],sessionStartedAt:null,lastCommit:(mode==="morning"&&km.commitments&&km.commitments.length)?{date:todayStr(),items:km.commitments}:((p.boardroom&&p.boardroom.lastCommit)||null)}};});
+        setBrMessages([]);
+        setShowBoardroom(false);
+        showToast("Session saved to memory","success");
+      }
+      if(prev.length>=15){
+        BoardroomService.amalgamate(prev.slice(0,10)).then(function(patterns){
+          var compacted=patterns.map(function(s){return{date:"pattern",summary:s,commitments:[],mode:"amalgamated"};});
+          save(compacted.concat(prev.slice(10)).concat([newMoment]));
+        }).catch(function(){save(prev.concat([newMoment]).slice(-15));});
+      } else {
+        save(prev.concat([newMoment]));
+      }
+    }).catch(function(){setShowBoardroom(false);});
+  }
+  function brFinishOnboarding(){
+    if(brMessages.filter(function(m){return m.role==="user";}).length<1){showToast("Chat a bit first so we can set your North Star","warn");return;}
+    BoardroomService.buildNorthStar(brMessages).then(function(ns){
+      setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),onboarded:true,northStar:(ns||"").trim(),messages:[],sessionStartedAt:null}};});
+      setBrMessages([]);
+      setShowBoardroom(false);
+      showToast("North Star set. The Boardroom knows your direction now.","success");
+    }).catch(function(e){showToast("Couldn't set North Star: "+(e&&e.message||"error"),"error");});
+  }
   // ── Backup & restore helpers ───────────────────────────────────────────────
   function getLatestBackup(){
     try{
@@ -1974,12 +2113,17 @@ function App(){
       {/* Full monitoring panel modal */}
       {showMonitor&&window.MonitoringPanel&&<MonitoringPanel
         onClose={function(){setShowMonitor(false);}}
-        settings={{geminiKey:geminiKey,githubPAT:(data.settings&&data.settings.githubPAT)||""}}
+        settings={{geminiKey:geminiKey,groqKey:groqKey,githubPAT:(data.settings&&data.settings.githubPAT)||""}}
         onSaveSettings={function(s){
           if(s.geminiKey!==undefined){
             var k=s.geminiKey.trim();
             setGeminiKey(k);
             try{localStorage.setItem('__gemini_key__',k);}catch(_){}
+          }
+          if(s.groqKey!==undefined){
+            var gk=s.groqKey.trim();
+            setGroqKey(gk);
+            try{localStorage.setItem('__groq_key__',gk);}catch(_){}
           }
           if(s.githubPAT!==undefined){
             setData(function(p){return{...p,settings:{...(p.settings||{}),githubPAT:s.githubPAT.trim()}};});
@@ -2710,6 +2854,11 @@ function App(){
         </div>
       </div>}
 
+      {/* ── Boardroom floating button ── */}
+      <button onClick={brOpen} className={"br-glow-"+brGlow()} style={{position:"fixed",bottom:mob?122:140,right:20,zIndex:150,background:"linear-gradient(135deg,#2f6bff,#7b2fff)",border:"none",borderRadius:99,padding:"11px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(99,102,241,0.45)",display:"flex",alignItems:"center",gap:7,letterSpacing:0.2}}>
+        <span style={{fontSize:15}}>🧠</span>Boardroom
+      </button>
+
       {/* ── Quick Capture floating button ── */}
       <button onClick={function(){trk("capture.quick_open");setShowCapture(true);setCaptureResult(null);}} style={{position:"fixed",bottom:mob?70:80,right:20,zIndex:150,background:"linear-gradient(135deg,#7b2fff,#c77dff)",border:"none",borderRadius:99,padding:"11px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(199,125,255,0.45)",display:"flex",alignItems:"center",gap:7,letterSpacing:0.2}}>
         <span style={{fontSize:15}}>⚡</span>Capture
@@ -2756,6 +2905,34 @@ function App(){
             {captureResult.tags&&captureResult.tags.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:8}}>{captureResult.tags.map(function(tag){return<span key={tag} style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.bg3,color:T.text3}}>#{tag}</span>;})}</div>}
             <button style={{marginTop:14,padding:"8px 18px",borderRadius:8,border:"none",background:"linear-gradient(135deg,#7b2fff,#c77dff)",color:"#fff",cursor:"pointer",fontSize:12,fontWeight:600}} onClick={function(){setShowCapture(false);setCaptureResult(null);}}>Done</button>
           </div>}
+        </div>
+      </div>}
+
+      {/* ── Boardroom chat panel ── */}
+      {showBoardroom&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.92)",backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",display:"flex",alignItems:mob?"stretch":"center",justifyContent:"center",zIndex:200,padding:mob?"0":"16px"}} onClick={function(){setShowBoardroom(false);}}>
+        <div onClick={function(e){e.stopPropagation();}} style={{background:"rgba(10,12,32,0.98)",border:"1px solid rgba(99,102,241,0.4)",borderRadius:mob?0:16,width:mob?"100%":680,maxWidth:"100%",height:mob?"100%":"80vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+          <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <span style={{fontSize:16,fontWeight:700,color:"#fff"}}>🧠 Boardroom</span>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              {(data.boardroom&&data.boardroom.onboarded)
+                ? <button onClick={brEndSession} style={{background:"rgba(255,255,255,0.06)",border:"0.5px solid rgba(255,255,255,0.15)",borderRadius:8,padding:"5px 10px",color:T.text3,fontSize:11,fontWeight:600,cursor:"pointer"}}>End session</button>
+                : <button onClick={brFinishOnboarding} style={{background:"rgba(105,240,174,0.12)",border:"0.5px solid rgba(105,240,174,0.4)",borderRadius:8,padding:"5px 10px",color:"#69f0ae",fontSize:11,fontWeight:600,cursor:"pointer"}}>Finish setup</button>}
+              <button onClick={function(){setShowBoardroom(false);}} style={{background:"none",border:"none",color:T.text3,fontSize:20,cursor:"pointer"}}>×</button>
+            </div>
+          </div>
+          <div style={{flex:1,overflowY:"auto",padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
+            {brMessages.length===0&&<div style={{color:T.text3,fontSize:13,textAlign:"center",marginTop:24}}>Alex and Chris are here. Tell them how your day's going.</div>}
+            {brMessages.map(function(m,i){
+              if(m.role==="user")return <div key={i} style={{alignSelf:"flex-end",maxWidth:"80%",background:"linear-gradient(135deg,#7b2fff,#c77dff)",color:"#fff",padding:"9px 13px",borderRadius:14,fontSize:13}}>{m.text}</div>;
+              var isAlex=m.persona==="Alex";
+              return <div key={i} style={{alignSelf:"flex-start",maxWidth:"85%"}}><div style={{fontSize:11,fontWeight:700,color:isAlex?"#5b9bff":"#c77dff",marginBottom:3}}>{isAlex?"🔵 Alex":"🟣 Chris"}</div><div style={{background:"rgba(255,255,255,0.05)",border:"0.5px solid rgba(255,255,255,0.1)",color:"#e8e9f3",padding:"9px 13px",borderRadius:14,fontSize:13,whiteSpace:"pre-wrap"}}>{m.text}</div></div>;
+            })}
+            {brLoading&&<div style={{color:T.text3,fontSize:12,fontStyle:"italic"}}>Alex & Chris are thinking…</div>}
+          </div>
+          <div style={{padding:"12px 14px",borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",gap:8}}>
+            <input value={brInput} onChange={function(e){setBrInput(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")brSend();}} placeholder="Talk to the Boardroom…" style={{flex:1,background:"rgba(255,255,255,0.06)",border:"0.5px solid rgba(255,255,255,0.15)",borderRadius:10,padding:"10px 12px",color:"#fff",fontSize:13,outline:"none"}}/>
+            <button onClick={brSend} disabled={brLoading} style={{background:"linear-gradient(135deg,#2f6bff,#7b2fff)",border:"none",borderRadius:10,padding:"0 16px",color:"#fff",fontWeight:700,fontSize:13,cursor:brLoading?"default":"pointer",opacity:brLoading?0.6:1}}>Send</button>
+          </div>
         </div>
       </div>}
 

@@ -1,0 +1,29 @@
+name: Boardroom evening nudge
+
+on:
+  schedule:
+    - cron: '0 10 * * *'   # 10:00 UTC = 8pm AEST (Melbourne, no DST). Adjust to '0 9 * * *' during AEDT if desired.
+  workflow_dispatch:
+
+jobs:
+  nudge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install firebase-admin
+        run: npm install firebase-admin
+
+      - name: Write service account key from secret
+        run: printf '%s' "$SA_JSON" > personal-dashboard-53b0d-firebase-adminsdk-fbsvc-1d6afe66d0.json
+        env:
+          SA_JSON: ${{ secrets.FIREBASE_SA_JSON }}
+
+      - name: Run boardroom nudge
+        run: node boardroom-nudge.js
