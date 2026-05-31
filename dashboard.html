@@ -1654,7 +1654,7 @@ function App(){
     }).catch(function(e){showToast("Boardroom: "+(e&&e.message||"error"),"error");setBrLoading(false);});
   }
   function brEndSession(){
-    if(brMessages.length<2){setShowBoardroom(false);return;}
+    if(brMessages.filter(function(m){return m.role==="user";}).length<1){setShowBoardroom(false);return;}
     var mode=brSessionMode();
     BoardroomService.summarizeSession(brMessages,mode).then(function(km){
       var newMoment={date:todayStr(),summary:km.summary,commitments:km.commitments||[],mode:mode};
@@ -1676,7 +1676,7 @@ function App(){
     }).catch(function(){setShowBoardroom(false);});
   }
   function brFinishOnboarding(){
-    if(brMessages.length<2){showToast("Chat a bit first so we can set your North Star","warn");return;}
+    if(brMessages.filter(function(m){return m.role==="user";}).length<1){showToast("Chat a bit first so we can set your North Star","warn");return;}
     BoardroomService.buildNorthStar(brMessages).then(function(ns){
       setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),onboarded:true,northStar:(ns||"").trim(),messages:[],sessionStartedAt:null}};});
       setBrMessages([]);
