@@ -1111,6 +1111,10 @@ function App(){
   const [captureText,setCaptureText]=useState("");
   const [captureLoading,setCaptureLoading]=useState(false);
   const [captureResult,setCaptureResult]=useState(null);
+  const [showBoardroom,setShowBoardroom]=useState(false);
+  const [brMessages,setBrMessages]=useState([]);
+  const [brInput,setBrInput]=useState("");
+  const [brLoading,setBrLoading]=useState(false);
   const [capturesData,setCapturesData]=useState([]);
   const [capturesLoading,setCapturesLoading]=useState(false);
   const [capturesFilter,setCapturesFilter]=useState("all");
@@ -1573,6 +1577,37 @@ function App(){
       .catch(function(e){showToast('Check-in failed: '+(e&&e.message?e.message:'unknown error'),'error');setCheckinBlocks(generateCheckinFallback(data));setCheckinLoading(false);});
   }
   function toggleCalEv(id){trk("uni.gcal_event_toggle");setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
+  function brSessionMode(){
+    var h=new Date().getHours();
+    if(!(data.boardroom&&data.boardroom.onboarded)) return "onboarding";
+    if(h<11) return "morning";
+    if(h>=17) return "evening";
+    return "drift";
+  }
+  function brSend(){
+    var text=brInput.trim();
+    if(!text||brLoading) return;
+    if(!groqKey.trim()){showToast("Add your Groq API key in Settings first","warn");return;}
+    setBrLoading(true);
+    var mode=brSessionMode();
+    var cachedEvs=[];try{var ce=localStorage.getItem('__gcal_events__');if(ce)cachedEvs=JSON.parse(ce);}catch(_){}
+    var ctx=BoardroomService.buildContext(data,{todayStr:todayStr,dStr:dStr,daysBetween:daysBetween,isGoTabEvent:isGoTabEvent,thisWeek:thisWeek,cachedEvs:cachedEvs});
+    var ns=(data.boardroom&&data.boardroom.northStar)||"";
+    var km=(data.boardroom&&data.boardroom.keyMoments)||[];
+    var hist=brMessages.map(function(m){return m.role==="user"?{role:"user",content:m.text}:{role:"assistant",content:m.persona+": "+m.text};});
+    var userMsg={role:"user",persona:null,text:text,ts:Date.now()};
+    setBrMessages(function(p){return p.concat([userMsg]);});
+    setBrInput("");
+    Promise.all([
+      BoardroomService.chat(BoardroomService.alexPrompt(ctx,ns,km,mode),hist,text),
+      BoardroomService.chat(BoardroomService.chrisPrompt(ctx,ns,km,mode),hist,text)
+    ]).then(function(r){
+      var alexMsg={role:"assistant",persona:"Alex",text:r[0],ts:Date.now()};
+      var chrisMsg={role:"assistant",persona:"Chris",text:r[1],ts:Date.now()+1};
+      setBrMessages(function(p){return p.concat([alexMsg,chrisMsg]);});
+      setBrLoading(false);
+    }).catch(function(e){showToast("Boardroom: "+(e&&e.message||"error"),"error");setBrLoading(false);});
+  }
   // ── Backup & restore helpers ───────────────────────────────────────────────
   function getLatestBackup(){
     try{
@@ -2722,6 +2757,11 @@ function App(){
         </div>
       </div>}
 
+      {/* ── Boardroom floating button ── */}
+      <button onClick={function(){trk("boardroom.open");setShowBoardroom(true);if(data.boardroom&&data.boardroom.nudgePending){setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),nudgePending:false}};});}}} style={{position:"fixed",bottom:mob?122:140,right:20,zIndex:150,background:"linear-gradient(135deg,#2f6bff,#7b2fff)",border:"none",borderRadius:99,padding:"11px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(99,102,241,0.45)",display:"flex",alignItems:"center",gap:7,letterSpacing:0.2}}>
+        <span style={{fontSize:15}}>🧠</span>Boardroom
+      </button>
+
       {/* ── Quick Capture floating button ── */}
       <button onClick={function(){trk("capture.quick_open");setShowCapture(true);setCaptureResult(null);}} style={{position:"fixed",bottom:mob?70:80,right:20,zIndex:150,background:"linear-gradient(135deg,#7b2fff,#c77dff)",border:"none",borderRadius:99,padding:"11px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(199,125,255,0.45)",display:"flex",alignItems:"center",gap:7,letterSpacing:0.2}}>
         <span style={{fontSize:15}}>⚡</span>Capture
@@ -2768,6 +2808,29 @@ function App(){
             {captureResult.tags&&captureResult.tags.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:8}}>{captureResult.tags.map(function(tag){return<span key={tag} style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.bg3,color:T.text3}}>#{tag}</span>;})}</div>}
             <button style={{marginTop:14,padding:"8px 18px",borderRadius:8,border:"none",background:"linear-gradient(135deg,#7b2fff,#c77dff)",color:"#fff",cursor:"pointer",fontSize:12,fontWeight:600}} onClick={function(){setShowCapture(false);setCaptureResult(null);}}>Done</button>
           </div>}
+        </div>
+      </div>}
+
+      {/* ── Boardroom chat panel ── */}
+      {showBoardroom&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.92)",backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",display:"flex",alignItems:mob?"stretch":"center",justifyContent:"center",zIndex:200,padding:mob?"0":"16px"}} onClick={function(){setShowBoardroom(false);}}>
+        <div onClick={function(e){e.stopPropagation();}} style={{background:"rgba(10,12,32,0.98)",border:"1px solid rgba(99,102,241,0.4)",borderRadius:mob?0:16,width:mob?"100%":680,maxWidth:"100%",height:mob?"100%":"80vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+          <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <span style={{fontSize:16,fontWeight:700,color:"#fff"}}>🧠 Boardroom</span>
+            <button onClick={function(){setShowBoardroom(false);}} style={{background:"none",border:"none",color:T.text3,fontSize:20,cursor:"pointer"}}>×</button>
+          </div>
+          <div style={{flex:1,overflowY:"auto",padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
+            {brMessages.length===0&&<div style={{color:T.text3,fontSize:13,textAlign:"center",marginTop:24}}>Alex and Chris are here. Tell them how your day's going.</div>}
+            {brMessages.map(function(m,i){
+              if(m.role==="user")return <div key={i} style={{alignSelf:"flex-end",maxWidth:"80%",background:"linear-gradient(135deg,#7b2fff,#c77dff)",color:"#fff",padding:"9px 13px",borderRadius:14,fontSize:13}}>{m.text}</div>;
+              var isAlex=m.persona==="Alex";
+              return <div key={i} style={{alignSelf:"flex-start",maxWidth:"85%"}}><div style={{fontSize:11,fontWeight:700,color:isAlex?"#5b9bff":"#c77dff",marginBottom:3}}>{isAlex?"🔵 Alex":"🟣 Chris"}</div><div style={{background:"rgba(255,255,255,0.05)",border:"0.5px solid rgba(255,255,255,0.1)",color:"#e8e9f3",padding:"9px 13px",borderRadius:14,fontSize:13,whiteSpace:"pre-wrap"}}>{m.text}</div></div>;
+            })}
+            {brLoading&&<div style={{color:T.text3,fontSize:12,fontStyle:"italic"}}>Alex & Chris are thinking…</div>}
+          </div>
+          <div style={{padding:"12px 14px",borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",gap:8}}>
+            <input value={brInput} onChange={function(e){setBrInput(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")brSend();}} placeholder="Talk to the Boardroom…" style={{flex:1,background:"rgba(255,255,255,0.06)",border:"0.5px solid rgba(255,255,255,0.15)",borderRadius:10,padding:"10px 12px",color:"#fff",fontSize:13,outline:"none"}}/>
+            <button onClick={brSend} disabled={brLoading} style={{background:"linear-gradient(135deg,#2f6bff,#7b2fff)",border:"none",borderRadius:10,padding:"0 16px",color:"#fff",fontWeight:700,fontSize:13,cursor:brLoading?"default":"pointer",opacity:brLoading?0.6:1}}>Send</button>
+          </div>
         </div>
       </div>}
 
