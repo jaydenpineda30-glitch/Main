@@ -17,6 +17,7 @@
 <script src="monitoring-dashboard.js"></script>
 <script src="ollama-service.js"></script>
 <script src="gemini-service.js"></script>
+<script src="boardroom-service.js"></script>
 <!-- Google Calendar sync -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://apis.google.com/js/api.js" async defer></script>
@@ -1166,6 +1167,7 @@ function App(){
   const [syllabusText,setSyllabusText]=useState("");
   const [syllabusStart,setSyllabusStart]=useState("2026-04-20");
   const [geminiKey,setGeminiKey]=useState(function(){try{return localStorage.getItem('__gemini_key__')||"";}catch(_){return "";}});
+  const [groqKey,setGroqKey]=useState(function(){try{return localStorage.getItem('__groq_key__')||"";}catch(_){return "";}});
   const [geminiLoading,setGeminiLoading]=useState(false);
   const [geminiPreview,setGeminiPreview]=useState(null);
   const [showAddAssess,setShowAddAssess]=useState(false);
@@ -1293,6 +1295,11 @@ function App(){
             setGeminiKey(restoredKey);
             try{localStorage.setItem('__gemini_key__',restoredKey);}catch(_){}
           }
+          if(settings.groqKey&&!localStorage.getItem('__groq_key__')){
+            var restoredGroq=settings.groqKey.trim();
+            setGroqKey(restoredGroq);
+            try{localStorage.setItem('__groq_key__',restoredGroq);}catch(_){}
+          }
           if(settings.gcalSelected&&!localStorage.getItem('__gcal_selected__')){
             setGcalSelectedIds(settings.gcalSelected);
             try{localStorage.setItem('__gcal_selected__',JSON.stringify(settings.gcalSelected));}catch(_){}
@@ -1400,8 +1407,8 @@ function App(){
   },[data]);
   useEffect(function(){
     if(!_fbReady.current||!_dataLoaded.current||!window.DASH_DOC)return;
-    window.DASH_DOC.set({settings:{geminiKey:geminiKey,gcalSelected:gcalSelectedIds,gcalExcluded:gcalExcludedIds}},{merge:true}).catch(function(){});
-  },[geminiKey,gcalSelectedIds,gcalExcludedIds]);
+    window.DASH_DOC.set({settings:{geminiKey:geminiKey,groqKey:groqKey,gcalSelected:gcalSelectedIds,gcalExcluded:gcalExcludedIds}},{merge:true}).catch(function(){});
+  },[geminiKey,groqKey,gcalSelectedIds,gcalExcludedIds]);
   // Start health monitor (runs checks every 30s)
   useEffect(function(){if(window.HealthMonitor){HealthMonitor.start();}return function(){if(window.HealthMonitor)HealthMonitor.stop();};},[]);
   // Fetch version badge from version.json written by release workflow
@@ -1974,12 +1981,17 @@ function App(){
       {/* Full monitoring panel modal */}
       {showMonitor&&window.MonitoringPanel&&<MonitoringPanel
         onClose={function(){setShowMonitor(false);}}
-        settings={{geminiKey:geminiKey,githubPAT:(data.settings&&data.settings.githubPAT)||""}}
+        settings={{geminiKey:geminiKey,groqKey:groqKey,githubPAT:(data.settings&&data.settings.githubPAT)||""}}
         onSaveSettings={function(s){
           if(s.geminiKey!==undefined){
             var k=s.geminiKey.trim();
             setGeminiKey(k);
             try{localStorage.setItem('__gemini_key__',k);}catch(_){}
+          }
+          if(s.groqKey!==undefined){
+            var gk=s.groqKey.trim();
+            setGroqKey(gk);
+            try{localStorage.setItem('__groq_key__',gk);}catch(_){}
           }
           if(s.githubPAT!==undefined){
             setData(function(p){return{...p,settings:{...(p.settings||{}),githubPAT:s.githubPAT.trim()}};});
