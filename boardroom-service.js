@@ -30,7 +30,7 @@
     return fetch(GROQ_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-      body: JSON.stringify({ model: MODEL, messages: messages, temperature: 0.8, max_tokens: 500 })
+      body: JSON.stringify({ model: MODEL, messages: messages, temperature: 0.8, max_completion_tokens: 500 })
     }).then(function (r) {
       if (!r.ok) {
         var status = r.status, statusText = r.statusText;
