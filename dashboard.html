@@ -1605,8 +1605,19 @@ function App(){
       var alexMsg={role:"assistant",persona:"Alex",text:r[0],ts:Date.now()};
       var chrisMsg={role:"assistant",persona:"Chris",text:r[1],ts:Date.now()+1};
       setBrMessages(function(p){return p.concat([alexMsg,chrisMsg]);});
+      setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),messages:(brMessages||[]).concat([userMsg,alexMsg,chrisMsg]),sessionStartedAt:(p.boardroom&&p.boardroom.sessionStartedAt)||new Date().toISOString()}};});
       setBrLoading(false);
     }).catch(function(e){showToast("Boardroom: "+(e&&e.message||"error"),"error");setBrLoading(false);});
+  }
+  function brEndSession(){
+    if(brMessages.length<2){setShowBoardroom(false);return;}
+    var mode=brSessionMode();
+    BoardroomService.summarizeSession(brMessages,mode).then(function(km){
+      setData(function(p){var prev=(p.boardroom&&p.boardroom.keyMoments)||[];var next=prev.concat([{date:todayStr(),summary:km.summary,commitments:km.commitments||[],mode:mode}]).slice(-15);return{...p,boardroom:{...(p.boardroom||{}),keyMoments:next,messages:[],sessionStartedAt:null,lastCommit:(mode==="morning"&&km.commitments&&km.commitments.length)?{date:todayStr(),items:km.commitments}:((p.boardroom&&p.boardroom.lastCommit)||null)}};});
+      setBrMessages([]);
+      setShowBoardroom(false);
+      showToast("Session saved to memory","success");
+    }).catch(function(){setShowBoardroom(false);});
   }
   // ── Backup & restore helpers ───────────────────────────────────────────────
   function getLatestBackup(){
@@ -2758,7 +2769,7 @@ function App(){
       </div>}
 
       {/* ── Boardroom floating button ── */}
-      <button onClick={function(){trk("boardroom.open");setShowBoardroom(true);if(data.boardroom&&data.boardroom.nudgePending){setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),nudgePending:false}};});}}} style={{position:"fixed",bottom:mob?122:140,right:20,zIndex:150,background:"linear-gradient(135deg,#2f6bff,#7b2fff)",border:"none",borderRadius:99,padding:"11px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(99,102,241,0.45)",display:"flex",alignItems:"center",gap:7,letterSpacing:0.2}}>
+      <button onClick={function(){trk("boardroom.open");setShowBoardroom(true);if((!brMessages||brMessages.length===0)&&data.boardroom&&data.boardroom.messages&&data.boardroom.messages.length){setBrMessages(data.boardroom.messages);}if(data.boardroom&&data.boardroom.nudgePending){setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),nudgePending:false}};});}}} style={{position:"fixed",bottom:mob?122:140,right:20,zIndex:150,background:"linear-gradient(135deg,#2f6bff,#7b2fff)",border:"none",borderRadius:99,padding:"11px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(99,102,241,0.45)",display:"flex",alignItems:"center",gap:7,letterSpacing:0.2}}>
         <span style={{fontSize:15}}>🧠</span>Boardroom
       </button>
 
@@ -2816,7 +2827,10 @@ function App(){
         <div onClick={function(e){e.stopPropagation();}} style={{background:"rgba(10,12,32,0.98)",border:"1px solid rgba(99,102,241,0.4)",borderRadius:mob?0:16,width:mob?"100%":680,maxWidth:"100%",height:mob?"100%":"80vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
           <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
             <span style={{fontSize:16,fontWeight:700,color:"#fff"}}>🧠 Boardroom</span>
-            <button onClick={function(){setShowBoardroom(false);}} style={{background:"none",border:"none",color:T.text3,fontSize:20,cursor:"pointer"}}>×</button>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <button onClick={brEndSession} style={{background:"rgba(255,255,255,0.06)",border:"0.5px solid rgba(255,255,255,0.15)",borderRadius:8,padding:"5px 10px",color:T.text3,fontSize:11,fontWeight:600,cursor:"pointer"}}>End session</button>
+              <button onClick={function(){setShowBoardroom(false);}} style={{background:"none",border:"none",color:T.text3,fontSize:20,cursor:"pointer"}}>×</button>
+            </div>
           </div>
           <div style={{flex:1,overflowY:"auto",padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
             {brMessages.length===0&&<div style={{color:T.text3,fontSize:13,textAlign:"center",marginTop:24}}>Alex and Chris are here. Tell them how your day's going.</div>}

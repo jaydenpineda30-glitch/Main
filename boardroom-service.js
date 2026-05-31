@@ -110,5 +110,15 @@
       + '\nReply in under 70 words. No preamble, no "as Chris". End with one genuine question.';
   }
 
-  window.BoardroomService = { chat: chat, _model: MODEL, buildContext: buildContext, alexPrompt: alexPrompt, chrisPrompt: chrisPrompt };
+  function summarizeSession(transcript, mode) {
+    var convo = transcript.map(function (m) { return (m.persona || 'Jayden') + ': ' + m.text; }).join('\n');
+    var prompt = 'Summarize this coaching session in ONE sentence (max 25 words) capturing the key realization or commitment. Then list any concrete commitments Jayden made as a JSON array of short strings. Respond ONLY as JSON: {"summary":"...","commitments":["..."]}\n\nSESSION (' + mode + '):\n' + convo;
+    return chat('You compress coaching sessions into durable memory. Be precise, no fluff.', [], prompt)
+      .then(function (text) {
+        var m = text.match(/\{[\s\S]*\}/);
+        return m ? JSON.parse(m[0]) : { summary: text.slice(0, 120), commitments: [] };
+      });
+  }
+
+  window.BoardroomService = { chat: chat, _model: MODEL, buildContext: buildContext, alexPrompt: alexPrompt, chrisPrompt: chrisPrompt, summarizeSession: summarizeSession };
 }());
