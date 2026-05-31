@@ -1259,6 +1259,27 @@ function App(){
     });
     return unsub;
   },[]);
+  // Re-read the evening-nudge flag from Firestore when the tab regains focus,
+  // so the cron's nudgePending survives the dashboard's full-document auto-save.
+  useEffect(function(){
+    function checkNudge(){
+      if(document.hidden||!window.DASH_DOC) return;
+      window.DASH_DOC.get().then(function(doc){
+        var sd=doc&&doc.exists?doc.data():null;
+        var pending=sd&&sd.dashData&&sd.dashData.boardroom&&sd.dashData.boardroom.nudgePending;
+        if(pending){
+          setData(function(p){
+            if(p.boardroom&&p.boardroom.nudgePending) return p;
+            return {...p,boardroom:{...(p.boardroom||{}),nudgePending:true}};
+          });
+        }
+      }).catch(function(){});
+    }
+    document.addEventListener("visibilitychange",checkNudge);
+    window.addEventListener("focus",checkNudge);
+    checkNudge();
+    return function(){document.removeEventListener("visibilitychange",checkNudge);window.removeEventListener("focus",checkNudge);};
+  },[]);
   // Load from Firestore once auth user is known — runs migration first if needed
   useEffect(function(){
     if(!authUser||!window.DASH_DOC){if(!authLoading)setSyncStatus("offline");return;}
