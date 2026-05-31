@@ -98,6 +98,7 @@
       + (northStar ? '\nNORTH STAR: ' + northStar + '\n' : '')
       + (keyMoments && keyMoments.length ? '\nWHAT YOU REMEMBER:\n' + keyMoments.map(function (m) { return '- ' + m.date + ': ' + m.summary; }).join('\n') + '\n' : '')
       + '\nSESSION MODE: ' + mode + '\n'
+      + (mode === 'onboarding' ? '\nThis is the FIRST consultation — you don\'t know Jayden yet. Dig into his concrete goals and timelines: career, body, money, skills. One sharp question at a time, build on his last answer.\n' : '')
       + '\nReply in under 70 words. No preamble, no "as Alex". Talk straight to Jayden.';
   }
 
@@ -107,6 +108,7 @@
       + (northStar ? '\nNORTH STAR: ' + northStar + '\n' : '')
       + (keyMoments && keyMoments.length ? '\nWHAT YOU REMEMBER:\n' + keyMoments.map(function (m) { return '- ' + m.date + ': ' + m.summary; }).join('\n') + '\n' : '')
       + '\nSESSION MODE: ' + mode + '\n'
+      + (mode === 'onboarding' ? '\nThis is the FIRST consultation — you don\'t know Jayden yet. Explore what "better" means to him, his values, and what has been holding him back. Go beneath the surface before any advice.\n' : '')
       + '\nReply in under 70 words. No preamble, no "as Chris". End with one genuine question.';
   }
 
@@ -120,5 +122,10 @@
       });
   }
 
-  window.BoardroomService = { chat: chat, _model: MODEL, buildContext: buildContext, alexPrompt: alexPrompt, chrisPrompt: chrisPrompt, summarizeSession: summarizeSession };
+  function buildNorthStar(transcript) {
+    var convo = transcript.map(function (m) { return (m.persona || 'Jayden') + ': ' + m.text; }).join('\n');
+    return chat('You synthesize a single North Star Statement: one paragraph (max 60 words) capturing who Jayden is becoming and why it matters. Second person ("You are..."). No lists, no preamble.', [], 'CONSULTATION:\n' + convo);
+  }
+
+  window.BoardroomService = { chat: chat, _model: MODEL, buildContext: buildContext, alexPrompt: alexPrompt, chrisPrompt: chrisPrompt, summarizeSession: summarizeSession, buildNorthStar: buildNorthStar };
 }());

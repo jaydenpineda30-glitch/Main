@@ -1577,6 +1577,20 @@ function App(){
       .catch(function(e){showToast('Check-in failed: '+(e&&e.message?e.message:'unknown error'),'error');setCheckinBlocks(generateCheckinFallback(data));setCheckinLoading(false);});
   }
   function toggleCalEv(id){trk("uni.gcal_event_toggle");setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
+  function brOpen(){
+    trk("boardroom.open");
+    setShowBoardroom(true);
+    var b=data.boardroom||{};
+    if(b.nudgePending){setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),nudgePending:false}};});}
+    if(brMessages&&brMessages.length) return;
+    if(b.messages&&b.messages.length){setBrMessages(b.messages);return;}
+    if(!b.onboarded){
+      setBrMessages([
+        {role:"assistant",persona:"Chris",text:"Before we get into tasks — I want to understand you, not just your to-do list. What does \"better\" actually look like for you right now?",ts:Date.now()},
+        {role:"assistant",persona:"Alex",text:"And let's get specific. Career, body, money, skills — what are you actually trying to hit, and by when?",ts:Date.now()+1}
+      ]);
+    }
+  }
   function brSessionMode(){
     var h=new Date().getHours();
     if(!(data.boardroom&&data.boardroom.onboarded)) return "onboarding";
@@ -1618,6 +1632,15 @@ function App(){
       setShowBoardroom(false);
       showToast("Session saved to memory","success");
     }).catch(function(){setShowBoardroom(false);});
+  }
+  function brFinishOnboarding(){
+    if(brMessages.length<2){showToast("Chat a bit first so we can set your North Star","warn");return;}
+    BoardroomService.buildNorthStar(brMessages).then(function(ns){
+      setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),onboarded:true,northStar:(ns||"").trim(),messages:[],sessionStartedAt:null}};});
+      setBrMessages([]);
+      setShowBoardroom(false);
+      showToast("North Star set. The Boardroom knows your direction now.","success");
+    }).catch(function(e){showToast("Couldn't set North Star: "+(e&&e.message||"error"),"error");});
   }
   // ── Backup & restore helpers ───────────────────────────────────────────────
   function getLatestBackup(){
@@ -2769,7 +2792,7 @@ function App(){
       </div>}
 
       {/* ── Boardroom floating button ── */}
-      <button onClick={function(){trk("boardroom.open");setShowBoardroom(true);if((!brMessages||brMessages.length===0)&&data.boardroom&&data.boardroom.messages&&data.boardroom.messages.length){setBrMessages(data.boardroom.messages);}if(data.boardroom&&data.boardroom.nudgePending){setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),nudgePending:false}};});}}} style={{position:"fixed",bottom:mob?122:140,right:20,zIndex:150,background:"linear-gradient(135deg,#2f6bff,#7b2fff)",border:"none",borderRadius:99,padding:"11px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(99,102,241,0.45)",display:"flex",alignItems:"center",gap:7,letterSpacing:0.2}}>
+      <button onClick={brOpen} style={{position:"fixed",bottom:mob?122:140,right:20,zIndex:150,background:"linear-gradient(135deg,#2f6bff,#7b2fff)",border:"none",borderRadius:99,padding:"11px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(99,102,241,0.45)",display:"flex",alignItems:"center",gap:7,letterSpacing:0.2}}>
         <span style={{fontSize:15}}>🧠</span>Boardroom
       </button>
 
@@ -2828,7 +2851,9 @@ function App(){
           <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
             <span style={{fontSize:16,fontWeight:700,color:"#fff"}}>🧠 Boardroom</span>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <button onClick={brEndSession} style={{background:"rgba(255,255,255,0.06)",border:"0.5px solid rgba(255,255,255,0.15)",borderRadius:8,padding:"5px 10px",color:T.text3,fontSize:11,fontWeight:600,cursor:"pointer"}}>End session</button>
+              {(data.boardroom&&data.boardroom.onboarded)
+                ? <button onClick={brEndSession} style={{background:"rgba(255,255,255,0.06)",border:"0.5px solid rgba(255,255,255,0.15)",borderRadius:8,padding:"5px 10px",color:T.text3,fontSize:11,fontWeight:600,cursor:"pointer"}}>End session</button>
+                : <button onClick={brFinishOnboarding} style={{background:"rgba(105,240,174,0.12)",border:"0.5px solid rgba(105,240,174,0.4)",borderRadius:8,padding:"5px 10px",color:"#69f0ae",fontSize:11,fontWeight:600,cursor:"pointer"}}>Finish setup</button>}
               <button onClick={function(){setShowBoardroom(false);}} style={{background:"none",border:"none",color:T.text3,fontSize:20,cursor:"pointer"}}>×</button>
             </div>
           </div>
