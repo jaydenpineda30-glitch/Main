@@ -1598,6 +1598,17 @@ function App(){
     if(h>=17) return "evening";
     return "drift";
   }
+  function brGlow(){
+    var b=data.boardroom||{};
+    if(b.nudgePending) return "urgent";
+    var h=new Date().getHours();
+    var didCheckin=(checkinBlocks&&checkinBlocks.length>0);
+    if(h>=12&&!didCheckin) return "urgent";
+    var tasks=(data.personal&&data.personal.tasks)||[];
+    var doneToday=tasks.some(function(t){return t.done;});
+    if(!doneToday) return "soft";
+    return "none";
+  }
   function brSend(){
     var text=brInput.trim();
     if(!text||brLoading) return;
@@ -2804,7 +2815,7 @@ function App(){
       </div>}
 
       {/* ── Boardroom floating button ── */}
-      <button onClick={brOpen} style={{position:"fixed",bottom:mob?122:140,right:20,zIndex:150,background:"linear-gradient(135deg,#2f6bff,#7b2fff)",border:"none",borderRadius:99,padding:"11px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(99,102,241,0.45)",display:"flex",alignItems:"center",gap:7,letterSpacing:0.2}}>
+      <button onClick={brOpen} className={"br-glow-"+brGlow()} style={{position:"fixed",bottom:mob?122:140,right:20,zIndex:150,background:"linear-gradient(135deg,#2f6bff,#7b2fff)",border:"none",borderRadius:99,padding:"11px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(99,102,241,0.45)",display:"flex",alignItems:"center",gap:7,letterSpacing:0.2}}>
         <span style={{fontSize:15}}>🧠</span>Boardroom
       </button>
 

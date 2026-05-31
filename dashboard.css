@@ -62,3 +62,8 @@ input,select,textarea,button{-webkit-tap-highlight-color:transparent;}
 /* Glow item — task rows, weather, check-in internals */
 .glow-item{position:relative;overflow:hidden;border-radius:inherit;transition:box-shadow .25s,background .2s;}
 .glow-item:hover{box-shadow:0 0 18px rgba(180,50,255,.25),inset 0 0 0 1px rgba(210,80,255,.3);}
+/* ── Boardroom button glow ── */
+@keyframes brSoft { 0%,100%{box-shadow:0 4px 20px rgba(99,102,241,0.45);} 50%{box-shadow:0 4px 28px rgba(255,209,102,0.6);} }
+@keyframes brUrgent { 0%,100%{box-shadow:0 4px 20px rgba(255,107,107,0.5);} 50%{box-shadow:0 4px 32px rgba(255,107,107,0.95);} }
+.br-glow-soft { animation: brSoft 2.4s ease-in-out infinite; }
+.br-glow-urgent { animation: brUrgent 1.4s ease-in-out infinite; }
