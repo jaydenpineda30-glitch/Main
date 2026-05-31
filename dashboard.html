@@ -1627,10 +1627,22 @@ function App(){
     if(brMessages.length<2){setShowBoardroom(false);return;}
     var mode=brSessionMode();
     BoardroomService.summarizeSession(brMessages,mode).then(function(km){
-      setData(function(p){var prev=(p.boardroom&&p.boardroom.keyMoments)||[];var next=prev.concat([{date:todayStr(),summary:km.summary,commitments:km.commitments||[],mode:mode}]).slice(-15);return{...p,boardroom:{...(p.boardroom||{}),keyMoments:next,messages:[],sessionStartedAt:null,lastCommit:(mode==="morning"&&km.commitments&&km.commitments.length)?{date:todayStr(),items:km.commitments}:((p.boardroom&&p.boardroom.lastCommit)||null)}};});
-      setBrMessages([]);
-      setShowBoardroom(false);
-      showToast("Session saved to memory","success");
+      var newMoment={date:todayStr(),summary:km.summary,commitments:km.commitments||[],mode:mode};
+      var prev=(data.boardroom&&data.boardroom.keyMoments)||[];
+      function save(moments){
+        setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),keyMoments:moments,messages:[],sessionStartedAt:null,lastCommit:(mode==="morning"&&km.commitments&&km.commitments.length)?{date:todayStr(),items:km.commitments}:((p.boardroom&&p.boardroom.lastCommit)||null)}};});
+        setBrMessages([]);
+        setShowBoardroom(false);
+        showToast("Session saved to memory","success");
+      }
+      if(prev.length>=15){
+        BoardroomService.amalgamate(prev.slice(0,10)).then(function(patterns){
+          var compacted=patterns.map(function(s){return{date:"pattern",summary:s,commitments:[],mode:"amalgamated"};});
+          save(compacted.concat(prev.slice(10)).concat([newMoment]));
+        }).catch(function(){save(prev.concat([newMoment]).slice(-15));});
+      } else {
+        save(prev.concat([newMoment]));
+      }
     }).catch(function(){setShowBoardroom(false);});
   }
   function brFinishOnboarding(){

@@ -127,5 +127,11 @@
     return chat('You synthesize a single North Star Statement: one paragraph (max 60 words) capturing who Jayden is becoming and why it matters. Second person ("You are..."). No lists, no preamble.', [], 'CONSULTATION:\n' + convo);
   }
 
-  window.BoardroomService = { chat: chat, _model: MODEL, buildContext: buildContext, alexPrompt: alexPrompt, chrisPrompt: chrisPrompt, summarizeSession: summarizeSession, buildNorthStar: buildNorthStar };
+  function amalgamate(oldMoments) {
+    var text = oldMoments.map(function (m) { return m.date + ': ' + m.summary + (m.commitments && m.commitments.length ? ' [' + m.commitments.join('; ') + ']' : ''); }).join('\n');
+    return chat('You compress multiple coaching memories into 2-3 durable pattern statements (max 30 words each). Focus on recurring themes, not events. Respond ONLY as a JSON array of strings.', [], text)
+      .then(function (t) { var m = t.match(/\[[\s\S]*\]/); return m ? JSON.parse(m[0]) : [oldMoments.map(function (x) { return x.summary; }).join(' ')]; });
+  }
+
+  window.BoardroomService = { chat: chat, _model: MODEL, buildContext: buildContext, alexPrompt: alexPrompt, chrisPrompt: chrisPrompt, summarizeSession: summarizeSession, buildNorthStar: buildNorthStar, amalgamate: amalgamate };
 }());
