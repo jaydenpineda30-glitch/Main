@@ -67,3 +67,8 @@ input,select,textarea,button{-webkit-tap-highlight-color:transparent;}
 @keyframes brUrgent { 0%,100%{box-shadow:0 4px 20px rgba(255,107,107,0.5);} 50%{box-shadow:0 4px 32px rgba(255,107,107,0.95);} }
 .br-glow-soft { animation: brSoft 2.4s ease-in-out infinite; }
 .br-glow-urgent { animation: brUrgent 1.4s ease-in-out infinite; }
+
+/* ── Boardroom session log timeline ── */
+.br-tl-wrap{position:relative;display:flex;flex-direction:column;gap:14px;}
+.br-tl-wrap::before{content:'';position:absolute;left:15px;top:15px;bottom:15px;width:2px;background:rgba(199,125,255,0.18);z-index:0;}
+.br-tl-item{position:relative;display:flex;gap:12px;align-items:flex-start;}

@@ -1115,6 +1115,10 @@ function App(){
   const [brMessages,setBrMessages]=useState([]);
   const [brInput,setBrInput]=useState("");
   const [brLoading,setBrLoading]=useState(false);
+  const [brLastSpeaker,setBrLastSpeaker]=useState(null);
+  const [brGoalProposals,setBrGoalProposals]=useState([]);
+  const [brClosing,setBrClosing]=useState(false);
+  const brMigrationRef=React.useRef(false);
   const [capturesData,setCapturesData]=useState([]);
   const [capturesLoading,setCapturesLoading]=useState(false);
   const [capturesFilter,setCapturesFilter]=useState("all");
@@ -1195,6 +1199,37 @@ function App(){
   },[scheduleTaskId]);
   // Usage tracking — auto-instrument tab/sub-tab/modal switches (see monitoring-dashboard.js).
   useEffect(function(){trk("tab."+page);},[page]);
+  useEffect(function(){
+    if(page!=="Boardroom") return;
+    if(brMigrationRef.current) return;
+    var b=data.boardroom||{};
+    if(!b.onboarded||!b.northStar) return;
+    var goals=b.goals||[];
+    if(goals.length>0) return; // already migrated / has goals — nothing to do
+    var km=b.keyMoments||[];
+    var onboardingMoment=km.find(function(m){return m.mode==="onboarding";});
+    brMigrationRef.current=true;
+    // Goal-extraction source: the onboarding session summary if one exists, otherwise the
+    // North Star — the only surviving artifact when an early consult cleared its transcript.
+    var sourceText;
+    if(onboardingMoment){
+      sourceText=onboardingMoment.summary+" "+(onboardingMoment.commitments||[]).map(function(c){return typeof c==="string"?c:c.text;}).join(", ");
+    } else {
+      sourceText=b.northStar;
+      // Backfill a first-consultation entry so the original consult appears in the Session Log.
+      setData(function(p){
+        var pb=p.boardroom||{};
+        var pkm=pb.keyMoments||[];
+        if(pkm.some(function(m){return m.mode==="onboarding";})) return p; // guard double-write
+        var seedMoment={date:todayStr(),summary:pb.northStar,commitments:[],mode:"onboarding"};
+        return{...p,boardroom:{...pb,keyMoments:[seedMoment].concat(pkm)}};
+      });
+    }
+    var fakeTranscript=[{role:"assistant",persona:"Alex",text:sourceText}];
+    BoardroomService.extractGoals(fakeTranscript,[]).then(function(proposed){
+      if(proposed&&proposed.length) setBrGoalProposals(proposed);
+    });
+  },[page]);
   useEffect(function(){if(page==="Journal")trk("subtab.Journal."+(journalTab==="reflection"?"Reflection":"Captures"));},[page,journalTab]);
   useEffect(function(){if(modal)trk("modal."+modal);},[modal]);
   useEffect(function(){
@@ -1585,15 +1620,8 @@ function App(){
   }
   function toggleCalEv(id){trk("uni.gcal_event_toggle");setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
   function brOpener(mode){
-    var b=data.boardroom||{};
     if(mode==="evening"){
-      if(b.lastCommit&&b.lastCommit.date===todayStr()&&b.lastCommit.items&&b.lastCommit.items.length){
-        return [{role:"assistant",persona:"Alex",text:"This morning you committed to: "+b.lastCommit.items.join(", ")+". Straight up — done or not?",ts:Date.now()}];
-      }
       return [{role:"assistant",persona:"Chris",text:"Walk me through your day. What actually happened — not the highlight reel?",ts:Date.now()}];
-    }
-    if(mode==="morning"){
-      return [{role:"assistant",persona:"Alex",text:"Morning. Look at what's due and what matters. What are the 1-3 things you're committing to today?",ts:Date.now()}];
     }
     if(mode==="drift"){
       return [{role:"assistant",persona:"Chris",text:"You opened this in the middle of the day. That usually means something's off. What's going on right now?",ts:Date.now()}];
@@ -1606,21 +1634,25 @@ function App(){
     var b=data.boardroom||{};
     if(b.nudgePending){setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),nudgePending:false}};});}
     if(brMessages&&brMessages.length) return;
-    if(b.messages&&b.messages.length){setBrMessages(b.messages);return;}
+    if(b.messages&&b.messages.length){
+      setBrMessages(b.messages);
+      if(b.lastSpeaker) setBrLastSpeaker(b.lastSpeaker);
+      return;
+    }
     if(!b.onboarded){
-      setBrMessages([
-        {role:"assistant",persona:"Chris",text:"Before we get into tasks — I want to understand you, not just your to-do list. What does \"better\" actually look like for you right now?",ts:Date.now()},
-        {role:"assistant",persona:"Alex",text:"And let's get specific. Career, body, money, skills — what are you actually trying to hit, and by when?",ts:Date.now()+1}
-      ]);
+      setBrMessages([{role:"assistant",persona:"Chris",text:"Before we get into tasks — I want to understand you, not just your to-do list. What does \"better\" actually look like for you right now?",ts:Date.now()}]);
+      setBrLastSpeaker("Chris");
     } else {
       var seed=brOpener(brSessionMode());
-      if(seed.length) setBrMessages(seed);
+      if(seed.length){
+        setBrMessages(seed);
+        setBrLastSpeaker(seed[seed.length-1].persona);
+      }
     }
   }
   function brSessionMode(){
     var h=new Date().getHours();
     if(!(data.boardroom&&data.boardroom.onboarded)) return "onboarding";
-    if(h<11) return "morning";
     if(h>=17) return "evening";
     return "drift";
   }
@@ -1641,6 +1673,7 @@ function App(){
     if(!groqKey.trim()){showToast("Add your Groq API key in Settings first","warn");return;}
     setBrLoading(true);
     var mode=brSessionMode();
+    var nextSpeaker=brLastSpeaker==="Alex"?"Chris":"Alex";
     var cachedEvs=[];try{var ce=localStorage.getItem('__gcal_events__');if(ce)cachedEvs=JSON.parse(ce);}catch(_){}
     var ctx=BoardroomService.buildContext(data,{todayStr:todayStr,dStr:dStr,daysBetween:daysBetween,isGoTabEvent:isGoTabEvent,thisWeek:thisWeek,cachedEvs:cachedEvs});
     var ns=(data.boardroom&&data.boardroom.northStar)||"";
@@ -1649,47 +1682,135 @@ function App(){
     var userMsg={role:"user",persona:null,text:text,ts:Date.now()};
     setBrMessages(function(p){return p.concat([userMsg]);});
     setBrInput("");
-    Promise.all([
-      BoardroomService.chat(BoardroomService.alexPrompt(ctx,ns,km,mode),hist,text),
-      BoardroomService.chat(BoardroomService.chrisPrompt(ctx,ns,km,mode),hist,text)
-    ]).then(function(r){
-      var alexMsg={role:"assistant",persona:"Alex",text:r[0],ts:Date.now()};
-      var chrisMsg={role:"assistant",persona:"Chris",text:r[1],ts:Date.now()+1};
-      setBrMessages(function(p){return p.concat([alexMsg,chrisMsg]);});
-      setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),messages:(brMessages||[]).concat([userMsg,alexMsg,chrisMsg]),sessionStartedAt:(p.boardroom&&p.boardroom.sessionStartedAt)||new Date().toISOString()}};});
+    var promptFn=nextSpeaker==="Alex"?BoardroomService.alexPromptHandoff:BoardroomService.chrisPromptHandoff;
+    BoardroomService.chat(promptFn(ctx,ns,km,mode),hist,text).then(function(r){
+      var coachMsg={role:"assistant",persona:nextSpeaker,text:r,ts:Date.now()};
+      setBrMessages(function(p){return p.concat([coachMsg]);});
+      setBrLastSpeaker(nextSpeaker);
+      setData(function(p){
+        var msgs=(p.boardroom&&p.boardroom.messages)||[];
+        return{...p,boardroom:{...(p.boardroom||{}),messages:msgs.concat([userMsg,coachMsg]),sessionStartedAt:(p.boardroom&&p.boardroom.sessionStartedAt)||new Date().toISOString(),lastSpeaker:nextSpeaker}};
+      });
       setBrLoading(false);
     }).catch(function(e){showToast("Boardroom: "+(e&&e.message||"error"),"error");setBrLoading(false);});
   }
   function brEndSession(){
     if(brMessages.filter(function(m){return m.role==="user";}).length<1){setShowBoardroom(false);return;}
+    setBrLoading(true);
+    setBrClosing(true);
     var mode=brSessionMode();
-    BoardroomService.summarizeSession(brMessages,mode).then(function(km){
-      var newMoment={date:todayStr(),summary:km.summary,commitments:km.commitments||[],mode:mode};
-      var prev=(data.boardroom&&data.boardroom.keyMoments)||[];
-      function save(moments){
-        setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),keyMoments:moments,messages:[],sessionStartedAt:null,lastCommit:(mode==="morning"&&km.commitments&&km.commitments.length)?{date:todayStr(),items:km.commitments}:((p.boardroom&&p.boardroom.lastCommit)||null)}};});
-        setBrMessages([]);
-        setShowBoardroom(false);
-        showToast("Session saved to memory","success");
-      }
-      if(prev.length>=15){
-        BoardroomService.amalgamate(prev.slice(0,10)).then(function(patterns){
-          var compacted=patterns.map(function(s){return{date:"pattern",summary:s,commitments:[],mode:"amalgamated"};});
-          save(compacted.concat(prev.slice(10)).concat([newMoment]));
-        }).catch(function(){save(prev.concat([newMoment]).slice(-15));});
-      } else {
-        save(prev.concat([newMoment]));
-      }
-    }).catch(function(){setShowBoardroom(false);});
+    var fullTranscript=brMessages.slice();
+    BoardroomService.closingRound(fullTranscript).then(function(closingMsgs){
+      var allMsgs=fullTranscript.concat(closingMsgs.map(function(m){return{role:"assistant",persona:m.persona,text:m.text,ts:Date.now()};}));
+      setBrMessages(function(p){return p.concat(closingMsgs.map(function(m){return{role:"assistant",persona:m.persona,text:m.text,ts:Date.now()};}));});
+      return BoardroomService.summarizeSession(allMsgs,mode).then(function(km){
+        var newMoment={date:todayStr(),summary:km.summary,commitments:(km.commitments||[]).map(function(c){return{text:c,done:false};}),mode:mode};
+        var prev=(data.boardroom&&data.boardroom.keyMoments)||[];
+        var existingGoals=(data.boardroom&&data.boardroom.goals)||[];
+        function finishSave(moments){
+          setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),keyMoments:moments,messages:[],sessionStartedAt:null,lastSpeaker:null}};});
+          setBrMessages([]);
+          setBrLastSpeaker(null);
+          setBrClosing(false);
+          setBrLoading(false);
+          setShowBoardroom(false);
+          showToast("Session saved","success");
+          setPage("Boardroom");
+        }
+        function saveWithGoals(moments){
+          BoardroomService.extractGoals(allMsgs,existingGoals).then(function(proposed){
+            setBrGoalProposals(proposed||[]);
+            if(prev.length>=15){
+              BoardroomService.amalgamate(prev.slice(0,10)).then(function(patterns){
+                var compacted=patterns.map(function(s){return{date:"pattern",summary:s,commitments:[],mode:"amalgamated"};});
+                finishSave(compacted.concat(prev.slice(10)).concat([moments]));
+              }).catch(function(){finishSave(prev.concat([moments]).slice(-15));});
+            } else {
+              finishSave(prev.concat([moments]));
+            }
+          });
+        }
+        saveWithGoals(newMoment);
+      });
+    }).catch(function(){
+      setBrClosing(false);
+      setBrLoading(false);
+      setShowBoardroom(false);
+    });
+  }
+  function brAcceptGoal(proposed) {
+    var newGoal={
+      id: Date.now()+'_'+Math.random().toString(36).slice(2,7),
+      title: proposed.title,
+      area: proposed.area,
+      status: "active",
+      createdAt: todayStr(),
+      targetDate: null,
+      achievedAt: null,
+      milestones: []
+    };
+    setData(function(p){
+      var goals=(p.boardroom&&p.boardroom.goals)||[];
+      return{...p,boardroom:{...(p.boardroom||{}),goals:goals.concat([newGoal])}};
+    });
+    setBrGoalProposals(function(p){return p.filter(function(g){return g.title!==proposed.title;});});
+  }
+  function brSkipGoal(proposed){
+    setBrGoalProposals(function(p){return p.filter(function(g){return g.title!==proposed.title;});});
+  }
+  function brMarkGoalAchieved(goalId){
+    setData(function(p){
+      var goals=(p.boardroom&&p.boardroom.goals)||[];
+      var updated=goals.map(function(g){return g.id===goalId?{...g,status:"achieved",achievedAt:todayStr()}:g;});
+      return{...p,boardroom:{...(p.boardroom||{}),goals:updated}};
+    });
+  }
+  function brToggleCommitment(momentIdx, commitIdx){
+    setData(function(p){
+      var km=(p.boardroom&&p.boardroom.keyMoments)||[];
+      var updated=km.map(function(m,mi){
+        if(mi!==momentIdx) return m;
+        var commits=m.commitments||[];
+        var newCommits=commits.map(function(c,ci){
+          if(ci!==commitIdx) return c;
+          if(typeof c==='string') return c;
+          return{...c,done:!c.done};
+        });
+        return{...m,commitments:newCommits};
+      });
+      return{...p,boardroom:{...(p.boardroom||{}),keyMoments:updated}};
+    });
   }
   function brFinishOnboarding(){
     if(brMessages.filter(function(m){return m.role==="user";}).length<1){showToast("Chat a bit first so we can set your North Star","warn");return;}
-    BoardroomService.buildNorthStar(brMessages).then(function(ns){
-      setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),onboarded:true,northStar:(ns||"").trim(),messages:[],sessionStartedAt:null}};});
-      setBrMessages([]);
-      setShowBoardroom(false);
-      showToast("North Star set. The Boardroom knows your direction now.","success");
-    }).catch(function(e){showToast("Couldn't set North Star: "+(e&&e.message||"error"),"error");});
+    setBrLoading(true);
+    var transcript=brMessages.slice();
+    var existingGoals=(data.boardroom&&data.boardroom.goals)||[];
+    BoardroomService.buildNorthStar(transcript).then(function(ns){
+      return BoardroomService.summarizeSession(transcript,"onboarding").then(function(km){
+        var moment={date:todayStr(),summary:km.summary,commitments:(km.commitments||[]).map(function(c){return{text:c,done:false};}),mode:"onboarding"};
+        setData(function(p){
+          var pb=p.boardroom||{};
+          var pkm=pb.keyMoments||[];
+          return{...p,boardroom:{...pb,onboarded:true,northStar:(ns||"").trim(),keyMoments:pkm.concat([moment]),messages:[],sessionStartedAt:null,lastSpeaker:null}};
+        });
+        BoardroomService.extractGoals(transcript,existingGoals).then(function(proposed){setBrGoalProposals(proposed||[]);}).catch(function(){});
+        setBrMessages([]);
+        setBrLastSpeaker(null);
+        setBrLoading(false);
+        setShowBoardroom(false);
+        showToast("North Star set. The Boardroom knows your direction now.","success");
+        setPage("Boardroom");
+      });
+    }).catch(function(e){setBrLoading(false);showToast("Couldn't finish setup: "+(e&&e.message||"error"),"error");});
+  }
+  function brRedoConsultation(){
+    if(!window.confirm("Start a fresh consultation? It sets a new North Star — your current one is kept in the Session Log below, and your goals and history stay untouched.")) return;
+    trk("boardroom.redo");
+    setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),onboarded:false,messages:[],sessionStartedAt:null,lastSpeaker:null}};});
+    setBrMessages([{role:"assistant",persona:"Chris",text:"Let's reset and go deep again. What does \"better\" actually look like for you right now — today, not in theory?",ts:Date.now()}]);
+    setBrLastSpeaker("Chris");
+    setShowBoardroom(true);
   }
   // ── Backup & restore helpers ───────────────────────────────────────────────
   function getLatestBackup(){
@@ -2170,7 +2291,7 @@ function App(){
           {appVersion&&<span onClick={function(){trk("version.click");}} title={"Released "+appVersion.date} style={{fontSize:10,color:T.text3,padding:"2px 7px",borderRadius:99,border:"0.5px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",letterSpacing:0.3,userSelect:"none",cursor:"pointer"}}>{appVersion.version}</span>}
           <button onClick={function(){_auth.signOut();}} style={{padding:"3px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text3,cursor:"pointer",fontSize:11}}>Sign out</button>
         </div>
-        {["Dashboard","Uni","Work","Gym","Personal","Finance","Journal"].map(function(s){return<button key={s} style={navBtn(page===s)} onClick={function(){setPage(s);}}>{s}</button>;})}
+        {["Dashboard","Uni","Work","Gym","Personal","Finance","Journal","Boardroom"].map(function(s){return<button key={s} style={navBtn(page===s)} onClick={function(){setPage(s);}}>{s}</button>;})}
       </nav>}
       {!mob&&<button onClick={function(){setForceMob(true);}} style={{position:"fixed",bottom:24,right:24,zIndex:200,padding:"10px 16px",borderRadius:99,border:"1px solid rgba(199,125,255,0.5)",background:"rgba(14,16,40,0.95)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:700,boxShadow:"0 4px 20px rgba(199,125,255,0.3)",display:"flex",alignItems:"center",gap:6}}>📱 Mobile view</button>}
       {mob&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",background:"rgba(5,7,26,0.85)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"0.5px solid rgba(199,125,255,0.2)",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 20px rgba(0,0,0,0.4)"}}>
@@ -2840,6 +2961,118 @@ function App(){
         </div>
       </div>}
 
+      {page==="Boardroom"&&(function(){
+        var b=data.boardroom||{};
+        var northStar=b.northStar||"";
+        var goals=(b.goals||[]).filter(function(g){return g.status==="active";});
+        var achieved=(b.goals||[]).filter(function(g){return g.status==="achieved";});
+        var keyMoments=(b.keyMoments||[]).slice().reverse();
+        var tagStyle={academic:{background:"rgba(55,138,221,0.18)",color:"#7eb3e8"},health:{background:"rgba(59,109,17,0.22)",color:"#8ac571"},finance:{background:"rgba(186,117,23,0.22)",color:"#e8b970"},career:{background:"rgba(127,119,221,0.22)",color:"#b3acff"},personal:{background:"rgba(136,135,128,0.22)",color:"#b4b3ac"}};
+        function getTagStyle(area){return tagStyle[(area||"personal").toLowerCase()]||tagStyle.personal;}
+        function modeBadgeStyle(mode){
+          if(mode==="evening") return{background:"rgba(127,119,221,0.2)",color:"#b3acff"};
+          if(mode==="onboarding") return{background:"rgba(29,158,117,0.2)",color:"#6ed8b8"};
+          return{background:"rgba(186,117,23,0.2)",color:"#e8b970"};
+        }
+        function modeLabel(mode){return mode==="drift"?"Check-in":mode==="onboarding"?"Onboarding":mode==="evening"?"Evening":"Session";}
+        function modeIcon(mode){return mode==="evening"?"🌙":mode==="onboarding"?"🚩":"⏰";}
+        return(
+          <div style={{maxWidth:mob?undefined:860,padding:mob?"12px 12px 120px":"20px 20px 40px"}}>
+
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,gap:12}}>
+              <div style={{fontSize:18,fontWeight:700,color:"#fff"}}>🧠 Boardroom</div>
+              <button onClick={brRedoConsultation} style={{fontSize:12,fontWeight:600,padding:"7px 14px",borderRadius:8,background:"linear-gradient(135deg,#2f6bff,#7b2fff)",border:"none",color:"#fff",cursor:"pointer",flexShrink:0}}>New consultation</button>
+            </div>
+
+            {northStar&&<div className="card-rim" style={{background:"rgba(10,12,32,0.7)",border:"0.5px solid rgba(199,125,255,0.2)",borderRadius:14,padding:"16px 20px",marginBottom:20,borderLeft:"3px solid #7b2fff"}}>
+              <div style={{fontSize:10,fontWeight:600,color:"rgba(199,125,255,0.7)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8}}>North Star</div>
+              <div style={{fontSize:14,color:"rgba(255,255,255,0.85)",lineHeight:1.65,fontStyle:"italic"}}>{northStar}</div>
+            </div>}
+
+            {brGoalProposals.length>0&&<div style={{background:"rgba(99,102,241,0.08)",border:"0.5px solid rgba(99,102,241,0.3)",borderRadius:14,padding:"14px 18px",marginBottom:20}}>
+              <div style={{fontSize:11,fontWeight:600,color:"rgba(199,125,255,0.8)",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.08em"}}>Goals surfaced from your last session</div>
+              {brGoalProposals.map(function(p,i){return(
+                <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 0",borderBottom:i<brGoalProposals.length-1?"0.5px solid rgba(255,255,255,0.06)":"none"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:11,padding:"2px 8px",borderRadius:4,...getTagStyle(p.area)}}>{p.area}</span>
+                    <span style={{fontSize:13,color:"rgba(255,255,255,0.85)"}}>{p.title}</span>
+                  </div>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={function(){brAcceptGoal(p);}} style={{fontSize:11,padding:"4px 12px",borderRadius:6,background:"rgba(99,102,241,0.3)",border:"0.5px solid rgba(99,102,241,0.5)",color:"#b3acff",cursor:"pointer"}}>Add</button>
+                    <button onClick={function(){brSkipGoal(p);}} style={{fontSize:11,padding:"4px 12px",borderRadius:6,background:"none",border:"0.5px solid rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>Skip</button>
+                  </div>
+                </div>
+              );})}
+            </div>}
+
+            <div style={{marginBottom:24}}>
+              <div style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.4)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Active Goals</div>
+              {goals.length===0&&brGoalProposals.length===0&&<div style={{fontSize:13,color:"rgba(255,255,255,0.3)",padding:"20px 0"}}>Open a session to surface your first goal.</div>}
+              <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"repeat(auto-fill,minmax(180px,1fr))",gap:10}}>
+                {goals.map(function(g){return(
+                  <div key={g.id} className="card-rim" style={{background:"rgba(10,12,32,0.7)",border:"0.5px solid rgba(199,125,255,0.15)",borderRadius:12,padding:"12px 14px"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                      <span style={{fontSize:10,padding:"2px 7px",borderRadius:4,...getTagStyle(g.area)}}>{g.area}</span>
+                      <button onClick={function(){brMarkGoalAchieved(g.id);}} style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:"none",border:"0.5px solid rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.35)",cursor:"pointer"}}>Done ✓</button>
+                    </div>
+                    <div style={{fontSize:13,fontWeight:500,color:"rgba(255,255,255,0.85)",lineHeight:1.4}}>{g.title}</div>
+                  </div>
+                );})}
+              </div>
+            </div>
+
+            {achieved.length>0&&<div style={{marginBottom:24}}>
+              <details>
+                <summary style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.3)",letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",marginBottom:8}}>Achieved ({achieved.length})</summary>
+                <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(auto-fill,minmax(180px,1fr))",gap:8,marginTop:8}}>
+                  {achieved.map(function(g){return(
+                    <div key={g.id} style={{background:"rgba(10,12,32,0.4)",border:"0.5px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"10px 12px",opacity:0.6}}>
+                      <span style={{fontSize:10,padding:"2px 7px",borderRadius:4,...getTagStyle(g.area)}}>{g.area}</span>
+                      <div style={{fontSize:12,color:"rgba(255,255,255,0.6)",marginTop:6,textDecoration:"line-through"}}>{g.title}</div>
+                    </div>
+                  );})}
+                </div>
+              </details>
+            </div>}
+
+            <div>
+              <div style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.4)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:16}}>Session Log</div>
+              {keyMoments.length===0&&<div style={{fontSize:13,color:"rgba(255,255,255,0.3)"}}>No sessions recorded yet.</div>}
+              <div className="br-tl-wrap">
+                {keyMoments.filter(function(m){return m.mode!=="amalgamated";}).map(function(m,i){return(
+                  <div key={i} className="br-tl-item">
+                    <div style={{width:30,height:30,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,background:"rgba(10,12,32,0.9)",border:"2px solid rgba(199,125,255,0.35)",zIndex:1,position:"relative"}}>{modeIcon(m.mode)}</div>
+                    <div className="card-rim" style={{flex:1,background:"rgba(10,12,32,0.7)",border:"0.5px solid rgba(199,125,255,0.15)",borderRadius:12,padding:"12px 14px",marginBottom:0}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                        <span style={{fontSize:13,fontWeight:500,color:"rgba(255,255,255,0.85)"}}>{m.date}</span>
+                        <span style={{fontSize:10,padding:"2px 7px",borderRadius:4,...modeBadgeStyle(m.mode)}}>{modeLabel(m.mode)}</span>
+                      </div>
+                      <div style={{fontSize:12,color:"rgba(255,255,255,0.5)",lineHeight:1.55,borderLeft:"2px solid rgba(199,125,255,0.3)",paddingLeft:10,marginBottom:m.commitments&&m.commitments.length?10:0}}>
+                        <div style={{fontSize:10,fontWeight:500,color:"rgba(199,125,255,0.5)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3}}>Alex & Chris concluded</div>
+                        {m.summary}
+                      </div>
+                      {m.commitments&&m.commitments.length>0&&<div>
+                        {m.commitments.map(function(c,ci){
+                          var isDone=typeof c==="object"?c.done:false;
+                          var text=typeof c==="string"?c:c.text;
+                          return(
+                            <label key={ci} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"4px 0",cursor:typeof c==="object"?"pointer":"default"}}>
+                              <input type="checkbox" checked={isDone} readOnly={typeof c==="string"} onChange={typeof c==="object"?function(){brToggleCommitment((b.keyMoments||[]).length-1-i,ci);}:undefined} style={{marginTop:2,flexShrink:0,accentColor:"#c77dff"}}/>
+                              <span style={{fontSize:12,color:isDone?"rgba(255,255,255,0.3)":"rgba(255,255,255,0.75)",textDecoration:isDone?"line-through":"none"}}>{text}</span>
+                            </label>
+                          );
+                        })}
+                      </div>}
+                    </div>
+                  </div>
+                );})}
+              </div>
+            </div>
+
+          </div>
+        );
+      })()}
+
       {/* ── Boardroom floating button ── */}
       <button onClick={brOpen} className={"br-glow-"+brGlow()} style={{position:"fixed",bottom:mob?122:140,right:20,zIndex:150,background:"linear-gradient(135deg,#2f6bff,#7b2fff)",border:"none",borderRadius:99,padding:"11px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 20px rgba(99,102,241,0.45)",display:"flex",alignItems:"center",gap:7,letterSpacing:0.2}}>
         <span style={{fontSize:15}}>🧠</span>Boardroom
@@ -2913,7 +3146,7 @@ function App(){
               var isAlex=m.persona==="Alex";
               return <div key={i} style={{alignSelf:"flex-start",maxWidth:"85%"}}><div style={{fontSize:11,fontWeight:700,color:isAlex?"#5b9bff":"#c77dff",marginBottom:3}}>{isAlex?"🔵 Alex":"🟣 Chris"}</div><div style={{background:"rgba(255,255,255,0.05)",border:"0.5px solid rgba(255,255,255,0.1)",color:"#e8e9f3",padding:"9px 13px",borderRadius:14,fontSize:13,whiteSpace:"pre-wrap"}}>{m.text}</div></div>;
             })}
-            {brLoading&&<div style={{color:T.text3,fontSize:12,fontStyle:"italic"}}>Alex & Chris are thinking…</div>}
+            {brLoading&&<div style={{color:T.text3,fontSize:12,fontStyle:"italic"}}>{brClosing?"Alex & Chris are wrapping up the session…":"Alex & Chris are thinking…"}</div>}
           </div>
           <div style={{padding:"12px 14px",borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",gap:8}}>
             <input value={brInput} onChange={function(e){setBrInput(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")brSend();}} placeholder="Talk to the Boardroom…" style={{flex:1,background:"rgba(255,255,255,0.06)",border:"0.5px solid rgba(255,255,255,0.15)",borderRadius:10,padding:"10px 12px",color:"#fff",fontSize:13,outline:"none"}}/>
@@ -2967,7 +3200,7 @@ function App(){
       </div>}
 
       {mob&&<nav style={{display:"flex",position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:"rgba(5,7,26,0.97)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"0.5px solid rgba(199,125,255,0.18)",justifyContent:"space-around",alignItems:"stretch",boxShadow:"0 -4px 24px rgba(0,0,0,0.5)"}}>
-        {[{name:"Dashboard",icon:"⊞"},{name:"Uni",icon:"📚"},{name:"Work",icon:"💼"},{name:"Gym",icon:"💪"},{name:"Personal",icon:"✓"},{name:"Finance",icon:"$"},{name:"Journal",icon:"📖"}].map(function(item){const active=page===item.name;return(
+        {[{name:"Dashboard",icon:"⊞"},{name:"Uni",icon:"📚"},{name:"Work",icon:"💼"},{name:"Gym",icon:"💪"},{name:"Personal",icon:"✓"},{name:"Finance",icon:"$"},{name:"Journal",icon:"📖"},{name:"Boardroom",icon:"🧠"}].map(function(item){const active=page===item.name;return(
           <button key={item.name} onClick={function(){setPage(item.name);}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,padding:"8px 4px",color:active?T.accent:T.text3,flex:1,minHeight:54,position:"relative"}}>
             {active&&<div style={{position:"absolute",top:0,left:"50%",transform:"translateX(-50%)",width:24,height:2,borderRadius:1,background:T.accent}}/>}
             <span style={{fontSize:17,lineHeight:1}}>{item.icon}</span>
