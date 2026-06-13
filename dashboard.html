@@ -1203,13 +1203,29 @@ function App(){
     if(page!=="Boardroom") return;
     if(brMigrationRef.current) return;
     var b=data.boardroom||{};
+    if(!b.onboarded||!b.northStar) return;
     var goals=b.goals||[];
+    if(goals.length>0) return; // already migrated / has goals — nothing to do
     var km=b.keyMoments||[];
-    var hasOnboarding=km.some(function(m){return m.mode==="onboarding";});
-    if(goals.length>0||!hasOnboarding||!b.northStar) return;
-    brMigrationRef.current=true;
     var onboardingMoment=km.find(function(m){return m.mode==="onboarding";});
-    var fakeTranscript=[{role:"assistant",persona:"Alex",text:onboardingMoment.summary+(onboardingMoment.commitments||[]).map(function(c){return typeof c==="string"?c:c.text;}).join(", ")}];
+    brMigrationRef.current=true;
+    // Goal-extraction source: the onboarding session summary if one exists, otherwise the
+    // North Star — the only surviving artifact when an early consult cleared its transcript.
+    var sourceText;
+    if(onboardingMoment){
+      sourceText=onboardingMoment.summary+" "+(onboardingMoment.commitments||[]).map(function(c){return typeof c==="string"?c:c.text;}).join(", ");
+    } else {
+      sourceText=b.northStar;
+      // Backfill a first-consultation entry so the original consult appears in the Session Log.
+      setData(function(p){
+        var pb=p.boardroom||{};
+        var pkm=pb.keyMoments||[];
+        if(pkm.some(function(m){return m.mode==="onboarding";})) return p; // guard double-write
+        var seedMoment={date:todayStr(),summary:pb.northStar,commitments:[],mode:"onboarding"};
+        return{...p,boardroom:{...pb,keyMoments:[seedMoment].concat(pkm)}};
+      });
+    }
+    var fakeTranscript=[{role:"assistant",persona:"Alex",text:sourceText}];
     BoardroomService.extractGoals(fakeTranscript,[]).then(function(proposed){
       if(proposed&&proposed.length) setBrGoalProposals(proposed);
     });
@@ -1767,12 +1783,34 @@ function App(){
   }
   function brFinishOnboarding(){
     if(brMessages.filter(function(m){return m.role==="user";}).length<1){showToast("Chat a bit first so we can set your North Star","warn");return;}
-    BoardroomService.buildNorthStar(brMessages).then(function(ns){
-      setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),onboarded:true,northStar:(ns||"").trim(),messages:[],sessionStartedAt:null}};});
-      setBrMessages([]);
-      setShowBoardroom(false);
-      showToast("North Star set. The Boardroom knows your direction now.","success");
-    }).catch(function(e){showToast("Couldn't set North Star: "+(e&&e.message||"error"),"error");});
+    setBrLoading(true);
+    var transcript=brMessages.slice();
+    var existingGoals=(data.boardroom&&data.boardroom.goals)||[];
+    BoardroomService.buildNorthStar(transcript).then(function(ns){
+      return BoardroomService.summarizeSession(transcript,"onboarding").then(function(km){
+        var moment={date:todayStr(),summary:km.summary,commitments:(km.commitments||[]).map(function(c){return{text:c,done:false};}),mode:"onboarding"};
+        setData(function(p){
+          var pb=p.boardroom||{};
+          var pkm=pb.keyMoments||[];
+          return{...p,boardroom:{...pb,onboarded:true,northStar:(ns||"").trim(),keyMoments:pkm.concat([moment]),messages:[],sessionStartedAt:null,lastSpeaker:null}};
+        });
+        BoardroomService.extractGoals(transcript,existingGoals).then(function(proposed){setBrGoalProposals(proposed||[]);}).catch(function(){});
+        setBrMessages([]);
+        setBrLastSpeaker(null);
+        setBrLoading(false);
+        setShowBoardroom(false);
+        showToast("North Star set. The Boardroom knows your direction now.","success");
+        setPage("Boardroom");
+      });
+    }).catch(function(e){setBrLoading(false);showToast("Couldn't finish setup: "+(e&&e.message||"error"),"error");});
+  }
+  function brRedoConsultation(){
+    if(!window.confirm("Start a fresh consultation? It sets a new North Star — your current one is kept in the Session Log below, and your goals and history stay untouched.")) return;
+    trk("boardroom.redo");
+    setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),onboarded:false,messages:[],sessionStartedAt:null,lastSpeaker:null}};});
+    setBrMessages([{role:"assistant",persona:"Chris",text:"Let's reset and go deep again. What does \"better\" actually look like for you right now — today, not in theory?",ts:Date.now()}]);
+    setBrLastSpeaker("Chris");
+    setShowBoardroom(true);
   }
   // ── Backup & restore helpers ───────────────────────────────────────────────
   function getLatestBackup(){
@@ -2940,6 +2978,11 @@ function App(){
         function modeIcon(mode){return mode==="evening"?"🌙":mode==="onboarding"?"🚩":"⏰";}
         return(
           <div style={{maxWidth:mob?undefined:860,padding:mob?"12px 12px 120px":"20px 20px 40px"}}>
+
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,gap:12}}>
+              <div style={{fontSize:18,fontWeight:700,color:"#fff"}}>🧠 Boardroom</div>
+              <button onClick={brRedoConsultation} style={{fontSize:12,fontWeight:600,padding:"7px 14px",borderRadius:8,background:"linear-gradient(135deg,#2f6bff,#7b2fff)",border:"none",color:"#fff",cursor:"pointer",flexShrink:0}}>New consultation</button>
+            </div>
 
             {northStar&&<div className="card-rim" style={{background:"rgba(10,12,32,0.7)",border:"0.5px solid rgba(199,125,255,0.2)",borderRadius:14,padding:"16px 20px",marginBottom:20,borderLeft:"3px solid #7b2fff"}}>
               <div style={{fontSize:10,fontWeight:600,color:"rgba(199,125,255,0.7)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8}}>North Star</div>
