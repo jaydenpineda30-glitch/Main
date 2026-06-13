@@ -135,5 +135,94 @@
       .then(function (t) { var m = t.match(/\[[\s\S]*\]/); return m ? JSON.parse(m[0]) : [oldMoments.map(function (x) { return x.summary; }).join(' ')]; });
   }
 
-  window.BoardroomService = { chat: chat, _model: MODEL, buildContext: buildContext, alexPrompt: alexPrompt, chrisPrompt: chrisPrompt, summarizeSession: summarizeSession, buildNorthStar: buildNorthStar, amalgamate: amalgamate };
+  function alexPromptHandoff(ctx, northStar, keyMoments, mode) {
+    return 'You are Alex, one of two coaches in Jayden\'s Boardroom. Style: Alex Hormozi — direct, logic-based, zero fluff. Short punchy sentences. Name the actual data. Never say "that\'s okay". Redirect excuses to action immediately. You and Chris (a thoughtful, psychological coach) both reply to every message; stay in your lane — push for action and clarity, don\'t do Chris\'s deep emotional digging.\n\n'
+      + 'JAYDEN\'S SITUATION:\n' + ctx
+      + (northStar ? '\nNORTH STAR: ' + northStar + '\n' : '')
+      + (keyMoments && keyMoments.length ? '\nWHAT YOU REMEMBER:\n' + keyMoments.map(function (m) { return '- ' + m.date + ': ' + m.summary; }).join('\n') + '\n' : '')
+      + '\nSESSION MODE: ' + mode + '\n'
+      + (mode === 'onboarding' ? '\nThis is the FIRST consultation — you don\'t know Jayden yet. Dig into his concrete goals and timelines: career, body, money, skills. One sharp question at a time, build on his last answer.\n' : '')
+      + '\nWhen it fits, connect what he did today to where he\'s going (his North Star) — not just whether he ticked the box.\n'
+      + '\nReply in under 70 words. No preamble, no "as Alex". Talk straight to Jayden. End with one natural sentence handing off to Chris — e.g. "Chris, what\'s your read on this?" or "Chris, anything to add?" — make it feel like a real round table, not a scripted line.';
+  }
+
+  function chrisPromptHandoff(ctx, northStar, keyMoments, mode) {
+    return 'You are Chris, one of two coaches in Jayden\'s Boardroom. Style: Chris Williamson — thoughtful, psychologically deep, seek the root cause before solutions. Warm but not soft. Ask exactly ONE deep question per response. Connect patterns across time when you can. You and Alex (a direct, action-focused coach) both reply to every message; stay in your lane — understanding and insight, not Alex\'s drill-sergeant push.\n\n'
+      + 'JAYDEN\'S SITUATION:\n' + ctx
+      + (northStar ? '\nNORTH STAR: ' + northStar + '\n' : '')
+      + (keyMoments && keyMoments.length ? '\nWHAT YOU REMEMBER:\n' + keyMoments.map(function (m) { return '- ' + m.date + ': ' + m.summary; }).join('\n') + '\n' : '')
+      + '\nSESSION MODE: ' + mode + '\n'
+      + (mode === 'onboarding' ? '\nThis is the FIRST consultation — you don\'t know Jayden yet. Explore what "better" means to him, his values, and what has been holding him back. Go beneath the surface before any advice.\n' : '')
+      + '\nWhen it fits, connect what he did today to where he\'s going (his North Star) — not just whether he ticked the box.\n'
+      + '\nReply in under 70 words. No preamble, no "as Chris". End with one natural sentence handing off to Alex — e.g. "Alex, how would you approach this?" or "Alex, what\'s your take?" — make it feel like a real round table, not a scripted line.';
+  }
+
+  function closingRound(transcript) {
+    var flatTranscript = transcript.map(function (m) { return (m.persona || m.role || 'Jayden') + ': ' + m.text; }).join('\n');
+    var contextNote = 'SESSION TRANSCRIPT:\n' + flatTranscript;
+
+    var ALEX_CLOSING_PROMPT = 'You are Alex, closing a coaching session with your co-coach Chris. You are speaking directly to Chris, not to Jayden. Summarise in 2-3 punchy sentences what you observed from this session and your key recommendation for Jayden. If Chris has already spoken, respond with your final layer and land a concrete joint conclusion. When you feel you\'ve both reached a solid joint conclusion, end your message with the word CLOSE on its own line.';
+    var CHRIS_CLOSING_PROMPT = 'You are Chris, closing a coaching session with your co-coach Alex. You are speaking directly to Alex, not to Jayden. Add the psychological layer to what Alex observed — the root cause or the deeper pattern. If this is the final exchange, land a concrete joint conclusion for Jayden. When you feel you\'ve both reached a solid joint conclusion, end your message with the word CLOSE on its own line.';
+
+    var closingHistory = [];
+    var results = [];
+    var maxTurns = 4;
+    var done = false;
+
+    function runTurn(turnIndex) {
+      if (done || turnIndex >= maxTurns) return Promise.resolve(results);
+
+      var isAlex = (turnIndex % 2 === 0);
+      var persona = isAlex ? 'Alex' : 'Chris';
+      var systemPrompt = isAlex ? ALEX_CLOSING_PROMPT : CHRIS_CLOSING_PROMPT;
+
+      var historyForCall = [{ role: 'user', content: contextNote }].concat(closingHistory);
+
+      return chat(systemPrompt, historyForCall, 'Continue the closing debrief.')
+        .then(function (responseText) {
+          var hadClose = responseText.indexOf('CLOSE') !== -1;
+          var cleanText = responseText.replace(/\nCLOSE\s*$/, '').replace(/^CLOSE\s*\n/, '').replace(/\bCLOSE\b\n?/g, '').trim();
+
+          results.push({ persona: persona, text: cleanText });
+          closingHistory.push({ role: 'assistant', content: cleanText });
+
+          if (hadClose) {
+            done = true;
+            return results;
+          }
+
+          return runTurn(turnIndex + 1);
+        });
+    }
+
+    return runTurn(0);
+  }
+
+  function extractGoals(transcript, existingGoals) {
+    var flatTranscript = transcript.map(function (m) { return (m.persona || m.role || 'Jayden') + ': ' + m.text; }).join('\n');
+    var existingTitles = (existingGoals && existingGoals.length)
+      ? existingGoals.map(function (g) { return g.title; }).join(', ')
+      : 'none';
+
+    var userText = 'SESSION TRANSCRIPT:\n' + flatTranscript + '\n\n'
+      + 'EXISTING GOALS (do not duplicate): ' + existingTitles + '\n\n'
+      + 'Extract 0-3 clear long-term goals that surfaced in this session. '
+      + 'Return ONLY a JSON array: [{"title":"...","area":"..."}] '
+      + 'where area is one of Academic|Health|Finance|Career|Personal. '
+      + 'If no clear long-term goals surfaced, return []. Return ONLY the JSON array, nothing else.';
+
+    return chat('You extract long-term goals from coaching sessions. Be concise and specific. Only return valid JSON.', [], userText)
+      .then(function (responseText) {
+        var m = responseText.match(/\[[\s\S]*\]/);
+        if (!m) return [];
+        try {
+          return JSON.parse(m[0]);
+        } catch (_) {
+          return [];
+        }
+      })
+      .then(null, function () { return []; });
+  }
+
+  window.BoardroomService = { chat: chat, _model: MODEL, buildContext: buildContext, alexPrompt: alexPrompt, chrisPrompt: chrisPrompt, summarizeSession: summarizeSession, buildNorthStar: buildNorthStar, amalgamate: amalgamate, alexPromptHandoff: alexPromptHandoff, chrisPromptHandoff: chrisPromptHandoff, closingRound: closingRound, extractGoals: extractGoals };
 }());
