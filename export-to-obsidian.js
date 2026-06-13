@@ -320,6 +320,16 @@ function boardroomMomentToMd(m, northStar) {
       lines.push('- [' + (done ? 'x' : ' ') + '] ' + text);
     });
   }
+  var transcript = m.transcript || [];
+  if (transcript.length) {
+    lines.push('');
+    lines.push('## Full conversation');
+    transcript.forEach(function (t) {
+      var who = t.role === 'user' ? 'Jayden' : (t.persona || 'Coach');
+      lines.push('');
+      lines.push('**' + who + ':** ' + (t.text || ''));
+    });
+  }
   lines.push('');
   lines.push('---');
   lines.push('*Logged from the dashboard Boardroom.*');

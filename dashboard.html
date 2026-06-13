@@ -1704,7 +1704,7 @@ function App(){
       var allMsgs=fullTranscript.concat(closingMsgs.map(function(m){return{role:"assistant",persona:m.persona,text:m.text,ts:Date.now()};}));
       setBrMessages(function(p){return p.concat(closingMsgs.map(function(m){return{role:"assistant",persona:m.persona,text:m.text,ts:Date.now()};}));});
       return BoardroomService.summarizeSession(allMsgs,mode).then(function(km){
-        var newMoment={date:todayStr(),summary:km.summary,commitments:(km.commitments||[]).map(function(c){return{text:c,done:false};}),mode:mode};
+        var newMoment={date:todayStr(),summary:km.summary,commitments:(km.commitments||[]).map(function(c){return{text:c,done:false};}),mode:mode,transcript:allMsgs.map(function(m){return{role:m.role,persona:m.persona||null,text:m.text};})};
         var prev=(data.boardroom&&data.boardroom.keyMoments)||[];
         var existingGoals=(data.boardroom&&data.boardroom.goals)||[];
         function finishSave(moments){
@@ -1788,7 +1788,7 @@ function App(){
     var existingGoals=(data.boardroom&&data.boardroom.goals)||[];
     BoardroomService.buildNorthStar(transcript).then(function(ns){
       return BoardroomService.summarizeSession(transcript,"onboarding").then(function(km){
-        var moment={date:todayStr(),summary:km.summary,commitments:(km.commitments||[]).map(function(c){return{text:c,done:false};}),mode:"onboarding"};
+        var moment={date:todayStr(),summary:km.summary,commitments:(km.commitments||[]).map(function(c){return{text:c,done:false};}),mode:"onboarding",transcript:transcript.map(function(m){return{role:m.role,persona:m.persona||null,text:m.text};})};
         setData(function(p){
           var pb=p.boardroom||{};
           var pkm=pb.keyMoments||[];
@@ -3063,6 +3063,21 @@ function App(){
                           );
                         })}
                       </div>}
+                      {m.transcript&&m.transcript.length>0&&<details style={{marginTop:10}}>
+                        <summary style={{fontSize:11,color:"rgba(199,125,255,0.6)",cursor:"pointer",userSelect:"none"}}>View full conversation ({m.transcript.length})</summary>
+                        <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:6,maxHeight:320,overflowY:"auto",paddingRight:4}}>
+                          {m.transcript.map(function(t,ti){
+                            var isUser=t.role==="user";
+                            var who=isUser?"You":(t.persona||"Coach");
+                            return(
+                              <div key={ti} style={{fontSize:11,lineHeight:1.55}}>
+                                <span style={{fontWeight:700,color:isUser?"#c77dff":(t.persona==="Alex"?"#5b9bff":"#c77dff")}}>{who}: </span>
+                                <span style={{color:"rgba(255,255,255,0.6)",whiteSpace:"pre-wrap"}}>{t.text}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </details>}
                     </div>
                   </div>
                 );})}
