@@ -158,7 +158,7 @@
   }
 
   function closingRound(transcript) {
-    var flatTranscript = transcript.map(function (m) { return (m.persona || m.role || 'Jayden') + ': ' + m.text; }).join('\n');
+    var flatTranscript = transcript.map(function (m) { return (m.persona || 'Jayden') + ': ' + m.text; }).join('\n');
     var contextNote = 'SESSION TRANSCRIPT:\n' + flatTranscript;
 
     var ALEX_CLOSING_PROMPT = 'You are Alex, closing a coaching session with your co-coach Chris. You are speaking directly to Chris, not to Jayden. Summarise in 2-3 punchy sentences what you observed from this session and your key recommendation for Jayden. If Chris has already spoken, respond with your final layer and land a concrete joint conclusion. When you feel you\'ve both reached a solid joint conclusion, end your message with the word CLOSE on its own line.';
@@ -180,11 +180,11 @@
 
       return chat(systemPrompt, historyForCall, 'Continue the closing debrief.')
         .then(function (responseText) {
-          var hadClose = responseText.indexOf('CLOSE') !== -1;
+          var hadClose = /(?:^|\n)CLOSE\s*$/.test(responseText);
           var cleanText = responseText.replace(/\nCLOSE\s*$/, '').replace(/^CLOSE\s*\n/, '').replace(/\bCLOSE\b\n?/g, '').trim();
 
           results.push({ persona: persona, text: cleanText });
-          closingHistory.push({ role: 'assistant', content: cleanText });
+          closingHistory.push({ role: 'user', content: persona + ' said: ' + cleanText });
 
           if (hadClose) {
             done = true;
@@ -199,7 +199,7 @@
   }
 
   function extractGoals(transcript, existingGoals) {
-    var flatTranscript = transcript.map(function (m) { return (m.persona || m.role || 'Jayden') + ': ' + m.text; }).join('\n');
+    var flatTranscript = transcript.map(function (m) { return (m.persona || 'Jayden') + ': ' + m.text; }).join('\n');
     var existingTitles = (existingGoals && existingGoals.length)
       ? existingGoals.map(function (g) { return g.title; }).join(', ')
       : 'none';
