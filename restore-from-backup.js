@@ -62,7 +62,7 @@ function counts(d) {
 
   var raw     = fs.readFileSync(file, 'utf8');
   var backup  = JSON.parse(raw);
-  if (!backup.dashData || backup.backupVersion !== 1) {
+  if (!backup.dashData || !backup.backupVersion) {
     console.error('Not a valid backup file (missing dashData or backupVersion).');
     process.exit(2);
   }

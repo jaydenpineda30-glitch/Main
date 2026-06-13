@@ -1,3 +1,13 @@
+# Secrets — never commit
 personal-dashboard-53b0d-firebase-adminsdk-fbsvc-1d6afe66d0.json
-.superpowers/
+*-firebase-adminsdk-*.json
+.env
+.env.*
+
+# Dependencies & tooling
 node_modules/
+.superpowers/
+
+# Editor
+.vscode/
+.idea/

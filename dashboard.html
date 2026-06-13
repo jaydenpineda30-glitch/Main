@@ -685,7 +685,7 @@ function GymSection(props){
     if(window.DataValidator){
       const name=wkt.name||(nextSess?nextSess.name:"Workout");
       const r=DataValidator.validate("gymWorkout",{name:name,date:wkt.date||todayStr(),sets:wkt.sets});
-      if(!r.valid){if(window.showToast)window.showToast(r.firstError);else alert(r.firstError);return;}
+      if(!r.valid){if(window.showToast)window.showToast(r.firstError);return;}
     }else if(wkt.sets.length===0)return;
     const name=wkt.name||(nextSess?nextSess.name:"Workout");
     const rotId=nextSess?nextSess.id:null;
@@ -884,7 +884,7 @@ function FinanceSection({data,onUpdate,mob,gcalEvents}){
   function addExpense(){
     if(window.DataValidator){
       const r=DataValidator.validate("financeEntry",{amount:Number(expForm.amount),category:expForm.cat||"Other",date:month+"-01"});
-      if(!r.valid){if(window.showToast)showToast(r.firstError);else alert(r.firstError);return;}
+      if(!r.valid){if(window.showToast)showToast(r.firstError);return;}
     }else if(!expForm.name||!expForm.amount)return;
     trk("finance.expense_add");
     onUpdate({...data,expenses:allExpenses.concat([{id:Date.now(),name:expForm.name,amount:Number(expForm.amount),cat:expForm.cat,month:month}])});
@@ -899,7 +899,7 @@ function FinanceSection({data,onUpdate,mob,gcalEvents}){
   function addRecurring(){
     if(window.DataValidator){
       const r=DataValidator.validate("financeEntry",{amount:Number(recForm.amount),category:recForm.cat||"Bills",date:month+"-01"});
-      if(!r.valid){if(window.showToast)showToast(r.firstError);else alert(r.firstError);return;}
+      if(!r.valid){if(window.showToast)showToast(r.firstError);return;}
     }else if(!recForm.name||!recForm.amount)return;
     onUpdate({...data,recurringTemplates:recurringTemplates.concat([{id:"r"+Date.now(),name:recForm.name,amount:Number(recForm.amount),cat:recForm.cat}])});
     setRecForm({name:"",amount:"",cat:"Bills"});
@@ -1375,21 +1375,7 @@ function App(){
 
       showToast("Migrating your saved data to the cloud…","warn");
 
-      // Log what we found
-      var tasks=(parsed.personal&&parsed.personal.tasks)||[];
-      var reflections=parsed.reflections||[];
-      var workouts=(parsed.gym&&parsed.gym.workouts)||[];
-      var expenses=(parsed.finance&&parsed.finance.expenses)||[];
-      var bwEntries=(parsed.gym&&parsed.gym.bodyWeight)||[];
-      console.log("[Migration] Found local data to migrate:");
-      console.log("  Tasks:       ",tasks.length);
-      console.log("  Reflections: ",reflections.length);
-      console.log("  Workouts:    ",workouts.length);
-      console.log("  Expenses:    ",expenses.length);
-      console.log("  Body weight: ",bwEntries.length,"entries");
-
       window.DASH_DOC.set({dashData:stripUndefined(mergeWithDefaults(parsed))}).then(function(){
-        console.log("[Migration] Upload complete → users/"+authUser.uid);
         localStorage.setItem(MIGRATED_KEY,'1');
         localStorage.removeItem('dash_v1');
         showToast("Migration complete! Your data is now synced.","success");
