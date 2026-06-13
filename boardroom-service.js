@@ -130,7 +130,7 @@
   }
 
   function amalgamate(oldMoments) {
-    var text = oldMoments.map(function (m) { return m.date + ': ' + m.summary + (m.commitments && m.commitments.length ? ' [' + m.commitments.join('; ') + ']' : ''); }).join('\n');
+    var text = oldMoments.map(function (m) { return m.date + ': ' + m.summary + (m.commitments && m.commitments.length ? ' [' + m.commitments.map(function(c){return typeof c==='string'?c:c.text;}).join('; ') + ']' : ''); }).join('\n');
     return chat('You compress multiple coaching memories into 2-3 durable pattern statements (max 30 words each). Focus on recurring themes, not events. Respond ONLY as a JSON array of strings.', [], text)
       .then(function (t) { var m = t.match(/\[[\s\S]*\]/); return m ? JSON.parse(m[0]) : [oldMoments.map(function (x) { return x.summary; }).join(' ')]; });
   }

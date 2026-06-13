@@ -1602,7 +1602,11 @@ function App(){
     var b=data.boardroom||{};
     if(b.nudgePending){setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),nudgePending:false}};});}
     if(brMessages&&brMessages.length) return;
-    if(b.messages&&b.messages.length){setBrMessages(b.messages);return;}
+    if(b.messages&&b.messages.length){
+      setBrMessages(b.messages);
+      if(b.lastSpeaker) setBrLastSpeaker(b.lastSpeaker);
+      return;
+    }
     if(!b.onboarded){
       setBrMessages([{role:"assistant",persona:"Chris",text:"Before we get into tasks — I want to understand you, not just your to-do list. What does \"better\" actually look like for you right now?",ts:Date.now()}]);
       setBrLastSpeaker("Chris");
@@ -1682,9 +1686,7 @@ function App(){
         }
         function saveWithGoals(moments){
           BoardroomService.extractGoals(allMsgs,existingGoals).then(function(proposed){
-            if(proposed&&proposed.length){
-              setBrGoalProposals(proposed);
-            }
+            setBrGoalProposals(proposed||[]);
             if(prev.length>=15){
               BoardroomService.amalgamate(prev.slice(0,10)).then(function(patterns){
                 var compacted=patterns.map(function(s){return{date:"pattern",summary:s,commitments:[],mode:"amalgamated"};});
