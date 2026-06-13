@@ -20,6 +20,7 @@ const VAULT = process.env.VAULT_PATH
 const CAPTURES_DIR    = path.join(VAULT, 'Dashboard', 'Captures');
 const REFLECTIONS_DIR = path.join(VAULT, 'Dashboard', 'Reflections');
 const BACKUPS_DIR     = path.join(VAULT, 'Dashboard', 'Backups');
+const BOARDROOM_DIR   = path.join(VAULT, 'Dashboard', 'Boardroom');
 
 const TOPICS = [
   'Accounting', 'Tax', 'Finance', 'Fitness',
@@ -279,6 +280,79 @@ function reflectionToMd(r) {
   return { filename: 'Weekly Reflection ' + date + '.md', content: lines.join('\n') };
 }
 
+// ── Boardroom session → markdown ────────────────────────────────────────────────
+// One readable note per coaching session (keyMoment) so the Boardroom's durable
+// memory lives in the vault as browsable notes, not only inside the JSON backup.
+
+var BR_MODE_LABEL = {
+  onboarding: 'First consultation', evening: 'Evening session',
+  drift: 'Check-in', morning: 'Morning session'
+};
+
+function boardroomMomentName(m) {
+  var base = (m.date || 'undated') + ' ' + (m.mode || 'session');
+  var slug = (m.summary || '').replace(/[^a-zA-Z0-9 ]/g, '').trim().slice(0, 40);
+  return safeFilename(base + (slug ? ' - ' + slug : ''));
+}
+
+function boardroomMomentToMd(m, northStar) {
+  var label = BR_MODE_LABEL[m.mode] || 'Session';
+  var lines = [];
+  lines.push('---');
+  lines.push('type: boardroom-session');
+  lines.push('date: ' + (m.date || ''));
+  lines.push('mode: ' + (m.mode || 'session'));
+  lines.push('tags: [boardroom, ' + (m.mode || 'session') + ']');
+  lines.push('---');
+  lines.push('');
+  lines.push('# Boardroom — ' + label + (m.date ? ' (' + m.date + ')' : ''));
+  lines.push('');
+  if (northStar) { lines.push('> **North Star:** ' + northStar); lines.push(''); }
+  lines.push('## What Alex & Chris concluded');
+  lines.push(m.summary || '');
+  var commits = m.commitments || [];
+  if (commits.length) {
+    lines.push('');
+    lines.push('## Commitments');
+    commits.forEach(function (c) {
+      var text = typeof c === 'string' ? c : (c.text || '');
+      var done = typeof c === 'object' && c.done;
+      lines.push('- [' + (done ? 'x' : ' ') + '] ' + text);
+    });
+  }
+  lines.push('');
+  lines.push('---');
+  lines.push('*Logged from the dashboard Boardroom.*');
+  return { filename: boardroomMomentName(m) + '.md', content: lines.join('\n') };
+}
+
+function boardroomOverviewToMd(b) {
+  var lines = [];
+  lines.push('---');
+  lines.push('type: boardroom-overview');
+  lines.push('tags: [boardroom, overview]');
+  lines.push('updated: ' + new Date().toISOString().slice(0, 10));
+  lines.push('---');
+  lines.push('');
+  lines.push('# Boardroom Overview');
+  lines.push('');
+  if (b.northStar) { lines.push('## North Star'); lines.push(''); lines.push('> ' + b.northStar); lines.push(''); }
+  var goals    = b.goals || [];
+  var active   = goals.filter(function (g) { return g.status !== 'achieved'; });
+  var achieved = goals.filter(function (g) { return g.status === 'achieved'; });
+  if (active.length) {
+    lines.push('## Active Goals'); lines.push('');
+    active.forEach(function (g) { lines.push('- **' + (g.area || 'Personal') + '** — ' + g.title); });
+    lines.push('');
+  }
+  if (achieved.length) {
+    lines.push('## Achieved'); lines.push('');
+    achieved.forEach(function (g) { lines.push('- ~~' + (g.area || 'Personal') + ' — ' + g.title + '~~' + (g.achievedAt ? ' (' + g.achievedAt + ')' : '')); });
+    lines.push('');
+  }
+  return { filename: 'Boardroom Overview.md', content: lines.join('\n') };
+}
+
 // ── Full-data backup ───────────────────────────────────────────────────────────
 // Writes a complete snapshot of dashData + the captures subcollection to a single
 // JSON file per day under Dashboard/Backups/. All days are retained (never pruned)
@@ -326,6 +400,7 @@ function writeFullBackup(userData, capSnap, usageSnap) {
 
 ensureDir(CAPTURES_DIR);
 ensureDir(REFLECTIONS_DIR);
+ensureDir(BOARDROOM_DIR);
 
 Promise.all([
   db.collection('users').doc(UID).collection('captures').get(),
@@ -447,10 +522,28 @@ Promise.all([
     reflWritten++;
   });
 
+  // Write boardroom sessions — one readable note per session, plus an overview.
+  // Overwrite each run so commitment ticks / goal changes stay in sync (Firestore
+  // is the source of truth). Amalgamated pattern entries are not real sessions → skip.
+  var boardroom = (userData.dashData && userData.dashData.boardroom) || {};
+  var moments   = (boardroom.keyMoments || []).filter(function (m) { return m && m.mode !== 'amalgamated' && m.date !== 'pattern'; });
+  var brWritten = 0;
+  moments.forEach(function (m) {
+    var result = boardroomMomentToMd(m, boardroom.northStar);
+    fs.writeFileSync(path.join(BOARDROOM_DIR, result.filename), result.content, 'utf8');
+    brWritten++;
+  });
+  if (boardroom.northStar || (boardroom.goals && boardroom.goals.length)) {
+    var overview = boardroomOverviewToMd(boardroom);
+    fs.writeFileSync(path.join(BOARDROOM_DIR, overview.filename), overview.content, 'utf8');
+    console.log('  + Boardroom Overview.md');
+  }
+
   console.log('');
   console.log('Done!  ' + new Date().toLocaleString('en-AU'));
   console.log('  Captures:    ' + capWritten + ' written, ' + capSkipped + ' skipped');
   console.log('  Reflections: ' + reflWritten + ' written, ' + reflSkipped + ' skipped');
+  console.log('  Boardroom:   ' + brWritten + ' sessions');
   console.log('  Vault: ' + VAULT);
 
 }).catch(function(e) {
