@@ -158,44 +158,51 @@
   }
 
   function closingRound(transcript) {
-    var flatTranscript = transcript.map(function (m) { return (m.persona || 'Jayden') + ': ' + m.text; }).join('\n');
-    var contextNote = 'SESSION TRANSCRIPT:\n' + flatTranscript;
+    var flatTranscript = transcript.map(function (m) {
+      return (m.persona || 'Jayden') + ': ' + m.text;
+    }).join('\n');
 
-    var ALEX_CLOSING_PROMPT = 'You are Alex, closing a coaching session with your co-coach Chris. You are speaking directly to Chris, not to Jayden. Summarise in 2-3 punchy sentences what you observed from this session and your key recommendation for Jayden. If Chris has already spoken, respond with your final layer and land a concrete joint conclusion. When you feel you\'ve both reached a solid joint conclusion, end your message with the word CLOSE on its own line.';
-    var CHRIS_CLOSING_PROMPT = 'You are Chris, closing a coaching session with your co-coach Alex. You are speaking directly to Alex, not to Jayden. Add the psychological layer to what Alex observed — the root cause or the deeper pattern. If this is the final exchange, land a concrete joint conclusion for Jayden. When you feel you\'ve both reached a solid joint conclusion, end your message with the word CLOSE on its own line.';
-
-    var closingHistory = [];
     var results = [];
     var maxTurns = 4;
-    var done = false;
 
     function runTurn(turnIndex) {
-      if (done || turnIndex >= maxTurns) return Promise.resolve(results);
+      if (turnIndex >= maxTurns) return Promise.resolve(results);
 
       var isAlex = (turnIndex % 2 === 0);
-      var persona = isAlex ? 'Alex' : 'Chris';
-      var systemPrompt = isAlex ? ALEX_CLOSING_PROMPT : CHRIS_CLOSING_PROMPT;
+      var persona      = isAlex ? 'Alex'  : 'Chris';
+      var lastResult   = results.length ? results[results.length - 1] : null;
 
-      var historyForCall = [{ role: 'user', content: contextNote }].concat(closingHistory);
+      var sysPrompt = isAlex
+        ? ('You are Alex, closing a coaching session with your co-coach Chris. '
+           + 'You are speaking directly to Chris, not to Jayden. '
+           + 'Summarise in 2-3 punchy sentences what you observed and your key recommendation for Jayden. '
+           + 'If Chris has already spoken, respond with your final layer and land a concrete joint conclusion. '
+           + 'When you feel you have both reached a solid joint conclusion, end your message with the word CLOSE on its own line.\n\n'
+           + 'SESSION TRANSCRIPT:\n' + flatTranscript
+           + (lastResult ? '\n\nChris said: ' + lastResult.text : ''))
+        : ('You are Chris, closing a coaching session with your co-coach Alex. '
+           + 'You are speaking directly to Alex, not to Jayden. '
+           + 'Add the psychological layer to what Alex observed — the root cause or the deeper pattern. '
+           + 'If this is the final exchange, land a concrete joint conclusion for Jayden. '
+           + 'When you feel you have both reached a solid joint conclusion, end your message with the word CLOSE on its own line.\n\n'
+           + 'SESSION TRANSCRIPT:\n' + flatTranscript
+           + (lastResult ? '\n\nAlex said: ' + lastResult.text : ''));
 
-      return chat(systemPrompt, historyForCall, 'Continue the closing debrief.')
+      return chat(sysPrompt, [], 'Continue the closing debrief.')
         .then(function (responseText) {
           var hadClose = /(?:^|\n)CLOSE\s*$/.test(responseText);
-          var cleanText = responseText.replace(/\nCLOSE\s*$/, '').replace(/^CLOSE\s*\n/, '').replace(/\bCLOSE\b\n?/g, '').trim();
-
+          var cleanText = responseText
+            .replace(/\nCLOSE\s*$/, '')
+            .replace(/^CLOSE\s*\n/, '')
+            .replace(/\bCLOSE\b\n?/g, '')
+            .trim();
           results.push({ persona: persona, text: cleanText });
-          closingHistory.push({ role: 'user', content: persona + ' said: ' + cleanText });
-
-          if (hadClose) {
-            done = true;
-            return results;
-          }
-
+          if (hadClose) return results;
           return runTurn(turnIndex + 1);
         });
     }
 
-    return runTurn(0);
+    return runTurn(0).catch(function () { return results; });
   }
 
   function extractGoals(transcript, existingGoals) {
