@@ -1115,6 +1115,9 @@ function App(){
   const [brMessages,setBrMessages]=useState([]);
   const [brInput,setBrInput]=useState("");
   const [brLoading,setBrLoading]=useState(false);
+  const [brLastSpeaker,setBrLastSpeaker]=useState(null);
+  const [brGoalProposals,setBrGoalProposals]=useState([]);
+  const [brClosing,setBrClosing]=useState(false);
   const [capturesData,setCapturesData]=useState([]);
   const [capturesLoading,setCapturesLoading]=useState(false);
   const [capturesFilter,setCapturesFilter]=useState("all");
@@ -1585,15 +1588,8 @@ function App(){
   }
   function toggleCalEv(id){trk("uni.gcal_event_toggle");setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
   function brOpener(mode){
-    var b=data.boardroom||{};
     if(mode==="evening"){
-      if(b.lastCommit&&b.lastCommit.date===todayStr()&&b.lastCommit.items&&b.lastCommit.items.length){
-        return [{role:"assistant",persona:"Alex",text:"This morning you committed to: "+b.lastCommit.items.join(", ")+". Straight up — done or not?",ts:Date.now()}];
-      }
       return [{role:"assistant",persona:"Chris",text:"Walk me through your day. What actually happened — not the highlight reel?",ts:Date.now()}];
-    }
-    if(mode==="morning"){
-      return [{role:"assistant",persona:"Alex",text:"Morning. Look at what's due and what matters. What are the 1-3 things you're committing to today?",ts:Date.now()}];
     }
     if(mode==="drift"){
       return [{role:"assistant",persona:"Chris",text:"You opened this in the middle of the day. That usually means something's off. What's going on right now?",ts:Date.now()}];
@@ -1608,19 +1604,19 @@ function App(){
     if(brMessages&&brMessages.length) return;
     if(b.messages&&b.messages.length){setBrMessages(b.messages);return;}
     if(!b.onboarded){
-      setBrMessages([
-        {role:"assistant",persona:"Chris",text:"Before we get into tasks — I want to understand you, not just your to-do list. What does \"better\" actually look like for you right now?",ts:Date.now()},
-        {role:"assistant",persona:"Alex",text:"And let's get specific. Career, body, money, skills — what are you actually trying to hit, and by when?",ts:Date.now()+1}
-      ]);
+      setBrMessages([{role:"assistant",persona:"Chris",text:"Before we get into tasks — I want to understand you, not just your to-do list. What does \"better\" actually look like for you right now?",ts:Date.now()}]);
+      setBrLastSpeaker("Chris");
     } else {
       var seed=brOpener(brSessionMode());
-      if(seed.length) setBrMessages(seed);
+      if(seed.length){
+        setBrMessages(seed);
+        setBrLastSpeaker(seed[seed.length-1].persona);
+      }
     }
   }
   function brSessionMode(){
     var h=new Date().getHours();
     if(!(data.boardroom&&data.boardroom.onboarded)) return "onboarding";
-    if(h<11) return "morning";
     if(h>=17) return "evening";
     return "drift";
   }
@@ -1641,6 +1637,7 @@ function App(){
     if(!groqKey.trim()){showToast("Add your Groq API key in Settings first","warn");return;}
     setBrLoading(true);
     var mode=brSessionMode();
+    var nextSpeaker=brLastSpeaker==="Alex"?"Chris":"Alex";
     var cachedEvs=[];try{var ce=localStorage.getItem('__gcal_events__');if(ce)cachedEvs=JSON.parse(ce);}catch(_){}
     var ctx=BoardroomService.buildContext(data,{todayStr:todayStr,dStr:dStr,daysBetween:daysBetween,isGoTabEvent:isGoTabEvent,thisWeek:thisWeek,cachedEvs:cachedEvs});
     var ns=(data.boardroom&&data.boardroom.northStar)||"";
@@ -1649,38 +1646,62 @@ function App(){
     var userMsg={role:"user",persona:null,text:text,ts:Date.now()};
     setBrMessages(function(p){return p.concat([userMsg]);});
     setBrInput("");
-    Promise.all([
-      BoardroomService.chat(BoardroomService.alexPrompt(ctx,ns,km,mode),hist,text),
-      BoardroomService.chat(BoardroomService.chrisPrompt(ctx,ns,km,mode),hist,text)
-    ]).then(function(r){
-      var alexMsg={role:"assistant",persona:"Alex",text:r[0],ts:Date.now()};
-      var chrisMsg={role:"assistant",persona:"Chris",text:r[1],ts:Date.now()+1};
-      setBrMessages(function(p){return p.concat([alexMsg,chrisMsg]);});
-      setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),messages:(brMessages||[]).concat([userMsg,alexMsg,chrisMsg]),sessionStartedAt:(p.boardroom&&p.boardroom.sessionStartedAt)||new Date().toISOString()}};});
+    var promptFn=nextSpeaker==="Alex"?BoardroomService.alexPromptHandoff:BoardroomService.chrisPromptHandoff;
+    BoardroomService.chat(promptFn(ctx,ns,km,mode),hist,text).then(function(r){
+      var coachMsg={role:"assistant",persona:nextSpeaker,text:r,ts:Date.now()};
+      setBrMessages(function(p){return p.concat([coachMsg]);});
+      setBrLastSpeaker(nextSpeaker);
+      setData(function(p){
+        var msgs=(p.boardroom&&p.boardroom.messages)||[];
+        return{...p,boardroom:{...(p.boardroom||{}),messages:msgs.concat([userMsg,coachMsg]),sessionStartedAt:(p.boardroom&&p.boardroom.sessionStartedAt)||new Date().toISOString(),lastSpeaker:nextSpeaker}};
+      });
       setBrLoading(false);
     }).catch(function(e){showToast("Boardroom: "+(e&&e.message||"error"),"error");setBrLoading(false);});
   }
   function brEndSession(){
     if(brMessages.filter(function(m){return m.role==="user";}).length<1){setShowBoardroom(false);return;}
+    setBrLoading(true);
+    setBrClosing(true);
     var mode=brSessionMode();
-    BoardroomService.summarizeSession(brMessages,mode).then(function(km){
-      var newMoment={date:todayStr(),summary:km.summary,commitments:km.commitments||[],mode:mode};
-      var prev=(data.boardroom&&data.boardroom.keyMoments)||[];
-      function save(moments){
-        setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),keyMoments:moments,messages:[],sessionStartedAt:null,lastCommit:(mode==="morning"&&km.commitments&&km.commitments.length)?{date:todayStr(),items:km.commitments}:((p.boardroom&&p.boardroom.lastCommit)||null)}};});
-        setBrMessages([]);
-        setShowBoardroom(false);
-        showToast("Session saved to memory","success");
-      }
-      if(prev.length>=15){
-        BoardroomService.amalgamate(prev.slice(0,10)).then(function(patterns){
-          var compacted=patterns.map(function(s){return{date:"pattern",summary:s,commitments:[],mode:"amalgamated"};});
-          save(compacted.concat(prev.slice(10)).concat([newMoment]));
-        }).catch(function(){save(prev.concat([newMoment]).slice(-15));});
-      } else {
-        save(prev.concat([newMoment]));
-      }
-    }).catch(function(){setShowBoardroom(false);});
+    var fullTranscript=brMessages.slice();
+    BoardroomService.closingRound(fullTranscript).then(function(closingMsgs){
+      var allMsgs=fullTranscript.concat(closingMsgs.map(function(m){return{role:"assistant",persona:m.persona,text:m.text,ts:Date.now()};}));
+      setBrMessages(function(p){return p.concat(closingMsgs.map(function(m){return{role:"assistant",persona:m.persona,text:m.text,ts:Date.now()};}));});
+      return BoardroomService.summarizeSession(allMsgs,mode).then(function(km){
+        var newMoment={date:todayStr(),summary:km.summary,commitments:(km.commitments||[]).map(function(c){return{text:c,done:false};}),mode:mode};
+        var prev=(data.boardroom&&data.boardroom.keyMoments)||[];
+        var existingGoals=(data.boardroom&&data.boardroom.goals)||[];
+        function finishSave(moments){
+          setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),keyMoments:moments,messages:[],sessionStartedAt:null,lastSpeaker:null}};});
+          setBrMessages([]);
+          setBrLastSpeaker(null);
+          setBrClosing(false);
+          setBrLoading(false);
+          setShowBoardroom(false);
+          showToast("Session saved","success");
+        }
+        function saveWithGoals(moments){
+          BoardroomService.extractGoals(allMsgs,existingGoals).then(function(proposed){
+            if(proposed&&proposed.length){
+              setBrGoalProposals(proposed);
+            }
+            if(prev.length>=15){
+              BoardroomService.amalgamate(prev.slice(0,10)).then(function(patterns){
+                var compacted=patterns.map(function(s){return{date:"pattern",summary:s,commitments:[],mode:"amalgamated"};});
+                finishSave(compacted.concat(prev.slice(10)).concat([moments]));
+              }).catch(function(){finishSave(prev.concat([moments]).slice(-15));});
+            } else {
+              finishSave(prev.concat([moments]));
+            }
+          });
+        }
+        saveWithGoals(newMoment);
+      });
+    }).catch(function(){
+      setBrClosing(false);
+      setBrLoading(false);
+      setShowBoardroom(false);
+    });
   }
   function brFinishOnboarding(){
     if(brMessages.filter(function(m){return m.role==="user";}).length<1){showToast("Chat a bit first so we can set your North Star","warn");return;}
