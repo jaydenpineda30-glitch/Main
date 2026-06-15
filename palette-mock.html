@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apple Glass — Sapphire</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  :root{
+    /* ── C — Sapphire palette (default glow) ── */
+    --accent:#5b8cff;
+    --accent-soft:#8fb0ff;
+    /* Apple glass card surface */
+    --glass-fill:rgba(225,234,255,0.07);          /* translucent cool-white tint */
+    --glass-border:rgba(255,255,255,0.10);
+    --glass-top:rgba(255,255,255,0.14);           /* bright top-edge highlight */
+    --glass-left:rgba(255,255,255,0.05);          /* faint left-edge highlight */
+    --glass-shadow:0 8px 32px rgba(0,0,0,0.38);   /* soft diffuse lift */
+    --glass-tint:0 4px 18px rgba(35,60,150,0.16); /* gentle blue lift (default, soft) */
+  }
+  body{
+    font-family:system-ui,-apple-system,sans-serif;
+    color:#e6ecf5;
+    min-height:100vh;
+    position:relative;
+    /* ── ALIVE background: blue ambient glows + carbon weave + base ── */
+    background-color:#0a0a0a;
+    background-image:
+      radial-gradient(ellipse 70% 55% at 82% 8%,  rgba(40,90,210,0.22) 0%, transparent 60%),
+      radial-gradient(ellipse 65% 60% at 12% 92%, rgba(20,40,120,0.26) 0%, transparent 62%),
+      linear-gradient(27deg,  #141414 5px, transparent 5px),
+      linear-gradient(207deg, #141414 5px, transparent 5px),
+      linear-gradient(27deg,  #0e0e0e 5px, transparent 5px),
+      linear-gradient(207deg, #0e0e0e 5px, transparent 5px),
+      linear-gradient(90deg,  #111 10px, transparent 10px),
+      linear-gradient(#131313 25%, #0f0f0f 25%, #0f0f0f 50%, transparent 50%, transparent 75%, #141414 75%, #141414);
+    background-position:0 0, 0 0, 0 5px,10px 0,0 10px,10px 5px,0 0,0 0;
+    background-size:auto, auto, 20px 20px,20px 20px,20px 20px,20px 20px,20px 20px,20px 20px;
+    background-attachment:fixed, fixed, scroll,scroll,scroll,scroll,scroll,scroll;
+    padding:32px 24px 64px;
+  }
+  /* faint noise grain so the glass has fine texture to refract */
+  body::before{
+    content:'';position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0.5;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+  }
+  .wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;}
+
+  .head h1{font-size:22px;font-weight:700;letter-spacing:-0.02em;color:#eef3fb;}
+  .head p{font-size:13px;color:#9aa2b2;margin-top:6px;max-width:740px;line-height:1.55;}
+  .section-label{font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--accent);margin:34px 0 16px;}
+
+  /* ── Apple glass card ── */
+  .card{
+    position:relative;
+    background:var(--glass-fill);
+    backdrop-filter:blur(24px) saturate(1.4);
+    -webkit-backdrop-filter:blur(24px) saturate(1.4);
+    border:1px solid var(--glass-border);
+    border-radius:20px;
+    padding:20px;
+    box-shadow:
+      var(--glass-shadow),
+      var(--glass-tint),
+      inset 0 1px 0 var(--glass-top),
+      inset 1px 0 0 var(--glass-left);
+    overflow:hidden;
+  }
+  /* top-corner glossy refraction streak */
+  .card::before{
+    content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+    background:linear-gradient(150deg, rgba(255,255,255,0.10) 0%, transparent 32%);
+  }
+  .card > *{position:relative;}
+
+  .bento{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;}
+  @media(max-width:820px){.bento{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:520px){.bento{grid-template-columns:1fr;}}
+  .span2{grid-column:span 2;}
+  .row2{grid-row:span 2;}
+
+  .eyebrow{font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--accent);font-weight:600;}
+  .big{font-size:40px;font-weight:800;letter-spacing:-0.03em;color:#f3f7fd;margin:8px 0 2px;}
+  .sub{font-size:13px;color:#9aa2b2;}
+  .k{font-size:11px;color:#8f97a6;text-transform:uppercase;letter-spacing:0.05em;}
+  .v{font-size:24px;font-weight:700;color:#eaeff7;margin-top:5px;}
+  .v span{color:var(--accent);}
+
+  .btn{
+    appearance:none;border:1px solid rgba(120,150,255,0.45);cursor:pointer;
+    background:linear-gradient(135deg, rgba(107,140,255,0.24), rgba(91,140,255,0.12));
+    color:var(--accent-soft);font-weight:600;font-size:14px;
+    padding:13px 22px;border-radius:999px;
+    box-shadow:0 4px 16px rgba(45,70,200,0.28), inset 0 1px 0 rgba(255,255,255,0.18);
+    backdrop-filter:blur(10px);position:relative;overflow:hidden;width:100%;
+    transition:transform .15s ease, box-shadow .25s ease;
+  }
+  .btn::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+    background:linear-gradient(150deg, rgba(255,255,255,0.25) 0%, transparent 45%);}
+  .btn:hover{transform:translateY(-1px);box-shadow:0 6px 24px rgba(70,95,235,0.42), inset 0 1px 0 rgba(255,255,255,0.2);}
+
+  .rows{display:flex;flex-direction:column;gap:10px;}
+  .lrow{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:12px 14px;border-radius:13px;
+    background:rgba(225,234,255,0.04);border:1px solid rgba(255,255,255,0.07);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.06);
+    font-size:13px;color:#cdd5e2;
+  }
+  .lrow .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);margin-right:10px;}
+  .lrow .left{display:flex;align-items:center;}
+  .lrow .badge{font-size:10px;font-weight:700;padding:2px 9px;border-radius:999px;background:rgba(107,140,255,0.14);color:var(--accent-soft);border:1px solid rgba(120,150,255,0.4);}
+
+  /* comparison strip */
+  .cmp{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+  @media(max-width:520px){.cmp{grid-template-columns:1fr;}}
+  .deadflat{
+    background:#1c1814 !important;
+    background-image:none !important;
+  }
+  .deadflat-wrap{position:relative;border-radius:20px;overflow:hidden;background:#1c1814;padding:18px;}
+  .alive-wrap{position:relative;border-radius:20px;overflow:hidden;padding:18px;
+    background:
+      radial-gradient(ellipse 80% 70% at 80% 10%, rgba(40,90,210,0.3), transparent 60%),
+      radial-gradient(ellipse 70% 70% at 10% 90%, rgba(20,40,120,0.34), transparent 60%),
+      #0c0c0c;}
+  .cmp .tag{font-size:11px;color:#9aa2b2;margin-bottom:10px;font-weight:600;letter-spacing:0.04em;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>Apple Liquid Glass — Sapphire palette over a live background</h1>
+    <p>Full Apple recipe: blur(24px) + translucent cool-white fill + bright top-edge highlight + soft diffuse shadow. The background is now <em>alive</em> — carbon weave plus two static low-opacity blue glows and a faint noise grain — so the glass has real content to refract instead of murky charcoal. Sapphire glow is back to the soft default.</p>
+  </div>
+
+  <div class="section-label">Bento sample — the home grid look</div>
+  <div class="bento">
+    <div class="card span2">
+      <div class="eyebrow">Next Assessment</div>
+      <div class="big">4 days</div>
+      <div class="sub">COMP2010 — Systems Report due Wednesday</div>
+    </div>
+    <div class="card row2 rows">
+      <div class="k" style="margin-bottom:4px;">Today</div>
+      <div class="lrow"><div class="left"><span class="dot"></span>Submit lab report</div><span class="badge">URGENT</span></div>
+      <div class="lrow"><div class="left"><span class="dot"></span>Gym — Pull day</div><span class="badge">TODAY</span></div>
+      <div class="lrow"><div class="left"><span class="dot"></span>Budget review</div><span class="badge">SOON</span></div>
+      <div class="lrow"><div class="left"><span class="dot"></span>Reading — Ch.7</div><span class="badge">SOON</span></div>
+    </div>
+    <div class="card"><div class="k">Tasks</div><div class="v">7 <span>active</span></div></div>
+    <div class="card"><div class="k">Next Gym</div><div class="v">Pull <span>day</span></div></div>
+    <div class="card span2"><div class="eyebrow">Weather</div><div class="v" style="font-size:28px;">18° <span>Clear</span></div><div class="sub">Brisbane · feels 16° · rain 10%</div></div>
+    <div class="card span2" style="display:flex;align-items:center;"><button class="btn">＋ Quick check-in</button></div>
+  </div>
+
+  <div class="section-label">Why the live background matters — same glass card, two backgrounds</div>
+  <div class="cmp">
+    <div class="deadflat-wrap">
+      <div class="tag">❌ Dead-flat charcoal #1c1814 — glass has nothing to refract</div>
+      <div class="card deadflat" style="backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(225,234,255,0.07);">
+        <div class="eyebrow">Next Assessment</div><div class="big" style="font-size:30px;">4 days</div><div class="sub">Murky lighter box — no depth</div>
+      </div>
+    </div>
+    <div class="alive-wrap">
+      <div class="tag">✅ Live blue background — glass refracts colour &amp; reads physical</div>
+      <div class="card">
+        <div class="eyebrow">Next Assessment</div><div class="big" style="font-size:30px;">4 days</div><div class="sub">Frosted, dimensional, premium</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
