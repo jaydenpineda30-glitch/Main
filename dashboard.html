@@ -1115,7 +1115,7 @@ function App(){
   const [brMessages,setBrMessages]=useState([]);
   const [brInput,setBrInput]=useState("");
   const [brLoading,setBrLoading]=useState(false);
-  const [brLastSpeaker,setBrLastSpeaker]=useState(null);
+  const [brLastSpeaker,setBrLastSpeaker]=useState(null); // kept for Firestore compat only
   const [brGoalProposals,setBrGoalProposals]=useState([]);
   const [brClosing,setBrClosing]=useState(false);
   const brMigrationRef=React.useRef(false);
@@ -1673,23 +1673,27 @@ function App(){
     if(!groqKey.trim()){showToast("Add your Groq API key in Settings first","warn");return;}
     setBrLoading(true);
     var mode=brSessionMode();
-    var nextSpeaker=brLastSpeaker==="Alex"?"Chris":"Alex";
     var cachedEvs=[];try{var ce=localStorage.getItem('__gcal_events__');if(ce)cachedEvs=JSON.parse(ce);}catch(_){}
     var ctx=BoardroomService.buildContext(data,{todayStr:todayStr,dStr:dStr,daysBetween:daysBetween,isGoTabEvent:isGoTabEvent,thisWeek:thisWeek,cachedEvs:cachedEvs});
     var ns=(data.boardroom&&data.boardroom.northStar)||"";
     var km=(data.boardroom&&data.boardroom.keyMoments)||[];
+    var goals=(data.boardroom&&data.boardroom.goals)||[];
     var hist=brMessages.map(function(m){return m.role==="user"?{role:"user",content:m.text}:{role:"assistant",content:m.persona+": "+m.text};});
     var userMsg={role:"user",persona:null,text:text,ts:Date.now()};
     setBrMessages(function(p){return p.concat([userMsg]);});
     setBrInput("");
-    var promptFn=nextSpeaker==="Alex"?BoardroomService.alexPromptHandoff:BoardroomService.chrisPromptHandoff;
-    BoardroomService.chat(promptFn(ctx,ns,km,mode),hist,text).then(function(r){
-      var coachMsg={role:"assistant",persona:nextSpeaker,text:r,ts:Date.now()};
-      setBrMessages(function(p){return p.concat([coachMsg]);});
-      setBrLastSpeaker(nextSpeaker);
+    // Deliberation: coaches go back and forth; each turn streams in live via onTurn.
+    var coachMsgs=[];
+    BoardroomService.deliberate(ctx,ns,km,goals,mode,hist,text,function(turn){
+      var m={role:"assistant",persona:turn.persona,text:turn.text,ts:Date.now()};
+      coachMsgs.push(m);
+      setBrMessages(function(p){return p.concat([m]);});
+    }).then(function(replies){
+      var last=(replies&&replies.length)?replies[replies.length-1].persona:"Chris";
+      setBrLastSpeaker(last);
       setData(function(p){
         var msgs=(p.boardroom&&p.boardroom.messages)||[];
-        return{...p,boardroom:{...(p.boardroom||{}),messages:msgs.concat([userMsg,coachMsg]),sessionStartedAt:(p.boardroom&&p.boardroom.sessionStartedAt)||new Date().toISOString(),lastSpeaker:nextSpeaker}};
+        return{...p,boardroom:{...(p.boardroom||{}),messages:msgs.concat([userMsg].concat(coachMsgs)),sessionStartedAt:(p.boardroom&&p.boardroom.sessionStartedAt)||new Date().toISOString(),lastSpeaker:last}};
       });
       setBrLoading(false);
     }).catch(function(e){showToast("Boardroom: "+(e&&e.message||"error"),"error");setBrLoading(false);});
@@ -3161,7 +3165,7 @@ function App(){
               var isAlex=m.persona==="Alex";
               return <div key={i} style={{alignSelf:"flex-start",maxWidth:"85%"}}><div style={{fontSize:11,fontWeight:700,color:isAlex?"#5b9bff":"#c77dff",marginBottom:3}}>{isAlex?"🔵 Alex":"🟣 Chris"}</div><div style={{background:"rgba(255,255,255,0.05)",border:"0.5px solid rgba(255,255,255,0.1)",color:"#e8e9f3",padding:"9px 13px",borderRadius:14,fontSize:13,whiteSpace:"pre-wrap"}}>{m.text}</div></div>;
             })}
-            {brLoading&&<div style={{color:T.text3,fontSize:12,fontStyle:"italic"}}>{brClosing?"Alex & Chris are wrapping up the session…":"Alex & Chris are thinking…"}</div>}
+            {brLoading&&<div style={{color:T.text3,fontSize:12,fontStyle:"italic"}}>{brClosing?"Alex & Chris are wrapping up the session…":"Alex & Chris are talking it through…"}</div>}
           </div>
           <div style={{padding:"12px 14px",borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",gap:8}}>
             <input value={brInput} onChange={function(e){setBrInput(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")brSend();}} placeholder="Talk to the Boardroom…" style={{flex:1,background:"rgba(255,255,255,0.06)",border:"0.5px solid rgba(255,255,255,0.15)",borderRadius:10,padding:"10px 12px",color:"#fff",fontSize:13,outline:"none"}}/>
