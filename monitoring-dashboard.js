@@ -403,11 +403,11 @@
                    : queued > 0        ? C.warn
                    : C.success;
 
+    // Frameless: no black bar, no glow, no Logs button (Logs lives in the side rail now)
     return createElement('div', {
       style: {
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '6px 14px', background: 'rgba(0,0,0,0.25)',
-        borderBottom: '0.5px solid ' + C.border, fontSize: 11
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '8px 2px 2px', fontSize: 11
       }
     },
       createElement('div', {
@@ -416,8 +416,7 @@
         createElement('span', {
           style: {
             width: 7, height: 7, borderRadius: '50%', background: labelColor,
-            display: 'inline-block',
-            boxShadow: '0 0 6px ' + labelColor
+            display: 'inline-block'
           }
         }),
         label,
@@ -425,19 +424,10 @@
           ' · ' + queued + ' pending'
         )
       ),
-      createElement('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
-        health && createElement('span', { style: { color: C.text3 } },
-          'checked ' + (health.timestamp
-            ? new Date(health.timestamp).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })
-            : '—')
-        ),
-        createElement('button', {
-          onClick: props.onOpenPanel,
-          style: {
-            padding: '3px 10px', borderRadius: 6, fontSize: 10, cursor: 'pointer',
-            border: '0.5px solid ' + C.border, background: 'transparent', color: C.text3
-          }
-        }, 'Logs →')
+      health && createElement('span', { style: { color: C.text3, fontSize: 10 } },
+        'checked ' + (health.timestamp
+          ? new Date(health.timestamp).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })
+          : '—')
       )
     );
   }
