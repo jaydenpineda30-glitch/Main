@@ -289,7 +289,8 @@
 
       if (i === 0) {
         sys += '\n\nYou are OPENING a short two-coach deliberation with your co-coach ' + other
-             + '. Give your read on what Jayden just said — set the frame in your own lane. '
+             + '. Lead with a SUBSTANTIVE read on what Jayden just said — a verdict, an angle, the cost, or the pattern you see — fully in your own lane. '
+             + 'A sharp question can sharpen your point, but it must NOT be the whole turn: give him a real take, not just an interrogation. '
              + 'Do NOT land the final call yourself; ' + other + ' will respond and close with the concrete step.';
       } else if (!isFinal) {
         sys += '\n\n' + other + ' just spoke (the latest turn above). Respond directly to ' + other
@@ -297,11 +298,12 @@
              + 'Do NOT re-ask a question ' + other + ' already asked, and do NOT restate what was said. '
              + 'Advance the thinking, fully in your own voice.';
       } else {
-        sys += '\n\n' + other + ' just gave the opening read (above). This is the CLOSING turn, in two beats. '
+        sys += '\n\n' + other + ' just gave the opening read (above). This is the CLOSING turn, in three beats. '
              + 'FIRST react to ' + other + '\'s actual point — build on it, sharpen it, or respectfully push back '
              + 'if you see it differently — in your own lane, NOT restating what ' + other + ' said. '
-             + 'THEN close: give Jayden ONE specific, small action to take today, stated as a decision he should make, '
-             + 'tied in a few words to one of his goals or his North Star. '
+             + 'SECOND, actually answer what Jayden asked — engage his real question or the pattern he raised (e.g. how to handle a recurring situation), not a reduced version of it. '
+             + 'THEN close with ONE concrete next step that FOLLOWS from that answer, stated as a decision, tied in a few words to a goal or his North Star. '
+             + 'The step should fit what he actually asked — it can be a decision, a rule, or a change in how he does things, not reflexively "set a timer and do one tiny thing" every time. '
              + 'If you already gave Jayden this same step earlier in the conversation, do NOT just repeat it — go one level deeper into what is blocking him, or offer a different small step. '
              + 'Do NOT offer a menu of options. Do NOT end on a question — the action is the last word. '
              + 'This overrides any earlier instruction to offer choices or to end with one genuine question. '
