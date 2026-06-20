@@ -1723,7 +1723,19 @@ function App(){
         return{...p,boardroom:{...(p.boardroom||{}),messages:msgs.concat([userMsg].concat(coachMsgs)),sessionStartedAt:(p.boardroom&&p.boardroom.sessionStartedAt)||new Date().toISOString(),lastSpeaker:last}};
       });
       setBrLoading(false);
-    }).catch(function(e){showToast("Boardroom: "+(e&&e.message||"error"),"error");setBrLoading(false);});
+    }).catch(function(e){
+      // Preserve any turns that already streamed before the error (e.g. a 429 mid-deliberation).
+      if(coachMsgs.length){
+        setBrLastSpeaker(coachMsgs[coachMsgs.length-1].persona);
+        setData(function(p){
+          var msgs=(p.boardroom&&p.boardroom.messages)||[];
+          return{...p,boardroom:{...(p.boardroom||{}),messages:msgs.concat([userMsg].concat(coachMsgs)),sessionStartedAt:(p.boardroom&&p.boardroom.sessionStartedAt)||new Date().toISOString()}};
+        });
+      }
+      if(e&&e.rateLimited) showToast("Boardroom paused — Groq's free limit was hit. Wait ~30s, then continue.","warn");
+      else showToast("Boardroom: "+(e&&e.message||"error"),"error");
+      setBrLoading(false);
+    });
   }
   function brEndSession(){
     if(brMessages.filter(function(m){return m.role==="user";}).length<1){setShowBoardroom(false);return;}

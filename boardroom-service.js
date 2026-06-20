@@ -58,10 +58,19 @@
     }).then(function (r) {
       if (!r.ok) {
         var status = r.status, statusText = r.statusText;
+        // Groq's free tier (8k tokens/min) is tight. Hitting it shows up as 429 (too many
+        // requests) OR 413 with error.code 'rate_limit_exceeded' (a single call over the
+        // per-minute token budget). Flag both so the UI can show a calm "wait a moment".
+        var friendly = 'Groq\'s free limit was hit — wait ~30s and try again.';
         return r.json().then(function (e) {
-          throw new Error('Groq ' + status + ': ' + ((e.error && e.error.message) || statusText));
+          var code = e && e.error && e.error.code;
+          var isRL = (status === 429) || code === 'rate_limit_exceeded';
+          var err = new Error(isRL ? friendly : ('Groq ' + status + ': ' + ((e.error && e.error.message) || statusText)));
+          err.status = status; err.rateLimited = isRL; throw err;
         }, function () {
-          throw new Error('Groq ' + status + ': ' + statusText);
+          var isRL = (status === 429);
+          var err = new Error(isRL ? friendly : ('Groq ' + status + ': ' + statusText));
+          err.status = status; err.rateLimited = isRL; throw err;
         });
       }
       return r.json();
