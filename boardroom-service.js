@@ -205,9 +205,21 @@
       + '\nReply in under 80 words. No preamble, no "as Chris". Address Jayden as "you" — speak straight to him, never about him in the third person. End with one genuine question.';
   }
 
-  // One round = Alex then Chris. 2 rounds (4 coach turns) gives a real back-and-forth
-  // without dragging. Single knob — drop to 1 if it feels long/slow.
-  var DELIBERATION_ROUNDS = 2;
+  // Older session context already lives in keyMoments + North Star (in the system prompt),
+  // so trimming verbose recent chat doesn't lose durable memory. Keep the last ~3 exchanges
+  // so per-message token cost stays flat as a session grows — that's what keeps convergence
+  // landing deep in a conversation, not just on the first message.
+  var MAX_HISTORY_MSGS = 6;
+  function trimHistory(history) {
+    var h = history || [];
+    return h.length > MAX_HISTORY_MSGS ? h.slice(h.length - MAX_HISTORY_MSGS) : h;
+  }
+
+  // One round = Alex then Chris. 1 round (2 coach turns) keeps each message under Groq's
+  // 8k tokens/min budget: Alex opens, Chris converges on the final turn — so it always lands
+  // a concrete step (never dies mid-deliberation) and Alex can't repeat himself. Single knob —
+  // bump to 2 for a richer back-and-forth if the token budget ever allows.
+  var DELIBERATION_ROUNDS = 1;
 
   /**
    * The deliberation loop. Alex and Chris go back and forth a couple of times,
@@ -223,7 +235,8 @@
    */
   function deliberate(ctx, northStar, keyMoments, goals, mode, history, userText, onTurn) {
     var totalTurns = DELIBERATION_ROUNDS * 2;
-    var baseHist = (history || []).concat([{ role: 'user', content: userText }]);
+    var hist = trimHistory(history);
+    var baseHist = hist.concat([{ role: 'user', content: userText }]);
     var results = [];
 
     function runTurn(i) {
@@ -251,7 +264,7 @@
              + 'Do NOT offer a menu of options. Speak straight to Jayden and '
              + 'give him ONE specific action to take today — concrete and small — stated as a decision he should make. '
              + 'Tie it in a few words to one of his goals or his North Star. '
-             + 'This overrides any earlier instruction to offer choices. '
+             + 'Do NOT end on a question — the action is the last word. This overrides any earlier instruction to offer choices or to end with one genuine question. '
              + 'ONLY exception: if you genuinely lack a key fact needed to be concrete, ask the ONE question that '
              + 'would unlock it instead of guessing vaguely — but if you have enough to commit, commit.';
       }
@@ -259,7 +272,7 @@
       // First turn: Alex answers Jayden directly. Later turns: feed the running
       // deliberation as history and nudge the persona to take their turn.
       var histForCall = (i === 0)
-        ? (history || [])
+        ? hist
         : baseHist.concat(results.map(function (r) {
             return { role: 'assistant', content: r.persona + ': ' + r.text };
           }));
@@ -290,7 +303,7 @@
    * inventing steps. Once it's supplied (visible in history) he gives full steps.
    */
   function howTo(ctx, northStar, goals, projectContext, mode, history, userText, onTurn) {
-    var baseHist = history || [];
+    var baseHist = trimHistory(history);
     var ctxBlock = 'JAYDEN\'S SITUATION:\n' + ctx
       + (northStar ? '\nNORTH STAR: ' + northStar + '\n' : '')
       + goalsBlock(goals)
