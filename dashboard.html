@@ -1118,6 +1118,9 @@ function App(){
   const [brLastSpeaker,setBrLastSpeaker]=useState(null); // kept for Firestore compat only
   const [brGoalProposals,setBrGoalProposals]=useState([]);
   const [brClosing,setBrClosing]=useState(false);
+  const [brIntentMode,setBrIntentMode]=useState(null); // 'howto' | 'direction' — for header badge / loading copy
+  const [brPendingIntent,setBrPendingIntent]=useState(null); // {text, reconfirmed} awaiting a one-tap mode choice
+  const [brShowProjCtx,setBrShowProjCtx]=useState(false); // project-context panel open/closed
   const brMigrationRef=React.useRef(false);
   const [capturesData,setCapturesData]=useState([]);
   const [capturesLoading,setCapturesLoading]=useState(false);
@@ -1671,24 +1674,48 @@ function App(){
     var text=brInput.trim();
     if(!text||brLoading) return;
     if(!groqKey.trim()){showToast("Add your Groq API key in Settings first","warn");return;}
+    var hist=brMessages.map(function(m){return m.role==="user"?{role:"user",content:m.text}:{role:"assistant",content:m.persona+": "+m.text};}); // history BEFORE this message
+    var userMsg={role:"user",persona:null,text:text,ts:Date.now()};
+    setBrMessages(function(p){return p.concat([userMsg]);});
+    setBrInput("");
+    var intent=BoardroomService.detectMode(text);
+    var wasPending=brPendingIntent;
+    if(intent==="ambiguous"){
+      if(wasPending&&wasPending.reconfirmed){ brRun(text,"direction",hist,userMsg); return; } // asked twice — stop guessing, default to direction
+      setBrPendingIntent({text:text,hist:hist,userMsg:userMsg,reconfirmed:!!wasPending}); // UI shows the one-tap confirm; no model call
+      return;
+    }
+    setBrPendingIntent(null);
+    brRun(text,intent,hist,userMsg);
+  }
+  // Tap-to-confirm when intent was ambiguous: route the original message to the chosen mode.
+  function brConfirmIntent(intent){
+    if(!brPendingIntent) return;
+    var pi=brPendingIntent;
+    setBrPendingIntent(null);
+    brRun(pi.text,intent,pi.hist,pi.userMsg);
+  }
+  // Shared runner: 'direction' → deliberation loop, 'howto' → step-by-step. userMsg is already rendered; hist is the history before it.
+  function brRun(text,intent,hist,userMsg){
     setBrLoading(true);
+    setBrIntentMode(intent);
     var mode=brSessionMode();
     var cachedEvs=[];try{var ce=localStorage.getItem('__gcal_events__');if(ce)cachedEvs=JSON.parse(ce);}catch(_){}
     var ctx=BoardroomService.buildContext(data,{todayStr:todayStr,dStr:dStr,daysBetween:daysBetween,isGoTabEvent:isGoTabEvent,thisWeek:thisWeek,cachedEvs:cachedEvs});
     var ns=(data.boardroom&&data.boardroom.northStar)||"";
     var km=(data.boardroom&&data.boardroom.keyMoments)||[];
     var goals=(data.boardroom&&data.boardroom.goals)||[];
-    var hist=brMessages.map(function(m){return m.role==="user"?{role:"user",content:m.text}:{role:"assistant",content:m.persona+": "+m.text};});
-    var userMsg={role:"user",persona:null,text:text,ts:Date.now()};
-    setBrMessages(function(p){return p.concat([userMsg]);});
-    setBrInput("");
-    // Deliberation: coaches go back and forth; each turn streams in live via onTurn.
+    var projectContext=(data.boardroom&&data.boardroom.projectContext)||"";
     var coachMsgs=[];
-    BoardroomService.deliberate(ctx,ns,km,goals,mode,hist,text,function(turn){
+    var onTurn=function(turn){
       var m={role:"assistant",persona:turn.persona,text:turn.text,ts:Date.now()};
       coachMsgs.push(m);
       setBrMessages(function(p){return p.concat([m]);});
-    }).then(function(replies){
+    };
+    var run=intent==="howto"
+      ? BoardroomService.howTo(ctx,ns,goals,projectContext,mode,hist,text,onTurn)
+      : BoardroomService.deliberate(ctx,ns,km,goals,mode,hist,text,onTurn);
+    run.then(function(replies){
       var last=(replies&&replies.length)?replies[replies.length-1].persona:"Chris";
       setBrLastSpeaker(last);
       setData(function(p){
@@ -3150,14 +3177,23 @@ function App(){
       {showBoardroom&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.92)",backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",display:"flex",alignItems:mob?"stretch":"center",justifyContent:"center",zIndex:200,padding:mob?"0":"16px"}} onClick={function(){setShowBoardroom(false);}}>
         <div onClick={function(e){e.stopPropagation();}} style={{background:"rgba(10,12,32,0.98)",border:"1px solid rgba(99,102,241,0.4)",borderRadius:mob?0:16,width:mob?"100%":680,maxWidth:"100%",height:mob?"100%":"80vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
           <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-            <span style={{fontSize:16,fontWeight:700,color:"#fff"}}>🧠 Boardroom</span>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:16,fontWeight:700,color:"#fff"}}>🧠 Boardroom</span>
+              {brIntentMode&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:brIntentMode==="howto"?"rgba(105,240,174,0.15)":"rgba(91,140,255,0.15)",color:brIntentMode==="howto"?"#69f0ae":"#8fb4ff",border:"0.5px solid "+(brIntentMode==="howto"?"rgba(105,240,174,0.4)":"rgba(91,140,255,0.4)")}}>{brIntentMode==="howto"?"How-to":"Direction"}</span>}
+            </div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <button onClick={function(){setBrShowProjCtx(function(v){return !v;});}} style={{background:brShowProjCtx?"rgba(99,102,241,0.18)":"rgba(255,255,255,0.06)",border:"0.5px solid rgba(255,255,255,0.15)",borderRadius:8,padding:"5px 10px",color:T.text3,fontSize:11,fontWeight:600,cursor:"pointer"}}>{(data.boardroom&&data.boardroom.projectContext)?"Context ✓":"Project context"}</button>
               {(data.boardroom&&data.boardroom.onboarded)
                 ? <button onClick={brEndSession} style={{background:"rgba(255,255,255,0.06)",border:"0.5px solid rgba(255,255,255,0.15)",borderRadius:8,padding:"5px 10px",color:T.text3,fontSize:11,fontWeight:600,cursor:"pointer"}}>End session</button>
                 : <button onClick={brFinishOnboarding} style={{background:"rgba(105,240,174,0.12)",border:"0.5px solid rgba(105,240,174,0.4)",borderRadius:8,padding:"5px 10px",color:"#69f0ae",fontSize:11,fontWeight:600,cursor:"pointer"}}>Finish setup</button>}
               <button onClick={function(){setShowBoardroom(false);}} style={{background:"none",border:"none",color:T.text3,fontSize:20,cursor:"pointer"}}>×</button>
             </div>
           </div>
+          {brShowProjCtx&&<div style={{padding:"10px 18px",borderBottom:"1px solid rgba(255,255,255,0.08)",background:"rgba(99,102,241,0.05)"}}>
+            <div style={{fontSize:10,fontWeight:700,color:"rgba(199,125,255,0.8)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Project context</div>
+            <div style={{fontSize:11,color:T.text3,marginBottom:6}}>Paste what you're working on (e.g. a build handoff). The coaches use this for situation-specific step-by-step help.</div>
+            <textarea value={(data.boardroom&&data.boardroom.projectContext)||""} onChange={function(e){var v=e.target.value;setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),projectContext:v}};});}} placeholder="e.g. Building a LilyGO T-Display-S3 AMOLED keychain. Step 3 = solder battery wires to BAT pads. Battery is a 400mAh LiPo with a JST-PH plug…" style={{width:"100%",minHeight:80,background:"rgba(255,255,255,0.06)",border:"0.5px solid rgba(255,255,255,0.15)",borderRadius:10,padding:"8px 10px",color:"#fff",fontSize:12,outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
+          </div>}
           <div style={{flex:1,overflowY:"auto",padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
             {brMessages.length===0&&<div style={{color:T.text3,fontSize:13,textAlign:"center",marginTop:24}}>Alex and Chris are here. Tell them how your day's going.</div>}
             {brMessages.map(function(m,i){
@@ -3165,7 +3201,17 @@ function App(){
               var isAlex=m.persona==="Alex";
               return <div key={i} style={{alignSelf:"flex-start",maxWidth:"85%"}}><div style={{fontSize:11,fontWeight:700,color:isAlex?"#5b9bff":"#c77dff",marginBottom:3}}>{isAlex?"🔵 Alex":"🟣 Chris"}</div><div style={{background:"rgba(255,255,255,0.05)",border:"0.5px solid rgba(255,255,255,0.1)",color:"#e8e9f3",padding:"9px 13px",borderRadius:14,fontSize:13,whiteSpace:"pre-wrap"}}>{m.text}</div></div>;
             })}
-            {brLoading&&<div style={{color:T.text3,fontSize:12,fontStyle:"italic"}}>{brClosing?"Alex & Chris are wrapping up the session…":"Alex & Chris are talking it through…"}</div>}
+            {brPendingIntent&&<div style={{alignSelf:"flex-start",maxWidth:"90%"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#c77dff",marginBottom:3}}>🔵🟣 Boardroom</div>
+              <div style={{background:"rgba(255,255,255,0.05)",border:"0.5px solid rgba(255,255,255,0.1)",color:"#e8e9f3",padding:"10px 13px",borderRadius:14,fontSize:13}}>
+                Quick check — want us to talk this through, or walk you through the actual steps?
+                <div style={{display:"flex",gap:8,marginTop:10}}>
+                  <button onClick={function(){brConfirmIntent("direction");}} style={{flex:1,background:"rgba(91,140,255,0.15)",border:"0.5px solid rgba(91,140,255,0.4)",borderRadius:8,padding:"7px 10px",color:"#8fb4ff",fontSize:12,fontWeight:600,cursor:"pointer"}}>Talk it through</button>
+                  <button onClick={function(){brConfirmIntent("howto");}} style={{flex:1,background:"rgba(105,240,174,0.12)",border:"0.5px solid rgba(105,240,174,0.4)",borderRadius:8,padding:"7px 10px",color:"#69f0ae",fontSize:12,fontWeight:600,cursor:"pointer"}}>Show me the steps</button>
+                </div>
+              </div>
+            </div>}
+            {brLoading&&<div style={{color:T.text3,fontSize:12,fontStyle:"italic"}}>{brClosing?"Alex & Chris are wrapping up the session…":(brIntentMode==="howto"?"Alex & Chris are working out the steps…":"Alex & Chris are talking it through…")}</div>}
           </div>
           <div style={{padding:"12px 14px",borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",gap:8}}>
             <input value={brInput} onChange={function(e){setBrInput(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")brSend();}} placeholder="Talk to the Boardroom…" style={{flex:1,background:"rgba(255,255,255,0.06)",border:"0.5px solid rgba(255,255,255,0.15)",borderRadius:10,padding:"10px 12px",color:"#fff",fontSize:13,outline:"none"}}/>

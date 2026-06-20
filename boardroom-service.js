@@ -15,6 +15,30 @@
   }
 
   /**
+   * Decide whether a message wants execution help ('howto'), direction/mindset
+   * ('direction'), or is unclear ('ambiguous' → the UI asks a one-tap confirm
+   * instead of guessing). Free heuristic; upgradeable to a model classifier later.
+   */
+  function detectMode(text) {
+    var t = (text || '').toLowerCase();
+    var howto = /\bhow (do|to|can|should) i\b/.test(t)
+      || /\b(walk me through|step by step|step-by-step|show me how|talk me through)\b/.test(t)
+      || /\bsteps?\b.*\b(to|for)\b/.test(t)
+      || /\bhelp me (build|make|fix|wire|solder|install|set ?up|configure|assemble|code|write|connect|flash|print)\b/.test(t)
+      || /\bwhat'?s the process\b/.test(t)
+      || /\bhow does .* work\b/.test(t);
+    var direction = /\bi feel\b/.test(t)
+      || /\b(lost|drifting|stuck|unmotivated|overwhelmed)\b/.test(t)
+      || /\bshould i\b/.test(t)
+      || /\bnot sure what (to|i should)\b/.test(t)
+      || /\b(thinking about|trying to decide|don'?t know what)\b/.test(t)
+      || /\bwhat should i (focus|do|prioriti)/.test(t);
+    if (howto && !direction) return 'howto';
+    if (direction && !howto) return 'direction';
+    return 'ambiguous';
+  }
+
+  /**
    * Low-level chat call.
    * @param {string} systemPrompt
    * @param {Array<{role,content}>} history  prior turns (role: 'user'|'assistant')
@@ -209,13 +233,18 @@
         sys += '\n\nYou are opening a short deliberation with your co-coach ' + other
              + ' before you both land on advice. Respond to Jayden now; ' + other + ' will react to you next.';
       } else if (!isFinal) {
-        sys += '\n\n' + other + ' just spoke (the latest turn above). React to ' + other
-             + ' — build on it, push back, or take a different angle — but do not repeat what was said. '
-             + 'Move the thinking forward, staying fully in your own voice.';
+        sys += '\n\n' + other + ' just spoke (the latest turn above). Respond directly to ' + other
+             + '\'s actual point — say where you agree or push back, then ADD a genuinely new angle. '
+             + 'Do NOT re-ask a question ' + other + ' already asked, and do NOT restate what was said. '
+             + 'Advance the thinking, fully in your own voice.';
       } else {
-        sys += '\n\nThis is the FINAL turn of the deliberation. Stop debating — pull the thread together and '
-             + 'speak straight to Jayden. Land ONE concrete next step or focus for him, anchored to one of his goals '
-             + 'or his North Star: what should he actually do next. Stay fully in your own voice.';
+        sys += '\n\nThis is the FINAL turn — you are CLOSING the deliberation, not continuing it. '
+             + 'Do NOT offer a menu of options. Speak straight to Jayden and '
+             + 'give him ONE specific action to take today — concrete and small — stated as a decision he should make. '
+             + 'Tie it in a few words to one of his goals or his North Star. '
+             + 'This overrides any earlier instruction to offer choices. '
+             + 'ONLY exception: if you genuinely lack a key fact needed to be concrete, ask the ONE question that '
+             + 'would unlock it instead of guessing vaguely — but if you have enough to commit, commit.';
       }
 
       // First turn: Alex answers Jayden directly. Later turns: feed the running
@@ -239,6 +268,54 @@
     }
 
     return runTurn(0);
+  }
+
+  /**
+   * Execution / how-to path. Alex gives real step-by-step instructions (NO word
+   * cap), Chris adds the one trap + mindset. Uses projectContext (e.g. a pasted
+   * project handoff) so steps are situation-specific. Same return contract as
+   * deliberate() — array of {persona,text}, streamed via onTurn.
+   *
+   * Ask-once: if a safety/accuracy-critical specific is missing and not in
+   * projectContext or the conversation, Alex asks ONE focused question instead of
+   * inventing steps. Once it's supplied (visible in history) he gives full steps.
+   */
+  function howTo(ctx, northStar, goals, projectContext, mode, history, userText, onTurn) {
+    var baseHist = history || [];
+    var ctxBlock = 'JAYDEN\'S SITUATION:\n' + ctx
+      + (northStar ? '\nNORTH STAR: ' + northStar + '\n' : '')
+      + goalsBlock(goals)
+      + (projectContext ? '\nPROJECT CONTEXT (use these specifics — this is the project Jayden is working on):\n' + projectContext + '\n' : '');
+
+    var alexSys = 'You are Alex, one of two coaches in Jayden\'s Boardroom — here in HANDS-ON mode. Voice: Alex Hormozi — direct, warm through belief, zero fluff. Jayden wants to actually DO something, so you give him the real steps, not a pep talk.\n\n'
+      + 'HOW TO ANSWER:\n'
+      + '- Give clear, correct, beginner-friendly STEPS. Number them. Include the tools/materials needed if relevant. There is NO word limit here — be as complete as the task needs, but no padding.\n'
+      + '- Use the PROJECT CONTEXT specifics when present (exact parts, pads, pins). If a detail you need is NOT given and getting it wrong is costly, do NOT guess.\n'
+      + '- SAFETY: for anything physical, electrical, or irreversible, call out the risky/irreversible step explicitly and tell Jayden to VERIFY before committing (e.g. "confirm polarity with a multimeter before you solder — reversed polarity destroys the board"). Never assert a risky project-specific detail you are not sure of; flag it and say to check.\n'
+      + '- ASK-ONCE: if a critical specific is missing (and not in the project context or the conversation above), ask ONE focused question to get it instead of giving generic steps. If Jayden has already given it, skip the question and give the full steps.\n'
+      + '- Stay in your voice: encouraging, momentum-driven. Open with the move, end by pointing at the next step.\n\n'
+      + ctxBlock
+      + '\nNo preamble, no "as Alex". Talk straight to Jayden as "you".';
+
+    return chat(alexSys, baseHist, userText).then(function (alexText) {
+      var aClean = alexText.replace(/^\s*(?:Alex|Chris)\s*:\s*/i, '');
+      var alexMsg = { persona: 'Alex', text: aClean };
+      if (typeof onTurn === 'function') { try { onTurn(alexMsg); } catch (_) {} }
+
+      var chrisSys = chrisPrompt(ctx, northStar, [], goals, mode)
+        + (projectContext ? '\n\nPROJECT CONTEXT:\n' + projectContext + '\n' : '')
+        + '\n\nAlex just gave Jayden step-by-step instructions (above). You are NOT repeating the steps. In 2-3 sentences, name the ONE trap a beginner most often hits on THIS task (especially anything that could waste money, hurt him, or wreck the hardware), and the mindset to hold while doing it. End pointing him back to just starting. Stay raw and real.';
+      var chrisHist = baseHist
+        .concat([{ role: 'user', content: userText }])
+        .concat([{ role: 'assistant', content: 'Alex: ' + aClean }]);
+
+      return chat(chrisSys, chrisHist, 'Your turn, Chris — the watch-out.').then(function (chrisText) {
+        var cClean = chrisText.replace(/^\s*(?:Alex|Chris)\s*:\s*/i, '');
+        var chrisMsg = { persona: 'Chris', text: cClean };
+        if (typeof onTurn === 'function') { try { onTurn(chrisMsg); } catch (_) {} }
+        return [alexMsg, chrisMsg];
+      });
+    });
   }
 
   function summarizeSession(transcript, mode) {
@@ -343,6 +420,8 @@
     alexPrompt: alexPrompt,
     chrisPrompt: chrisPrompt,
     deliberate: deliberate,
+    detectMode: detectMode,
+    howTo: howTo,
     summarizeSession: summarizeSession,
     buildNorthStar: buildNorthStar,
     amalgamate: amalgamate,
