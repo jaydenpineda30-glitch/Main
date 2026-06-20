@@ -39,6 +39,25 @@
   }
 
   /**
+   * Is this a genuinely heavy/low moment (a subset of 'direction'), as opposed to an
+   * ordinary "I'm a bit stuck" message? When true, Chris opens (goes underneath) and both
+   * coaches lead with warmth. Deliberately tight — acute depletion/despair markers only —
+   * so it doesn't fire on everyday friction. Free heuristic; upgradeable to a classifier later.
+   */
+  function isHeavy(text) {
+    var t = (text || '').toLowerCase();
+    return /\b(lifeless|hopeless|empty|numb|worthless|drained|exhausted)\b/.test(t)
+      || /\bburn(t|ed) ?out\b/.test(t)
+      || /\bno (energy|motivation|point|will)\b/.test(t)
+      || /\bstruggling to (eat|sleep|get out|get up|function|move|focus)\b/.test(t)
+      || /\bcan'?t (eat|sleep|get out|get up|function|cope|keep going)\b/.test(t)
+      || /\b(what'?s|whats) the point\b/.test(t)
+      || /\bdon'?t (see|know) the point\b/.test(t)
+      || /\bgiv(e|ing) up\b/.test(t)
+      || (/\blost\b/.test(t) && /\b(lifeless|lost it|nothing|hollow|empty)\b/.test(t));
+  }
+
+  /**
    * Low-level chat call.
    * @param {string} systemPrompt
    * @param {Array<{role,content}>} history  prior turns (role: 'user'|'assistant')
@@ -215,6 +234,16 @@
     return h.length > MAX_HISTORY_MSGS ? h.slice(h.length - MAX_HISTORY_MSGS) : h;
   }
 
+  // Heaviness is sticky within a conversation: once Jayden's gone low, stay gentle even if a
+  // follow-up ("can't get out of bed", "what do I do now") doesn't independently trip isHeavy.
+  // Scans the same recent window we keep for tokens, so the mood lifts on its own once a few
+  // turns pass with no heavy signal — rather than re-deciding tone from each message in isolation.
+  function recentlyHeavy(history) {
+    return trimHistory(history).some(function (m) {
+      return m && m.role === 'user' && isHeavy(m.content);
+    });
+  }
+
   // One round = Alex then Chris. 1 round (2 coach turns) keeps each message under Groq's
   // 8k tokens/min budget: Alex opens, Chris converges on the final turn — so it always lands
   // a concrete step (never dies mid-deliberation) and Alex can't repeat himself. Single knob —
@@ -239,12 +268,19 @@
     var baseHist = hist.concat([{ role: 'user', content: userText }]);
     var results = [];
 
+    // Context picks who opens: a heavy/low moment wants Chris first (he goes underneath and
+    // leads with warmth); a decision/action message wants Alex first (the lever). The closer
+    // is always the OTHER voice, so the two turns occupy distinct lanes by construction.
+    var heavy  = isHeavy(userText) || recentlyHeavy(history);
+    var opener = heavy ? 'Chris' : 'Alex';
+    var order  = (opener === 'Chris') ? ['Chris', 'Alex'] : ['Alex', 'Chris'];
+
     function runTurn(i) {
       if (i >= totalTurns) return Promise.resolve(results);
 
-      var isAlex  = (i % 2 === 0);
-      var persona = isAlex ? 'Alex' : 'Chris';
-      var other   = isAlex ? 'Chris' : 'Alex';
+      var persona = order[i % 2];
+      var other   = order[(i + 1) % 2];
+      var isAlex  = (persona === 'Alex');
       var isFinal = (i === totalTurns - 1);
 
       var sys = isAlex
@@ -252,21 +288,38 @@
         : chrisPrompt(ctx, northStar, keyMoments, goals, mode);
 
       if (i === 0) {
-        sys += '\n\nYou are opening a short deliberation with your co-coach ' + other
-             + ' before you both land on advice. Respond to Jayden now; ' + other + ' will react to you next.';
+        sys += '\n\nYou are OPENING a short two-coach deliberation with your co-coach ' + other
+             + '. Give your read on what Jayden just said — set the frame in your own lane. '
+             + 'Do NOT land the final call yourself; ' + other + ' will respond and close with the concrete step.';
       } else if (!isFinal) {
         sys += '\n\n' + other + ' just spoke (the latest turn above). Respond directly to ' + other
              + '\'s actual point — say where you agree or push back, then ADD a genuinely new angle. '
              + 'Do NOT re-ask a question ' + other + ' already asked, and do NOT restate what was said. '
              + 'Advance the thinking, fully in your own voice.';
       } else {
-        sys += '\n\nThis is the FINAL turn — you are CLOSING the deliberation, not continuing it. '
-             + 'Do NOT offer a menu of options. Speak straight to Jayden and '
-             + 'give him ONE specific action to take today — concrete and small — stated as a decision he should make. '
-             + 'Tie it in a few words to one of his goals or his North Star. '
-             + 'Do NOT end on a question — the action is the last word. This overrides any earlier instruction to offer choices or to end with one genuine question. '
+        sys += '\n\n' + other + ' just gave the opening read (above). This is the CLOSING turn, in two beats. '
+             + 'FIRST react to ' + other + '\'s actual point — build on it, sharpen it, or respectfully push back '
+             + 'if you see it differently — in your own lane, NOT restating what ' + other + ' said. '
+             + 'THEN close: give Jayden ONE specific, small action to take today, stated as a decision he should make, '
+             + 'tied in a few words to one of his goals or his North Star. '
+             + 'If you already gave Jayden this same step earlier in the conversation, do NOT just repeat it — go one level deeper into what is blocking him, or offer a different small step. '
+             + 'Do NOT offer a menu of options. Do NOT end on a question — the action is the last word. '
+             + 'This overrides any earlier instruction to offer choices or to end with one genuine question. '
              + 'ONLY exception: if you genuinely lack a key fact needed to be concrete, ask the ONE question that '
              + 'would unlock it instead of guessing vaguely — but if you have enough to commit, commit.';
+      }
+
+      // Heavy/low moment: shape the TONE on both turns (warmth first), while the opener/closer
+      // logic above still owns who lands the step — so no competing "do this" instructions.
+      if (heavy) {
+        sys += isAlex
+          ? '\n\nHEAVY MOMENT: Jayden is in a genuinely low place right now. Drop the "that\'s the data" coldness '
+            + 'and any drill-sergeant push — lead with warmth and belief, stay gentle. Any step you point to must be '
+            + 'tiny and doable in the next few minutes.'
+          : '\n\nHEAVY MOMENT: Jayden is in a genuinely low place right now — lost/lifeless, maybe struggling with '
+            + 'basics like eating or getting out. Lead with solidarity, go gently underneath, stay warm. If it reads as '
+            + 'more than a passing dip, you can softly suggest he reach out to someone he trusts or his GP — as a mate '
+            + 'would, not a warning.';
       }
 
       // First turn: Alex answers Jayden directly. Later turns: feed the running
@@ -443,6 +496,8 @@
     chrisPrompt: chrisPrompt,
     deliberate: deliberate,
     detectMode: detectMode,
+    isHeavy: isHeavy,
+    recentlyHeavy: recentlyHeavy,
     howTo: howTo,
     summarizeSession: summarizeSession,
     buildNorthStar: buildNorthStar,
