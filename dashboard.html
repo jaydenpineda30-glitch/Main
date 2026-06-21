@@ -2553,25 +2553,30 @@ function App(){
       const dayEvs=visibleGcalEvents.filter(function(ev){return ev.date===activeDay;}).sort(function(a,b){return(a.time||"").localeCompare(b.time||"");});
       return(
         <div>
-          <div style={{display:"flex",gap:4,overflowX:"auto",paddingBottom:6,marginBottom:10}}>
+          <div style={{display:"flex",gap:4,overflowX:"auto",paddingBottom:6,marginBottom:12}}>
             {weekDates.map(function(d,di){const ds=dStr(d);const isTdy=ds===todayStr();const isActive=ds===activeDay;const hasEv=visibleGcalEvents.some(function(ev){return ev.date===ds;});return(
-              <button key={di} onClick={function(){setActiveDay(ds);}} style={{flex:"0 0 auto",minWidth:42,padding:"7px 6px",borderRadius:10,border:isActive?"1px solid "+T.accent:"0.5px solid "+T.border,background:isActive?T.accentBg:"rgba(255,255,255,0.03)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                <span style={{fontSize:9,color:isTdy?T.accent:T.text3,fontWeight:600}}>{DAYS[di]}</span>
-                <span style={{fontSize:15,fontWeight:isTdy?700:500,color:isTdy?T.accent:isActive?T.text:T.text2}}>{d.getDate()}</span>
-                {hasEv&&<div style={{width:4,height:4,borderRadius:"50%",background:isActive?T.accent:T.text3}}/>}
+              <button key={di} onClick={function(){setActiveDay(ds);}} style={{flex:"0 0 auto",minWidth:44,padding:"8px 6px",borderRadius:12,border:isActive?"1px solid "+T.accent:"0.5px solid rgba(255,255,255,0.08)",background:isActive?T.accentBg:isTdy?"rgba(91,140,255,0.06)":"rgba(255,255,255,0.02)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,boxShadow:isActive?"0 0 12px rgba(91,140,255,0.2)":"none",transition:"all 0.15s"}}>
+                <span style={{fontSize:9,color:isTdy?T.accent:T.text3,fontWeight:700,letterSpacing:"0.04em"}}>{DAYS[di]}</span>
+                <span style={{fontSize:16,fontWeight:700,color:isTdy?T.accent:isActive?T.text:T.text2,width:26,height:26,borderRadius:"50%",background:isTdy&&!isActive?"rgba(91,140,255,0.15)":"transparent",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:isTdy?"0 0 8px rgba(91,140,255,0.25)":"none"}}>{d.getDate()}</span>
+                {hasEv&&<div style={{width:4,height:4,borderRadius:"50%",background:isActive?T.accent:"rgba(91,140,255,0.45)"}}/>}
               </button>
             );})}
           </div>
-          {dayEvs.length===0?<div style={{fontSize:12,color:T.text3,padding:"12px 0",textAlign:"center"}}>{gcalConnected?"No events today":"Connect Google Calendar to see events"}</div>:dayEvs.map(function(ev){const col=evColor(ev);return(
-            <div key={ev.id} style={{display:"flex",gap:10,padding:"10px 12px",borderRadius:10,background:col+"14",border:"0.5px solid "+col+"35",marginBottom:8,alignItems:"flex-start"}}>
-              <div style={{width:3,background:col,borderRadius:2,alignSelf:"stretch",minHeight:28,flexShrink:0,marginTop:2}}/>
-              <div style={{flex:1}}>
-                <div style={{fontSize:11,fontWeight:700,color:col}}>{evLabel(ev)}</div>
-                <div style={{fontSize:13,color:T.text,marginTop:2,lineHeight:1.4}}>{ev.title}</div>
-                <div style={{fontSize:10,color:T.text3,marginTop:3}}>{ev.time}{ev.location?<span style={{marginLeft:6,opacity:0.7,display:"inline-flex",alignItems:"center",gap:3,verticalAlign:"middle"}}><UIcon name="pin" size={10}/>{ev.location}</span>:null}</div>
+          {dayEvs.length===0
+            ?<div style={{fontSize:12,color:T.text3,padding:"16px 0",textAlign:"center"}}>{gcalConnected?"No events today":"Connect Google Calendar to see events"}</div>
+            :dayEvs.map(function(ev){const col=evColor(ev);return(
+              <div key={ev.id} style={{display:"flex",gap:10,padding:"10px 14px",borderRadius:12,background:"rgba(255,255,255,0.03)",border:"0.5px solid rgba(255,255,255,0.08)",marginBottom:8,alignItems:"flex-start"}}>
+                <div style={{width:3,background:col,borderRadius:2,alignSelf:"stretch",minHeight:28,flexShrink:0,marginTop:2,boxShadow:"0 0 6px "+col+"80"}}/>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}>
+                    <div style={{fontSize:10,fontWeight:700,color:col,letterSpacing:"0.02em"}}>{evLabel(ev)}</div>
+                    <div style={{fontSize:10,color:T.text3}}>{ev.time}</div>
+                  </div>
+                  <div style={{fontSize:13,color:T.text,lineHeight:1.4}}>{ev.title}</div>
+                  {ev.location&&<div style={{fontSize:10,color:T.text3,marginTop:3,display:"flex",alignItems:"center",gap:3}}><UIcon name="pin" size={9}/>{ev.location}</div>}
+                </div>
               </div>
-            </div>
-          );})}
+            );})}
         </div>
       );
     }
@@ -2585,24 +2590,24 @@ function App(){
     const now=new Date();const nowMins=now.getHours()*60+now.getMinutes();
     return(
       <div style={{display:"flex"}}>
-        <div style={{width:28,flexShrink:0,position:"relative",height:totalH,marginTop:26}}>{hours.map(function(h){return<div key={h} style={{position:"absolute",top:(h-minH)*60*PPM-6,fontSize:8,color:T.text3,textAlign:"right",width:24}}>{h===12?"12p":h<12?h+"a":(h-12)+"p"}</div>;})}</div>
+        <div style={{width:28,flexShrink:0,position:"relative",height:totalH,marginTop:26}}>{hours.map(function(h){return<div key={h} style={{position:"absolute",top:(h-minH)*60*PPM-6,fontSize:8,color:T.text3,textAlign:"right",width:24,opacity:0.6}}>{h===12?"12p":h<12?h+"a":(h-12)+"p"}</div>;})}</div>
         <div style={{flex:1,display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1}}>
           {weekDates.map(function(d,di){
             const ds=dStr(d);const isTdy=ds===todayStr();const isPast=new Date(ds)<new Date(todayStr());
             const timedEvs=visibleGcalEvents.filter(function(ev){return ev.date===ds&&!ev.allDay;});
             const allDayEvs=visibleGcalEvents.filter(function(ev){return ev.date===ds&&ev.allDay;});
             const isSchedTarget=!!scheduleTaskId;
-            return(<div key={di} style={{display:"flex",flexDirection:"column",cursor:isSchedTarget?"crosshair":"pointer",borderRadius:6,outline:isSchedTarget?"1.5px dashed "+T.accent:"none",background:isSchedTarget?"rgba(91,140,255,0.04)":"transparent",transition:"background 0.1s"}} onClick={function(){if(isSchedTarget){openSchedulePicker(scheduleTaskId,ds);}else{setActiveDay(ds);}}}>
-              <div style={{textAlign:"center",marginBottom:2,padding:"2px 0",borderRadius:4,background:activeDay===ds?T.accentBg:"transparent"}}>
-                <div style={{fontSize:8,color:isTdy?T.accent:T.text3}}>{DAYS[di]}</div>
-                <div style={{fontSize:10,fontWeight:isTdy?700:400,color:isTdy?T.accent:isPast?T.text3:T.text,width:16,height:16,borderRadius:"50%",background:isTdy?T.accentBg:"transparent",display:"flex",alignItems:"center",justifyContent:"center",margin:"1px auto"}}>{d.getDate()}</div>
-                {allDayEvs.map(function(ev){return<div key={ev.id} style={{fontSize:6,background:ev.calColor+"30",borderLeft:"2px solid "+ev.calColor,borderRadius:2,padding:"0 2px",color:ev.calColor,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:1}}>{ev.title.slice(0,10)}</div>;})}
+            return(<div key={di} style={{display:"flex",flexDirection:"column",cursor:isSchedTarget?"crosshair":"pointer",borderRadius:6,background:isTdy?"rgba(91,140,255,0.05)":isSchedTarget?"rgba(91,140,255,0.04)":"transparent",outline:isSchedTarget?"1.5px dashed "+T.accent:"none",transition:"background 0.1s"}} onClick={function(){if(isSchedTarget){openSchedulePicker(scheduleTaskId,ds);}else{setActiveDay(ds);}}}>
+              <div style={{textAlign:"center",marginBottom:2,padding:"3px 0",borderRadius:6,background:activeDay===ds&&!isTdy?T.accentBg:"transparent"}}>
+                <div style={{fontSize:8,color:isTdy?T.accent:T.text3,fontWeight:isTdy?700:400,letterSpacing:"0.04em"}}>{DAYS[di]}</div>
+                <div style={{fontSize:10,fontWeight:700,color:isTdy?"#fff":isPast?T.text3:T.text,width:18,height:18,borderRadius:"50%",background:isTdy?"#5b8cff":"transparent",display:"flex",alignItems:"center",justifyContent:"center",margin:"2px auto",boxShadow:isTdy?"0 0 8px rgba(91,140,255,0.55)":"none"}}>{d.getDate()}</div>
+                {allDayEvs.map(function(ev){return<div key={ev.id} style={{fontSize:6,background:ev.calColor+"20",borderLeft:"2px solid "+ev.calColor,borderRadius:2,padding:"0 2px",color:ev.calColor,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:1}}>{ev.title.slice(0,10)}</div>;})}
               </div>
-              <div style={{position:"relative",height:totalH,borderLeft:"0.5px solid "+T.border,opacity:isPast?0.5:1}}>
-                {hours.map(function(h){return<div key={h} style={{position:"absolute",top:(h-minH)*60*PPM,left:0,right:0,borderTop:"0.5px solid "+T.border}}/>;} )}
-                {isTdy&&nowMins>=minH*60&&nowMins<=maxH*60&&<div style={{position:"absolute",top:(nowMins-minH*60)*PPM,left:0,right:0,borderTop:"1.5px solid "+T.danger,zIndex:10}}><div style={{position:"absolute",left:-3,top:-3,width:6,height:6,borderRadius:"50%",background:T.danger}}/></div>}
-                {timedEvs.map(function(ev){const col=evColor(ev);const tp=parseTimes(ev.time);return(<div key={ev.id} style={{position:"absolute",top:(tp.start-minH*60)*PPM,left:1,right:1,height:Math.max((tp.end-tp.start)*PPM,10),borderRadius:2,background:col+"28",borderLeft:"2px solid "+col,padding:"1px 2px",overflow:"hidden",boxSizing:"border-box",zIndex:5}}><div style={{fontSize:6.5,fontWeight:700,color:col,whiteSpace:"nowrap",overflow:"hidden"}}>{evLabel(ev)}</div></div>);})}
-                {data.personal.tasks.filter(function(t){return t.scheduledDate===ds&&t.scheduledTime;}).map(function(t){const sm=toMins(t.scheduledTime);const em=sm+(t.scheduledDuration||60);const isDone=!!t.done;return(<div key={"sched_"+t.id} title={(isDone?"✓ Done · ":"")+t.name+" · "+t.scheduledTime+" ("+( t.scheduledDuration||60)+"min)"} style={{position:"absolute",top:Math.max((sm-minH*60)*PPM,0),left:1,right:1,height:Math.max((em-sm)*PPM,10),borderRadius:2,background:isDone?"rgba(105,240,174,0.14)":"rgba(91,140,255,0.18)",border:isDone?"1px solid rgba(105,240,174,0.55)":"1px dashed rgba(91,140,255,0.65)",padding:"1px 3px",overflow:"hidden",boxSizing:"border-box",zIndex:6,cursor:"pointer",opacity:isDone?0.7:1}} onClick={function(e){e.stopPropagation();openSchedulePicker(t.id,t.scheduledDate,t.scheduledTime,t.scheduledDuration);}}><div style={{fontSize:6.5,fontWeight:700,color:isDone?T.success:T.accent,whiteSpace:"nowrap",overflow:"hidden",textDecoration:isDone?"line-through":"none"}}>{isDone?"✓ ":""}{t.name}</div></div>);})}
+              <div style={{position:"relative",height:totalH,borderLeft:"0.5px solid rgba(255,255,255,0.06)",opacity:isPast?0.45:1}}>
+                {hours.map(function(h){return<div key={h} style={{position:"absolute",top:(h-minH)*60*PPM,left:0,right:0,borderTop:"0.5px solid rgba(255,255,255,0.05)"}}/>;} )}
+                {isTdy&&nowMins>=minH*60&&nowMins<=maxH*60&&<div style={{position:"absolute",top:(nowMins-minH*60)*PPM,left:0,right:0,borderTop:"1.5px solid "+T.danger,zIndex:10,boxShadow:"0 0 4px rgba(255,107,107,0.5)"}}><div style={{position:"absolute",left:-3,top:-3,width:6,height:6,borderRadius:"50%",background:T.danger,boxShadow:"0 0 6px "+T.danger}}/></div>}
+                {timedEvs.map(function(ev){const col=evColor(ev);const tp=parseTimes(ev.time);return(<div key={ev.id} style={{position:"absolute",top:(tp.start-minH*60)*PPM,left:1,right:1,height:Math.max((tp.end-tp.start)*PPM,10),borderRadius:3,background:col+"18",borderLeft:"2px solid "+col,padding:"1px 3px",overflow:"hidden",boxSizing:"border-box",zIndex:5}}><div style={{fontSize:6.5,fontWeight:700,color:col,whiteSpace:"nowrap",overflow:"hidden"}}>{evLabel(ev)}</div></div>);})}
+                {data.personal.tasks.filter(function(t){return t.scheduledDate===ds&&t.scheduledTime;}).map(function(t){const sm=toMins(t.scheduledTime);const em=sm+(t.scheduledDuration||60);const isDone=!!t.done;return(<div key={"sched_"+t.id} title={(isDone?"✓ Done · ":"")+t.name+" · "+t.scheduledTime+" ("+(t.scheduledDuration||60)+"min)"} style={{position:"absolute",top:Math.max((sm-minH*60)*PPM,0),left:1,right:1,height:Math.max((em-sm)*PPM,10),borderRadius:3,background:isDone?"rgba(105,240,174,0.14)":"rgba(91,140,255,0.18)",border:isDone?"1px solid rgba(105,240,174,0.55)":"1px dashed rgba(91,140,255,0.65)",padding:"1px 3px",overflow:"hidden",boxSizing:"border-box",zIndex:6,cursor:"pointer",opacity:isDone?0.7:1}} onClick={function(e){e.stopPropagation();openSchedulePicker(t.id,t.scheduledDate,t.scheduledTime,t.scheduledDuration);}}><div style={{fontSize:6.5,fontWeight:700,color:isDone?T.success:T.accent,whiteSpace:"nowrap",overflow:"hidden",textDecoration:isDone?"line-through":"none"}}>{isDone?"✓ ":""}{t.name}</div></div>);})}
               </div>
             </div>);
           })}
@@ -2779,22 +2784,24 @@ function App(){
           </div>
           {/* Bento masonry — cards pack by height, no dead gaps */}
           <div style={{columnCount:mob?1:3,columnGap:18}}>
-            <div className="card-rim" style={card({columnSpan:"all",breakInside:"avoid"})}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                <div style={{fontSize:11,fontWeight:500,color:T.text}}>Week of {fmtDate(dStr(weekDates[0]))} — {fmtDate(dStr(weekDates[6]))}</div>
-                <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                  {gcalReady&&!gcalConnected&&<button style={{...btn,fontSize:10,color:"#4285F4",border:"0.5px solid #4285F440"}} onClick={function(){window.GCalSync&&window.GCalSync.connect();}}>+ Google Cal</button>}
-                  {gcalConnected&&<button style={{...btn,fontSize:10,color:"#34A853",border:"0.5px solid #34A85340",display:"inline-flex",alignItems:"center",gap:5}} onClick={function(){setShowCalPicker(true);}}><UIcon name="calendar" size={11}/>{gcalEvents.length} synced</button>}
-                  <button style={btn} onClick={function(){setWkOff(function(o){return o-1;});}}>← prev</button>
-                  <button style={{...btn,color:wkOff===0?T.accent:T.text2}} onClick={function(){setWkOff(0);setActiveDay(todayStr());}}>today</button>
-                  <button style={btn} onClick={function(){setWkOff(function(o){return o+1;});}}>next →</button>
+            <div className="card-rim" style={card({columnSpan:"all",breakInside:"avoid",padding:"16px 20px"})}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text,letterSpacing:"-0.01em"}}>{new Date(dStr(weekDates[0])).toLocaleDateString("en-AU",{month:"long",year:"numeric"})}</div>
+                  <div style={{fontSize:10,color:T.text3,marginTop:1}}>{fmtDate(dStr(weekDates[0]))} — {fmtDate(dStr(weekDates[6]))}</div>
+                </div>
+                <div style={{display:"flex",gap:5,alignItems:"center"}}>
+                  {gcalReady&&!gcalConnected&&<button style={{...btn,fontSize:10,color:"#4285F4",border:"0.5px solid rgba(66,133,244,0.35)",display:"inline-flex",alignItems:"center",gap:4}} onClick={function(){window.GCalSync&&window.GCalSync.connect();}}><UIcon name="calendar" size={10}/>Connect</button>}
+                  {gcalConnected&&<button style={{...btn,fontSize:10,color:T.text2,display:"inline-flex",alignItems:"center",gap:4}} onClick={function(){setShowCalPicker(true);}}><UIcon name="calendar" size={10}/>{gcalEvents.length}</button>}
+                  <button style={{...btn,padding:"4px 10px",fontSize:13}} onClick={function(){setWkOff(function(o){return o-1;});}}>←</button>
+                  <button style={{...btn,padding:"4px 10px",color:wkOff===0?T.accent:T.text2,border:wkOff===0?"0.5px solid rgba(91,140,255,0.4)":"0.5px solid rgba(255,255,255,0.12)"}} onClick={function(){setWkOff(0);setActiveDay(todayStr());}}>Today</button>
+                  <button style={{...btn,padding:"4px 10px",fontSize:13}} onClick={function(){setWkOff(function(o){return o+1;});}}>→</button>
                 </div>
               </div>
               {renderWeek()}
-              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8,paddingTop:6,borderTop:"0.5px solid "+T.border}}>
-                {gcalCalendars.slice(0,6).map(function(cal){return<div key={cal.id} style={{display:"flex",alignItems:"center",gap:3}}><div style={{width:6,height:6,borderRadius:2,background:cal.backgroundColor||"#4285F4"}}/><span style={{fontSize:8,color:T.text3}}>{cal.summary}</span></div>;})}
-                {gcalEvents.length===0&&<span style={{fontSize:8,color:T.text3}}>Connect Google Calendar to see events</span>}
-              </div>
+              {gcalCalendars.length>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10,paddingTop:8,borderTop:"0.5px solid "+T.border}}>
+                {gcalCalendars.slice(0,6).map(function(cal){return<div key={cal.id} style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:6,height:6,borderRadius:2,background:cal.backgroundColor||"#4285F4"}}/><span style={{fontSize:9,color:T.text3}}>{cal.summary}</span></div>;})}
+              </div>}
             </div>
             <div style={{breakInside:"avoid",marginBottom:12}}><WeatherWidget mob={mob}/></div>
             {nextRot&&<div className="card-rim" style={{...card({breakInside:"avoid"}),padding:"14px 16px"}}>
@@ -2818,6 +2825,35 @@ function App(){
             {checkinOpen&&(checkinLoading?<div style={{fontSize:12,color:T.accent,display:"flex",alignItems:"center",gap:6}}><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:T.accent,animation:"pulse 1.2s ease-in-out infinite"}}/>AI is thinking...</div>:checkinBlocks.length===0?<div style={{fontSize:12,color:T.text3}}>Generating today's check-in…</div>:checkinBlocks.map(function(block,bi){return(<div key={bi} style={{marginBottom:10}}>{block.header&&<div style={{fontSize:11,fontWeight:600,color:T.accent,marginBottom:4}}>{block.header}</div>}{block.items.map(function(item,ii){return<div key={ii} style={{fontSize:13,lineHeight:1.7,color:T.text}}>{item}</div>;})}</div>);}))}
             {todayEvs.length>0&&<div style={{marginTop:12,paddingTop:10,borderTop:"0.5px solid "+T.border,display:"flex",gap:6,flexWrap:"wrap"}}>{todayEvs.map(function(ev){const col=evColor(ev);return(<div key={ev.id} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 9px",borderRadius:6,background:col+"18",border:"0.5px solid "+col+"40",flexShrink:0}}><div><div style={{fontSize:10,fontWeight:600,color:col}}>{evLabel(ev)}<span style={{fontWeight:400,color:T.text3}}> · {ev.time}</span></div><div style={{fontSize:9,color:T.text2}}>{ev.title.slice(0,32)}</div></div></div>);})}</div>}
           </div>
+
+          {/* Goals */}
+          {(function(){
+            var b=data.boardroom||{};
+            if(!b.onboarded) return null;
+            var ag=(b.goals||[]).filter(function(g){return g.status==="active";});
+            var ns=b.northStar||"";
+            if(!ag.length&&!ns) return null;
+            return(
+              <div className="card-rim" style={{...card({breakInside:"avoid"}),borderLeft:"3px solid rgba(91,140,255,0.6)"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:ns?10:12}}>
+                  <div style={sT}>Goals</div>
+                  <button onClick={function(){setPage("Boardroom");}} style={{...btnGlass,fontSize:11,padding:"3px 10px"}}>Boardroom →</button>
+                </div>
+                {ns&&<div style={{fontSize:12,color:"rgba(255,255,255,0.42)",fontStyle:"italic",lineHeight:1.65,marginBottom:ag.length?14:4,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>"{ns}"</div>}
+                {ag.length===0&&<div style={{fontSize:12,color:T.text3,marginTop:4}}>Start a session to set your first goal.</div>}
+                {ag.map(function(g,i){
+                  var ts=getTagStyle(g.area);
+                  return(
+                    <div key={g.id} style={{display:"flex",alignItems:"center",gap:9,padding:"7px 0",borderBottom:i<ag.length-1?"0.5px solid rgba(255,255,255,0.06)":"none"}}>
+                      <span style={{width:6,height:6,borderRadius:"50%",flexShrink:0,background:ts.color,boxShadow:"0 0 6px "+ts.color}}/>
+                      <span style={{fontSize:10,padding:"2px 6px",borderRadius:4,...ts,flexShrink:0}}>{g.area}</span>
+                      <span style={{fontSize:13,color:"rgba(255,255,255,0.82)",lineHeight:1.4}}>{g.title}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
 
           {/* Assessments */}
           <div className="card-rim" style={card({breakInside:"avoid"})}>
@@ -3485,8 +3521,6 @@ function App(){
         var goals=(b.goals||[]).filter(function(g){return g.status==="active";});
         var achieved=(b.goals||[]).filter(function(g){return g.status==="achieved";});
         var keyMoments=(b.keyMoments||[]).slice().reverse();
-        var tagStyle={academic:{background:"rgba(55,138,221,0.18)",color:"#7eb3e8"},health:{background:"rgba(59,109,17,0.22)",color:"#8ac571"},finance:{background:"rgba(186,117,23,0.22)",color:"#e8b970"},career:{background:"rgba(127,119,221,0.22)",color:"#b3acff"},personal:{background:"rgba(136,135,128,0.22)",color:"#b4b3ac"}};
-        function getTagStyle(area){return tagStyle[(area||"personal").toLowerCase()]||tagStyle.personal;}
         function modeBadgeStyle(mode){
           if(mode==="evening") return{background:"rgba(127,119,221,0.2)",color:"#b3acff"};
           if(mode==="onboarding") return{background:"rgba(29,158,117,0.2)",color:"#6ed8b8"};
@@ -3506,6 +3540,10 @@ function App(){
               <div style={{...eyebrow,marginBottom:8}}>North Star</div>
               <div style={{fontSize:14,color:"rgba(255,255,255,0.85)",lineHeight:1.65,fontStyle:"italic"}}>{northStar}</div>
             </div>}
+
+            <button onClick={brOpen} style={{...btnGlassP,width:"100%",padding:"13px 0",fontSize:14,fontWeight:700,borderRadius:14,marginBottom:20,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+              <NavGlyph name="Boardroom" size={15}/>Start Session
+            </button>
 
             {brGoalProposals.length>0&&<div style={{background:"rgba(91,140,255,0.08)",backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"0.5px solid rgba(91,140,255,0.3)",borderRadius:14,padding:"14px 18px",marginBottom:20}}>
               <div style={{fontSize:11,fontWeight:600,color:"rgba(91,140,255,0.8)",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.08em"}}>Goals surfaced from your last session</div>
@@ -3605,11 +3643,6 @@ function App(){
           </div>
         );
       })()}
-
-      {/* ── Boardroom floating button ── */}
-      <button onClick={brOpen} className={"br-glow-"+brGlow()} style={{...whitePill,position:"fixed",bottom:mob?122:140,right:20,zIndex:150}}>
-        <span style={{display:"flex"}}><NavGlyph name="Boardroom" size={16}/></span>Boardroom
-      </button>
 
       {/* ── Quick Capture floating button ── */}
       <button onClick={function(){trk("capture.quick_open");setShowCapture(true);setCaptureResult(null);}} style={{...whitePill,position:"fixed",bottom:mob?70:80,right:20,zIndex:150}}>
