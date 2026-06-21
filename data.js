@@ -30,34 +30,10 @@ var SC = {
 };
 
 // ── Semester assessments ──────────────────────────────────────────────────────
-// Semester start: Monday 20 April 2026.
-// Update each semester, or use the Gemini importer (Uni → Import Syllabus).
-var SYLLABUS_ASSESSMENTS = [
-  // WIA&B — Monday class
-  {id:"wiab-at1",  subject:"WIA&B",        name:"Assessment 1",                            type:"SUBMISSION", date:"2026-05-18", done:false},
-  {id:"wiab-at2",  subject:"WIA&B",        name:"Assessment 2",                            type:"SUBMISSION", date:"2026-06-08", done:false},
-  // POB — Monday class
-  {id:"pob-at1",   subject:"POB",          name:"Assessment 1",                            type:"SUBMISSION", date:"2026-05-11", done:false},
-  {id:"pob-at2a",  subject:"POB",          name:"Assessment 2 — Part A",                  type:"SUBMISSION", date:"2026-05-18", done:false},
-  {id:"pob-at2b",  subject:"POB",          name:"Assessment 2 — Part B",                  type:"SUBMISSION", date:"2026-06-01", done:false},
-  // BAS/IAS — Tuesday class
-  {id:"bas-at1",   subject:"BAS/IAS",      name:"AT1 — IAS & BAS Preparation (Supervised)",type:"IN-CLASS",  date:"2026-05-26", done:false},
-  {id:"bas-at2",   subject:"BAS/IAS",      name:"AT2 — Xero Case Study",                  type:"SUBMISSION", date:"2026-06-02", done:false},
-  // FinStmts NRE — Tuesday class
-  {id:"fin-at1",   subject:"FinStmts NRE", name:"Assignment 1",                            type:"SUBMISSION", date:"2026-05-19", done:false},
-  {id:"fin-at2",   subject:"FinStmts NRE", name:"Assessment 2",                            type:"SUBMISSION", date:"2026-06-02", done:false},
-  // Law — Wednesday class
-  {id:"law-at1",   subject:"Law",          name:"Assessment 1",                            type:"SUBMISSION", date:"2026-05-20", done:false},
-  {id:"law-at2a",  subject:"Law",          name:"Assessment 2 — Part A",                  type:"SUBMISSION", date:"2026-06-03", done:false},
-  {id:"law-at2b",  subject:"Law",          name:"Assessment 2 — Part B (Compliance)",     type:"SUBMISSION", date:"2026-06-10", done:false},
-  // Payroll — Thursday class
-  {id:"pay-at1",   subject:"Payroll",      name:"AT1 — In-Class Manual Payroll (Supervised)",type:"IN-CLASS", date:"2026-05-14", done:false},
-  {id:"pay-at2",   subject:"Payroll",      name:"AT2 — Xero Case Study",                  type:"SUBMISSION", date:"2026-06-04", done:false},
-  {id:"pay-at1-resit",subject:"Payroll",   name:"AT1 Resit",                               type:"IN-CLASS",  date:"2026-06-11", done:false},
-  // PFR — Thursday class
-  {id:"pfr-at1",   subject:"PFR",          name:"Assessment 1",                            type:"SUBMISSION", date:"2026-05-14", done:false},
-  {id:"pfr-at2",   subject:"PFR",          name:"Assessment 2",                            type:"SUBMISSION", date:"2026-06-04", done:false},
-];
+// Cleared — old TAFE semester 1 2026 assessments are complete.
+// Re-populate via Gemini importer (Uni → Import Syllabus) when diploma starts.
+// Also update SUBJECTS and SC above to match diploma subject codes.
+var SYLLABUS_ASSESSMENTS = [];
 
 // ── Reflection questions ──────────────────────────────────────────────────────
 var REFL_QS = [
