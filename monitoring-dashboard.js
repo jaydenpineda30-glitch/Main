@@ -32,18 +32,18 @@
   // ── Theme (matches existing dashboard palette) ─────────────────────────────
 
   var C = {
-    bg:       'rgba(14,16,40,0.97)',
-    bg2:      'rgba(255,255,255,0.05)',
-    bg3:      'rgba(255,255,255,0.03)',
-    border:   'rgba(255,255,255,0.08)',
-    accent:   '#c77dff',
-    accentBg: 'rgba(199,125,255,0.1)',
+    bg:       'rgba(10,12,32,0.98)',
+    bg2:      'rgba(225,234,255,0.06)',
+    bg3:      'rgba(225,234,255,0.03)',
+    border:   'rgba(255,255,255,0.09)',
+    accent:   '#5b8cff',
+    accentBg: 'rgba(91,140,255,0.14)',
     success:  '#69f0ae',
     warn:     '#ffd166',
     danger:   '#ff6b6b',
-    text:     'rgba(255,255,255,0.9)',
-    text2:    'rgba(255,255,255,0.55)',
-    text3:    'rgba(255,255,255,0.3)',
+    text:     '#e6ecf5',
+    text2:    '#9aa2b2',
+    text3:    'rgba(255,255,255,0.30)',
   };
 
   // ── Usage tracker ──────────────────────────────────────────────────────────
@@ -342,27 +342,33 @@
   function card(children, extraStyle) {
     return createElement('div', {
       style: Object.assign({
-        background: C.bg2, border: '0.5px solid ' + C.border,
-        borderRadius: 12, padding: '14px 16px', marginBottom: 10
+        background: 'radial-gradient(80% 125% at 0% 50%, rgba(255,255,255,0.10) 0%, transparent 100%), rgba(225,234,255,0.06)',
+        backdropFilter: 'blur(20px) saturate(1.4)', WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
+        border: '1px solid rgba(255,255,255,0.10)', borderRadius: 16,
+        padding: '14px 16px', marginBottom: 12,
+        boxShadow: '0 8px 28px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.10)'
       }, extraStyle || {})
     }, children);
   }
 
   function sectionTitle(text) {
     return createElement('div', {
-      style: { fontSize: 10, fontWeight: 700, color: C.text3,
-               textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }
+      style: { fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.accent, marginBottom: 14 }
     }, text);
   }
 
   function btn(label, onClick, style) {
-    return createElement('button', {
-      onClick: onClick,
-      style: Object.assign({
-        padding: '5px 12px', borderRadius: 8, fontSize: 11, cursor: 'pointer',
-        border: '0.5px solid ' + C.border, background: C.bg2, color: C.text2
-      }, style || {})
-    }, label);
+    var active = style && style._active;
+    var base = {
+      padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+      border: active ? '0.5px solid rgba(91,140,255,0.55)' : '0.5px solid rgba(255,255,255,0.14)',
+      background: active ? 'rgba(91,140,255,0.18)' : 'rgba(255,255,255,0.06)',
+      backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+      color: active ? C.accent : C.text2, transition: 'all 0.15s'
+    };
+    var s = style ? Object.assign({}, base, style) : base;
+    delete s._active;
+    return createElement('button', { onClick: onClick, style: s }, label);
   }
 
   function inp(value, onChange, placeholder, type) {
@@ -372,10 +378,11 @@
       onChange: onChange,
       placeholder: placeholder || '',
       style: {
-        width: '100%', padding: '9px 12px', borderRadius: 8, fontSize: 12,
-        border: '0.5px solid rgba(255,255,255,0.12)',
-        background: 'rgba(255,255,255,0.05)', color: C.text,
-        fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box'
+        width: '100%', padding: '9px 12px', borderRadius: 10, fontSize: 12,
+        border: '0.5px solid rgba(255,255,255,0.14)',
+        background: 'rgba(255,255,255,0.05)',
+        backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+        color: C.text, outline: 'none', boxSizing: 'border-box'
       }
     });
   }
@@ -651,9 +658,11 @@
         createElement('button', {
           onClick: save,
           style: {
-            padding: '9px 20px', borderRadius: 8, border: '1px solid rgba(199,125,255,0.45)',
-            background: 'rgba(199,125,255,0.15)', color: C.accent, cursor: 'pointer',
-            fontSize: 12, fontWeight: 600, boxShadow: '0 0 10px rgba(199,125,255,0.2)'
+            padding: '9px 22px', borderRadius: 10, border: '0.5px solid rgba(91,140,255,0.5)',
+            background: 'linear-gradient(135deg, rgba(91,140,255,0.3), rgba(91,140,255,0.15))',
+            backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+            color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+            boxShadow: '0 0 12px rgba(91,140,255,0.25)'
           }
         }, 'Save settings'),
         justSaved && createElement('span', { style: { fontSize: 11, color: C.success } }, '✓ Saved')
@@ -909,10 +918,11 @@
     },
       createElement('div', {
         style: {
-          background: C.bg, border: '0.5px solid rgba(199,125,255,0.25)',
-          borderRadius: 16, width: '100%', maxWidth: 520, maxHeight: '85vh',
+          background: C.bg, backdropFilter: 'blur(24px) saturate(1.4)', WebkitBackdropFilter: 'blur(24px) saturate(1.4)',
+          border: '0.5px solid rgba(91,140,255,0.35)',
+          borderRadius: 20, width: '100%', maxWidth: 520, maxHeight: '85vh',
           display: 'flex', flexDirection: 'column',
-          boxShadow: '0 8px 40px rgba(0,0,0,0.7)'
+          boxShadow: '0 18px 46px rgba(0,0,0,0.52), 0 6px 16px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.12)'
         },
         onClick: function (e) { e.stopPropagation(); }
       },
