@@ -731,18 +731,16 @@ function WeatherWidget(props){
 }
 
 function GymSection(props){
-  const gymData=props.gymData;const onAddEx=props.onAddEx;const onLogW=props.onLogW;const onSave=props.onSave;const onUpdateRot=props.onUpdateRot;const onDeleteBW=props.onDeleteBW;const mob=props.mob||false;
-  const [tab,setTab]=useState("progress");
+  const gymData=props.gymData;const onAddEx=props.onAddEx;const onLogW=props.onLogW;const onSave=props.onSave;const onUpdateRot=props.onUpdateRot;const onDeleteBW=props.onDeleteBW;const onAddBW=props.onAddBW;const mob=props.mob||false;
   const [wkt,setWkt]=useState({name:"",date:todayStr(),sets:[]});
   const [row,setRow]=useState({exercise:"",sets:"",reps:"",weight:""});
   const [rName,setRName]=useState("");const [rFocus,setRFocus]=useState("");
-  const [dragIdx,setDragIdx]=useState(null);
-  const [dragOver,setDragOver]=useState(null);
-  const [editRotIdx,setEditRotIdx]=useState(null);
-  const [editRotForm,setEditRotForm]=useState({rName:"",rFocus:"",exercises:[]});
+  const [dragIdx,setDragIdx]=useState(null);const [dragOver,setDragOver]=useState(null);
+  const [editRotIdx,setEditRotIdx]=useState(null);const [editRotForm,setEditRotForm]=useState({rName:"",rFocus:"",exercises:[]});
+  const [showArchive,setShowArchive]=useState(false);const [showProgress,setShowProgress]=useState(true);const [expandedWktId,setExpandedWktId]=useState(null);
+  const [bwInput,setBwInput]=useState("");const [editWktName,setEditWktName]=useState(false);
   const rotation=gymData.rotation||[];const rotLen=rotation.length>0?rotation.length:1;
   const rotIdx=(gymData.rotIdx||0)%rotLen;const nextSess=rotation.length>0?rotation[rotIdx]:null;
-  // On mount (and when rotation data arrives from Firebase): restore draft or pre-fill from template
   useEffect(function(){
     try{
       var draft=JSON.parse(localStorage.getItem('gym_tab_draft')||'null');
@@ -757,115 +755,252 @@ function GymSection(props){
       return{...w,sets:nextSess.exercises.map(function(ex,i){return{id:ex.id||i+1,exercise:ex.exercise||"",sets:ex.sets||"",reps:ex.reps||"",weight:ex.weight||""};})};
     });
   },[nextSess?nextSess.id:null]);
-  // Auto-save draft to localStorage whenever sets change (protects against phone screen off)
   useEffect(function(){
     if(!nextSess||wkt.sets.length===0)return;
     try{localStorage.setItem('gym_tab_draft',JSON.stringify({rotId:nextSess?nextSess.id:null,sets:wkt.sets,savedAt:Date.now()}));}catch(_){}
   },[wkt.sets]);
-  const gs={card:{position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow},btn:{...btnGlass,padding:"5px 12px"},btnP:{...btnGlassP},inp:{width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"}};
+  const gs={card:{position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow},btn:{...btnGlass,padding:"5px 12px"},btnP:{...btnGlassP},inp:{width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"},acc:{background:T.bg3,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",border:"0.5px solid "+T.border,userSelect:"none"}};
+  function gCellEdge(g){return{borderBottom:"1.5px solid rgba("+g+",0.45)",boxShadow:"inset 0 -10px 22px rgba("+g+",0.16)"}}
+  function getExPrev(name){const ex=(gymData.exercises||[]).find(function(e){return e.name&&e.name.toLowerCase()===name.toLowerCase();});if(!ex||!ex.logs||!ex.logs.length)return null;return ex.logs[ex.logs.length-1].weight;}
+  const currentMonth=todayStr().slice(0,7);
+  const sessThisMonth=(gymData.workouts||[]).filter(function(w){return w.date&&w.date.startsWith(currentMonth);}).length;
+  function calcStreak(){const dates=new Set((gymData.workouts||[]).map(function(w){return w.date;}));const msDay=86400000;const now=new Date();const dow=now.getDay()||7;var ws=new Date(now.getTime()-((dow-1)*msDay));var s=0;while(s<52){const we=new Date(ws.getTime()+(6*msDay));var hit=false;for(var d=new Date(ws);d<=we;d=new Date(d.getTime()+msDay)){if(dates.has(d.toISOString().slice(0,10))){hit=true;break;}}if(!hit)break;s++;ws=new Date(ws.getTime()-(7*msDay));}return s;}
+  const streak=calcStreak();
+  const bwArr=gymData.bodyWeight||[];const lastBW=bwArr.length>0?bwArr[bwArr.length-1]:null;const prevBW=bwArr.length>1?bwArr[bwArr.length-2]:null;const bwDiff=lastBW&&prevBW?lastBW.weight-prevBW.weight:null;const bwTrend=bwDiff===null?null:bwDiff>0?"↑":bwDiff<0?"↓":"=";
+  const topLiftName=nextSess&&nextSess.exercises&&nextSess.exercises.length>0?nextSess.exercises[0].exercise:null;const topLiftPrev=topLiftName?getExPrev(topLiftName):null;
   function addRow(){if(!row.exercise)return;trk("gym.set_log");setWkt(function(w){return{...w,sets:[...w.sets,{...row,id:Date.now()}]};});setRow({exercise:"",sets:"",reps:"",weight:""});}
   function removeRow(i){setWkt(function(w){return{...w,sets:w.sets.filter(function(_,j){return j!==i;})};});}
   function saveWkt(){
-    if(window.DataValidator){
-      const name=wkt.name||(nextSess?nextSess.name:"Workout");
-      const r=DataValidator.validate("gymWorkout",{name:name,date:wkt.date||todayStr(),sets:wkt.sets});
-      if(!r.valid){if(window.showToast)window.showToast(r.firstError);return;}
-    }else if(wkt.sets.length===0)return;
-    const name=wkt.name||(nextSess?nextSess.name:"Workout");
-    const rotId=nextSess?nextSess.id:null;
+    if(window.DataValidator){const name=wkt.name||(nextSess?nextSess.name:"Workout");const r=DataValidator.validate("gymWorkout",{name:name,date:wkt.date||todayStr(),sets:wkt.sets});if(!r.valid){if(window.showToast)window.showToast(r.firstError);return;}}else if(wkt.sets.length===0)return;
+    const name=wkt.name||(nextSess?nextSess.name:"Workout");const rotId=nextSess?nextSess.id:null;
     if(onSave){trk("gym.workout_save");onSave({...wkt,name:name,id:Date.now(),rotId:rotId});}
     try{localStorage.removeItem('gym_tab_draft');}catch(_){}
-    setWkt({name:"",date:todayStr(),sets:[]});
+    setWkt({name:"",date:todayStr(),sets:[]});setEditWktName(false);
     if(window.showToast)window.showToast("Workout saved!","success");
   }
   function addRotItem(){if(!rName)return;const nr=rotation.concat([{id:Date.now(),name:rName,focus:rFocus,exercises:[]}]);if(onUpdateRot)onUpdateRot(nr,rotIdx);setRName("");setRFocus("");}
   function removeRotItem(id){const nr=rotation.filter(function(r){return r.id!==id;});if(onUpdateRot)onUpdateRot(nr,Math.min(rotIdx,Math.max(0,nr.length-1)));}
   function handleDragStart(i){setDragIdx(i);}
   function handleDragOver(e,i){e.preventDefault();setDragOver(i);}
-  function handleDrop(i){
-    if(dragIdx===null||dragIdx===i){setDragIdx(null);setDragOver(null);return;}
-    var nr=rotation.slice();var moved=nr.splice(dragIdx,1)[0];nr.splice(i,0,moved);
-    var ni=rotIdx;
-    if(rotIdx===dragIdx)ni=i;
-    else if(dragIdx<rotIdx&&i>=rotIdx)ni=rotIdx-1;
-    else if(dragIdx>rotIdx&&i<=rotIdx)ni=rotIdx+1;
-    if(onUpdateRot)onUpdateRot(nr,ni);
-    setDragIdx(null);setDragOver(null);
+  function handleDrop(i){if(dragIdx===null||dragIdx===i){setDragIdx(null);setDragOver(null);return;}var nr=rotation.slice();var moved=nr.splice(dragIdx,1)[0];nr.splice(i,0,moved);var ni=rotIdx;if(rotIdx===dragIdx)ni=i;else if(dragIdx<rotIdx&&i>=rotIdx)ni=rotIdx-1;else if(dragIdx>rotIdx&&i<=rotIdx)ni=rotIdx+1;if(onUpdateRot)onUpdateRot(nr,ni);setDragIdx(null);setDragOver(null);}
+  function logBWInline(){if(!bwInput)return;const w=Number(bwInput);if(isNaN(w)||w<30||w>300){if(window.showToast)window.showToast("Enter a valid weight (30–300 kg)");return;}if(onAddBW)onAddBW({date:todayStr(),weight:w});setBwInput("");}
+  const archiveCount=(gymData.workouts||[]).length;const exCount=(gymData.exercises||[]).length;
+  const exNames=(function(){var seen={};var names=[];(gymData.exercises||[]).forEach(function(ex){var n=(ex.name||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});(gymData.rotation||[]).forEach(function(r){(r.exercises||[]).forEach(function(ex){var n=(ex.exercise||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});});return names;})();
+  function drawBWSpark(){
+    if(bwArr.length<2)return null;
+    const vals=bwArr.map(function(d){return d.weight;});const mn=Math.min.apply(null,vals);const mx=Math.max.apply(null,vals);const range=mx-mn||1;
+    const W=400;const H=54;const pad=5;
+    function px(i){return(i/(vals.length-1))*W;}
+    function py(v){return H-pad-((v-mn)/range)*(H-pad*2);}
+    const linePts=vals.map(function(v,i){return px(i)+","+py(v);}).join(" ");
+    const areaD="M "+vals.map(function(v,i){return px(i)+" "+py(v);}).join(" L ")+" L "+W+" "+H+" L 0 "+H+" Z";
+    const lx=px(vals.length-1);const ly=py(vals[vals.length-1]);
+    return(
+      <div>
+        <svg width="100%" height="54" viewBox="0 0 400 54" preserveAspectRatio="none" style={{display:"block",overflow:"visible"}}>
+          <defs><linearGradient id="gymBwG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#5b8cff" stopOpacity="0.20"/><stop offset="100%" stopColor="#5b8cff" stopOpacity="0"/></linearGradient></defs>
+          <path d={areaD} fill="url(#gymBwG)"/>
+          <polyline points={linePts} fill="none" stroke="#5b8cff" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+          <circle cx={lx} cy={ly} r="3.5" fill="#5b8cff"/>
+        </svg>
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:3}}>
+          <span style={{fontSize:9,color:T.text3}}>{fmtDate(bwArr[0].date)}</span>
+          <span style={{fontSize:9,color:T.text3}}>{fmtDate(bwArr[bwArr.length-1].date)}</span>
+        </div>
+      </div>
+    );
   }
-  const tabs=["progress","workout","rotation","archive"];
+  function drawMiniSpark(logs){
+    if(!logs||logs.length<2)return null;
+    const vals=logs.map(function(l){return l.weight;});const mn=Math.min.apply(null,vals);const mx=Math.max.apply(null,vals);const range=mx-mn||1;
+    const W=72;const H=22;
+    const pts=vals.map(function(v,i){return((i/(vals.length-1))*W)+","+(H-2-((v-mn)/range)*(H-4));}).join(" ");
+    return(<svg width={W} height={H} style={{display:"block",overflow:"visible",flexShrink:0}}><polyline points={pts} fill="none" stroke={T.accent} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" opacity="0.8"/></svg>);
+  }
+  const wktsByMonth=(function(){const groups={};(gymData.workouts||[]).forEach(function(wk){const m=wk.date?wk.date.slice(0,7):"unknown";if(!groups[m])groups[m]=[];groups[m].push(wk);});return Object.keys(groups).sort(function(a,b){return b.localeCompare(a);}).map(function(m){return{month:m,workouts:groups[m].slice().reverse()};});})();
+  function fmtMonth(ym){const parts=ym.split("-");const names=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];return(names[parseInt(parts[1])-1]||parts[1])+" "+parts[0];}
   return(
     <div style={{maxWidth:800}}>
-      <div style={{display:"flex",gap:6,marginBottom:12}}>
-        {tabs.map(function(tb){return(<button key={tb} onClick={function(){setTab(tb);}} style={{padding:"4px 10px",borderRadius:99,cursor:"pointer",fontSize:11,border:tab===tb?"1px solid "+T.accent:"0.5px solid "+T.border,background:tab===tb?T.accentBg:"transparent",color:tab===tb?T.accent:T.text2}}>{tb.charAt(0).toUpperCase()+tb.slice(1)}</button>);})}</div>
-      {tab==="progress"&&<div>
-        <div className="card-rim" style={gs.card}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:13,fontWeight:500,color:T.text}}>Body weight trend</div><span style={{fontSize:10,color:T.text3}}>Logged weekly</span></div>
-          <Sparkline data={gymData.bodyWeight||[]} color={T.accent} width={mob?280:360} height={60}/>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>{(gymData.bodyWeight||[]).slice(-6).map(function(l,i){return<div key={i} style={{display:"flex",alignItems:"center",gap:3,fontSize:10,padding:"2px 6px 2px 8px",borderRadius:99,background:T.bg3,color:T.text2}}>{fmtDate(l.date)}: {l.weight}kg<button style={{background:"none",border:"none",cursor:"pointer",color:T.text3,fontSize:11,opacity:0.5,lineHeight:1,padding:"0 1px"}} title="Delete entry" onClick={function(){onDeleteBW&&onDeleteBW(l.date);}}>×</button></div>;})}</div>
-        </div>
-        <div className="card-rim" style={gs.card}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={{fontSize:13,fontWeight:500,color:T.text}}>Exercise progression</div><button style={gs.btn} onClick={onAddEx}>+ Exercise</button></div>
-          {(gymData.exercises||[]).map(function(ex){const logs=ex.logs||[];const last=logs.length>0?logs[logs.length-1]:null;const prev=logs.length>1?logs[logs.length-2]:null;const diff=(last&&prev)?last.weight-prev.weight:null;const trend=diff===null?null:diff>0?"↑":diff<0?"↓":"=";const tCol=trend==="↑"?T.success:trend==="↓"?T.danger:T.text2;
-            return(<div key={ex.id} style={{marginBottom:20,paddingBottom:16,borderBottom:"0.5px solid "+T.border}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontWeight:600,fontSize:14,color:T.text}}>{ex.name}</span>{last&&<span style={{fontSize:12,color:T.text2}}>Last: {last.weight}kg</span>}{trend&&<span style={{fontSize:16,color:tCol}}>{trend}</span>}</div>
-                <button style={gs.btn} onClick={function(){if(onLogW)onLogW(ex);}}>Log weight</button>
-              </div>
-              <Sparkline data={logs} color="#378ADD" width={mob?280:360} height={44}/>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>{logs.slice(-5).map(function(l,i){return<div key={i} style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.bg3,color:T.text2}}>{fmtDate(l.date)}: {l.weight}kg</div>;})}</div>
-            </div>);
-          })}
-        </div>
-      </div>}
-      {tab==="workout"&&<div>
-        {nextSess&&<div style={{...gs.card,marginBottom:10}}>
-          <div style={{fontSize:11,color:"#eef3fb",fontWeight:700,letterSpacing:0.6,marginBottom:4}}>Up next in rotation</div>
-          <div style={{fontSize:15,fontWeight:700,color:T.text}}>{nextSess.name}</div>
-          <div style={{fontSize:11,color:T.text2,marginTop:2}}>{nextSess.focus}</div>
-          <div style={{fontSize:10,color:T.text3,marginTop:4}}>Saving this workout advances your rotation.</div>
-        </div>}
-        <div className="card-rim" style={gs.card}>
-          <div style={{fontSize:13,fontWeight:500,color:T.text,marginBottom:12}}>Log workout</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 120px",gap:8,marginBottom:12}}>
-            <input style={gs.inp} placeholder={nextSess?nextSess.name:"Workout name"} value={wkt.name} onChange={function(ev){setWkt(function(w){return{...w,name:ev.target.value};});}}/>
-            <input style={gs.inp} type="date" value={wkt.date} onChange={function(ev){setWkt(function(w){return{...w,date:ev.target.value};});}}/>
+      <datalist id="gymExSuggestions">{exNames.map(function(n){return React.createElement("option",{key:n,value:n});})}</datalist>
+
+      {/* 1 — Hero: Today's Session */}
+      <div className="card-rim" style={gs.card}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+          <div style={{fontSize:10,fontWeight:700,color:T.accent,letterSpacing:0.8,textTransform:"uppercase"}}>Today's Session</div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {rotation.length>0&&<span style={{fontSize:10,color:T.text3,background:T.bg3,borderRadius:99,padding:"2px 8px",flexShrink:0}}>{rotIdx+1} of {rotation.length}</span>}
+            <input style={{...gs.inp,width:130,padding:"4px 8px",fontSize:11}} type="date" value={wkt.date} onChange={function(ev){setWkt(function(w){return{...w,date:ev.target.value};});}}/>
           </div>
-          {mob?(<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10}}>
-            <input style={{...gs.inp,padding:"10px 12px",fontSize:14}} placeholder="Exercise (e.g. Squat)" value={row.exercise} onChange={function(ev){setRow(function(r){return{...r,exercise:ev.target.value};});}}/>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-              <input style={{...gs.inp,padding:"10px 12px",fontSize:14}} type="number" placeholder="Sets" value={row.sets} onChange={function(ev){setRow(function(r){return{...r,sets:ev.target.value};});}}/>
-              <input style={{...gs.inp,padding:"10px 12px",fontSize:14}} type="number" placeholder="Reps" value={row.reps} onChange={function(ev){setRow(function(r){return{...r,reps:ev.target.value};});}}/>
-              <input style={{...gs.inp,padding:"10px 12px",fontSize:14}} type="number" placeholder="kg" value={row.weight} onChange={function(ev){setRow(function(r){return{...r,weight:ev.target.value};});}}/>
-            </div>
-            <button style={{...gs.btnP,padding:"10px",fontSize:14,borderRadius:10}} onClick={addRow}>+ Add set</button>
-          </div>):(<div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 55px 55px 70px 44px",gap:6,marginBottom:4}}>{["Exercise","Sets","Reps","kg",""].map(function(h,i){return<div key={i} style={{fontSize:9,color:T.text3}}>{h}</div>;})}</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 55px 55px 70px 44px",gap:6,marginBottom:8}}>
-              <input style={gs.inp} placeholder="e.g. Squat" value={row.exercise} onChange={function(ev){setRow(function(r){return{...r,exercise:ev.target.value};});}}/>
-              <input style={gs.inp} type="number" placeholder="4" value={row.sets} onChange={function(ev){setRow(function(r){return{...r,sets:ev.target.value};});}}/>
-              <input style={gs.inp} type="number" placeholder="8" value={row.reps} onChange={function(ev){setRow(function(r){return{...r,reps:ev.target.value};});}}/>
-              <input style={gs.inp} type="number" placeholder="80" value={row.weight} onChange={function(ev){setRow(function(r){return{...r,weight:ev.target.value};});}}/>
-              <button style={gs.btnP} onClick={addRow}>+</button>
-            </div>
-          </div>)}
-          {wkt.sets.length>0&&<div style={{marginBottom:12}}>{wkt.sets.map(function(ws,wi){return(<div key={ws.id||wi} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"5px 8px",background:T.bg3,borderRadius:6,marginBottom:4}}><span style={{color:T.text}}>{ws.exercise}</span><span style={{color:T.text2}}>{ws.sets}×{ws.reps} @ {ws.weight}kg</span><button onClick={function(){removeRow(wi);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:14}}>×</button></div>);})}</div>}
-          <button style={gs.btnP} onClick={saveWkt}>Save & advance rotation →</button>
         </div>
-      </div>}
-      {tab==="rotation"&&<div className="card-rim" style={gs.card}>
-        <div style={{fontSize:13,fontWeight:500,color:T.text,marginBottom:4}}>Current rotation</div>
-        <div style={{fontSize:11,color:T.text2,marginBottom:14}}>Workouts cycle through this order. Saving advances to the next.</div>
+        {nextSess?(
+          <div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
+              {editWktName?(
+                <input style={{...gs.inp,fontSize:15,fontWeight:700,padding:"3px 8px",flex:1}} value={wkt.name||nextSess.name} onChange={function(ev){setWkt(function(w){return{...w,name:ev.target.value};});}} onBlur={function(){setEditWktName(false);}} autoFocus/>
+              ):(
+                <div style={{fontSize:17,fontWeight:700,color:T.text}}>{wkt.name||nextSess.name}</div>
+              )}
+              <button style={{background:"none",border:"none",cursor:"pointer",color:T.text3,padding:0,lineHeight:1}} onClick={function(){setEditWktName(true);}}><UIcon name="pencil" size={11}/></button>
+            </div>
+            <div style={{fontSize:12,color:T.text2,marginTop:2}}>{nextSess.focus}</div>
+            {rotation.length>1&&(function(){
+              const cyclesCompleted=Math.floor((gymData.rotIdx||0)/rotation.length);
+              return(
+                <div style={{marginTop:10}}>
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
+                    {rotation.map(function(r,i){const done=i<rotIdx;const cur=i===rotIdx;return(
+                      <div key={r.id} style={{fontSize:10,padding:"3px 10px",borderRadius:99,fontWeight:cur?600:400,color:cur?T.accent:done?T.text2:T.text3,background:cur?T.accentBg:done?"rgba(255,255,255,0.06)":"rgba(255,255,255,0.03)",border:"0.5px solid "+(cur?T.accent+"80":done?"rgba(255,255,255,0.12)":"rgba(255,255,255,0.06)"),transition:"all 0.2s"}}>{r.name}</div>
+                    );})}
+                  </div>
+                  <div style={{fontSize:10,color:T.text3}}>Cycle {cyclesCompleted+1}{cyclesCompleted>0?" · "+cyclesCompleted+" complete":""} · {rotation.length-rotIdx-1} session{rotation.length-rotIdx-1!==1?"s":""} until repeat</div>
+                </div>
+              );
+            })()}
+          </div>
+        ):(
+          <div style={{fontSize:13,color:T.text2}}>No rotation set — add one below ↓</div>
+        )}
+      </div>
+
+      {/* 2 — Stats Strip */}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+        {[
+          {label:"BODY WT",val:lastBW?lastBW.weight+"kg"+(bwTrend?" "+bwTrend:""):"—",g:bwTrend==="↑"?"34,197,94":bwTrend==="↓"?"239,68,68":"148,163,184"},
+          {label:"TOP LIFT",val:topLiftPrev!=null?topLiftPrev+"kg"+(topLiftName?" · "+topLiftName.split(" ")[0]:""):"—",g:"91,140,255"},
+          {label:"THIS MONTH",val:sessThisMonth+" sess",g:"91,140,255"},
+          {label:"STREAK",val:streak>0?streak+" wk":"—",g:streak>0?"34,197,94":"148,163,184"}
+        ].map(function(c,i){return(
+          <div key={i} style={{flex:1,minWidth:mob?130:110,background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:"10px 14px",boxShadow:cardShadowSoft,...gCellEdge(c.g)}}>
+            <div style={{fontSize:9,fontWeight:700,color:"#8f97a6",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:4}}>{c.label}</div>
+            <div style={{fontSize:15,fontWeight:700,color:T.text}}>{c.val}</div>
+          </div>
+        );})}
+      </div>
+
+      {/* 3 — Workout Log */}
+      <div className="card-rim" style={gs.card}>
+        <div style={{fontSize:13,fontWeight:500,color:T.text,marginBottom:12}}>Log Workout</div>
+        {!mob&&wkt.sets.length>0&&(
+          <div style={{display:"grid",gridTemplateColumns:"1fr 52px 44px 44px 62px 36px",gap:6,marginBottom:4,paddingLeft:2}}>
+            {["Exercise","Prev","Sets","Reps","kg",""].map(function(h,i){return<div key={i} style={{fontSize:9,color:T.text3,fontWeight:600}}>{h}</div>;})}
+          </div>
+        )}
+        {wkt.sets.length>0&&<div style={{marginBottom:10}}>
+          {wkt.sets.map(function(ws,wi){
+            const prev=getExPrev(ws.exercise);
+            return mob?(
+              <div key={ws.id||wi} style={{padding:"8px 10px",background:T.bg3,borderRadius:8,marginBottom:6}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                  <span style={{fontSize:13,fontWeight:500,color:T.text}}>{ws.exercise}</span>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    {prev!=null&&<span style={{fontSize:10,color:T.text3}}>prev {prev}kg</span>}
+                    <button onClick={function(){removeRow(wi);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:14,padding:0}}>×</button>
+                  </div>
+                </div>
+                <div style={{fontSize:11,color:T.text2}}>{ws.sets}×{ws.reps} @ {ws.weight}kg</div>
+              </div>
+            ):(
+              <div key={ws.id||wi} style={{display:"grid",gridTemplateColumns:"1fr 52px 44px 44px 62px 36px",gap:6,alignItems:"center",padding:"5px 8px",background:T.bg3,borderRadius:8,marginBottom:4}}>
+                <span style={{fontSize:12,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ws.exercise}</span>
+                <span style={{fontSize:10,color:T.text3,textAlign:"center"}}>{prev!=null?prev+"kg":"—"}</span>
+                <span style={{fontSize:12,color:T.text2,textAlign:"center"}}>{ws.sets}</span>
+                <span style={{fontSize:12,color:T.text2,textAlign:"center"}}>{ws.reps}</span>
+                <span style={{fontSize:12,color:T.text,textAlign:"center"}}>{ws.weight}kg</span>
+                <button onClick={function(){removeRow(wi);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:14,padding:0}}>×</button>
+              </div>
+            );
+          })}
+        </div>}
+        {mob?(<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10}}>
+          <input style={{...gs.inp,padding:"10px 12px",fontSize:14}} list="gymExSuggestions" placeholder="Exercise (e.g. Squat)" value={row.exercise} onChange={function(ev){setRow(function(r){return{...r,exercise:ev.target.value};});}}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <input style={{...gs.inp,padding:"10px 12px",fontSize:14}} type="number" placeholder="Sets" value={row.sets} onChange={function(ev){setRow(function(r){return{...r,sets:ev.target.value};});}}/>
+            <input style={{...gs.inp,padding:"10px 12px",fontSize:14}} type="number" placeholder="Reps" value={row.reps} onChange={function(ev){setRow(function(r){return{...r,reps:ev.target.value};});}}/>
+            <input style={{...gs.inp,padding:"10px 12px",fontSize:14}} type="number" placeholder="kg" value={row.weight} onChange={function(ev){setRow(function(r){return{...r,weight:ev.target.value};});}}/>
+          </div>
+          <button style={{...gs.btnP,padding:"10px",fontSize:14,borderRadius:10}} onClick={addRow}>+ Add set</button>
+        </div>):(<div>
+          {!mob&&<div style={{display:"grid",gridTemplateColumns:"1fr 52px 44px 44px 62px 36px",gap:6,marginBottom:4,paddingLeft:2}}>
+            {wkt.sets.length===0&&["Exercise","","Sets","Reps","kg",""].map(function(h,i){return<div key={i} style={{fontSize:9,color:T.text3}}>{h}</div>;})}
+          </div>}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 52px 44px 44px 62px 36px",gap:6,marginBottom:10}}>
+            <input style={gs.inp} list="gymExSuggestions" placeholder="e.g. Squat" value={row.exercise} onChange={function(ev){setRow(function(r){return{...r,exercise:ev.target.value};});}}/>
+            <div style={{background:T.bg3,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:9,color:T.text3}}>prev</span></div>
+            <input style={gs.inp} type="number" placeholder="4" value={row.sets} onChange={function(ev){setRow(function(r){return{...r,sets:ev.target.value};});}}/>
+            <input style={gs.inp} type="number" placeholder="8" value={row.reps} onChange={function(ev){setRow(function(r){return{...r,reps:ev.target.value};});}}/>
+            <input style={gs.inp} type="number" placeholder="80" value={row.weight} onChange={function(ev){setRow(function(r){return{...r,weight:ev.target.value};});}}/>
+            <button style={gs.btnP} onClick={addRow}>+</button>
+          </div>
+        </div>)}
+        <button style={{...gs.btnP,width:"100%"}} onClick={saveWkt}>Save & advance rotation →</button>
+      </div>
+
+      {/* 4 — Body Weight */}
+      <div className="card-rim" style={gs.card}>
+        <div style={{fontSize:11,fontWeight:600,color:T.text2,letterSpacing:"0.03em",marginBottom:10}}>Body Weight</div>
+        <div style={{display:"flex",gap:16,alignItems:"flex-start",flexDirection:mob?"column":"row"}}>
+          <div style={{flex:2,minWidth:0}}>
+            {bwArr.length>1?drawBWSpark():<div style={{fontSize:11,color:T.text3,padding:"14px 0"}}>Log a few entries to see your trend</div>}
+          </div>
+          <div style={{flex:1,minWidth:116}}>
+            <div style={{display:"flex",gap:6,marginBottom:8,alignItems:"center"}}>
+              <input style={{...gs.inp,padding:"6px 8px",textAlign:"center",flex:1}} type="number" step="0.1" placeholder="82.0" value={bwInput} onChange={function(ev){setBwInput(ev.target.value);}} onKeyDown={function(ev){if(ev.key==="Enter")logBWInline();}}/>
+              <span style={{fontSize:11,color:T.text3,flexShrink:0}}>kg</span>
+              <button style={{...gs.btnP,flexShrink:0,padding:"5px 10px",fontSize:11}} onClick={logBWInline}>Log</button>
+            </div>
+            {bwArr.length>0&&<div style={{display:"flex",flexDirection:"column",gap:2}}>
+              {bwArr.slice(-4).reverse().map(function(l,i){return(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:10}}>
+                  <span style={{color:T.text2}}>{fmtDate(l.date)}: {l.weight}kg</span>
+                  <button style={{background:"none",border:"none",cursor:"pointer",color:T.text3,fontSize:11,opacity:0.45,lineHeight:1,padding:"0 2px"}} onClick={function(){onDeleteBW&&onDeleteBW(l.date);}}>×</button>
+                </div>
+              );})}
+            </div>}
+          </div>
+        </div>
+      </div>
+
+      {/* 5 — Exercise History (compact) */}
+      <div className="card-rim" style={gs.card}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:exCount>0&&showProgress?10:0}}>
+          <span style={{fontSize:13,fontWeight:500,color:T.text}}>Exercise History{exCount>0?" ("+exCount+")":""}</span>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <button style={{...gs.btn,fontSize:10,padding:"2px 8px"}} onClick={function(){onAddEx&&onAddEx();}}>+ Exercise</button>
+            <button style={{background:"none",border:"none",cursor:"pointer",color:T.text3,fontSize:13,lineHeight:1,padding:"2px 4px"}} onClick={function(){setShowProgress(function(v){return!v;});}}>{showProgress?"▾":"▸"}</button>
+          </div>
+        </div>
+        {showProgress&&(exCount===0?(
+          <div style={{fontSize:12,color:T.text2,paddingTop:8}}>No exercises tracked yet.</div>
+        ):(gymData.exercises||[]).map(function(ex,ei){
+          const logs=ex.logs||[];const last=logs.length>0?logs[logs.length-1]:null;const prev2=logs.length>1?logs[logs.length-2]:null;const diff=(last&&prev2)?last.weight-prev2.weight:null;const trend=diff===null?null:diff>0?"↑":diff<0?"↓":"=";const tCol=trend==="↑"?T.success:trend==="↓"?T.danger:T.text3;
+          return(
+            <div key={ex.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:"0.5px solid "+T.border}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,fontWeight:500,color:T.text,marginBottom:1}}>{ex.name}</div>
+                <div style={{fontSize:10,color:T.text3,display:"flex",alignItems:"center",gap:4}}>
+                  {last?<span>{last.weight}kg</span>:<span>no data</span>}
+                  {trend&&<span style={{color:tCol,fontSize:11}}>{trend}</span>}
+                </div>
+              </div>
+              <div style={{flexShrink:0}}>{drawMiniSpark(logs)}</div>
+              <button style={{...gs.btn,fontSize:10,padding:"2px 7px",flexShrink:0}} onClick={function(){if(onLogW)onLogW(ex);}}>Log</button>
+            </div>
+          );
+        }))}
+      </div>
+
+      {/* 6 — Rotation (static) */}
+      <div className="card-rim" style={gs.card}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <span style={{fontSize:13,fontWeight:500,color:T.text}}>Manage Rotation</span>
+          {rotation.length>0&&<span style={{fontSize:10,color:T.text3}}>drag to reorder</span>}
+        </div>
         {rotation.map(function(r,i){const isCur=i===rotIdx;const isDragTarget=dragOver===i&&dragIdx!==null&&dragIdx!==i;return(<React.Fragment key={r.id}>
-          <div
-            draggable
-            onDragStart={function(){handleDragStart(i);}}
-            onDragOver={function(e){handleDragOver(e,i);}}
-            onDrop={function(){handleDrop(i);}}
-            onDragEnd={function(){setDragIdx(null);setDragOver(null);}}
-            style={{display:"flex",alignItems:"center",gap:8,marginBottom:editRotIdx===i?4:8,padding:"10px 12px",borderRadius:8,background:isDragTarget?"rgba(91,140,255,0.12)":isCur?T.successBg:T.bg3,border:"0.5px solid "+(isDragTarget?T.accent:isCur?T.success+"60":T.border),opacity:dragIdx===i?0.5:1,cursor:"grab",transition:"background 0.15s,border 0.15s"}}>
+          <div draggable onDragStart={function(){handleDragStart(i);}} onDragOver={function(e){handleDragOver(e,i);}} onDrop={function(){handleDrop(i);}} onDragEnd={function(){setDragIdx(null);setDragOver(null);}}
+            style={{display:"flex",alignItems:"center",gap:8,marginBottom:editRotIdx===i?4:8,padding:"10px 12px",borderRadius:8,background:isDragTarget?"rgba(91,140,255,0.12)":isCur?T.accentBg:T.bg3,border:"0.5px solid "+(isDragTarget?T.accent:isCur?T.accent+"60":T.border),opacity:dragIdx===i?0.5:1,cursor:"grab",transition:"background 0.15s,border 0.15s"}}>
             <span style={{display:"flex",color:T.text3,cursor:"grab",userSelect:"none",flexShrink:0}}><UIcon name="drag" size={14}/></span>
-            <div style={{width:22,height:22,borderRadius:"50%",background:isCur?T.success:T.bg2,border:"1px solid "+(isCur?T.success:T.border2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:isCur?T.bg:T.text3,flexShrink:0}}>{i+1}</div>
-            <div style={{flex:1}}><div style={{fontSize:13,fontWeight:isCur?600:400,color:T.text}}>{r.name}{isCur&&<span style={{fontSize:10,color:T.success,marginLeft:8}}>← next</span>}</div><div style={{fontSize:10,color:T.text2}}>{r.focus}{(r.exercises&&r.exercises.length>0)&&<span style={{marginLeft:6,color:T.text3}}>{r.exercises.length} exercise{r.exercises.length!==1?"s":""}</span>}</div></div>
+            <div style={{width:22,height:22,borderRadius:"50%",background:isCur?T.accent:"rgba(255,255,255,0.06)",border:"1px solid "+(isCur?T.accent:T.border2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:isCur?"#fff":T.text3,flexShrink:0}}>{i+1}</div>
+            <div style={{flex:1}}><div style={{fontSize:13,fontWeight:isCur?600:400,color:T.text}}>{r.name}{isCur&&<span style={{fontSize:10,color:T.accent,marginLeft:8}}>← next</span>}</div><div style={{fontSize:10,color:T.text2}}>{r.focus}{(r.exercises&&r.exercises.length>0)&&<span style={{marginLeft:6,color:T.text3}}>{r.exercises.length} ex</span>}</div></div>
             <button onClick={function(e){e.stopPropagation();trk("gym.rotation_advance");if(onUpdateRot)onUpdateRot(rotation,i);}} style={{...gs.btn,fontSize:10,padding:"2px 7px"}}>Set current</button>
             <button onClick={function(e){e.stopPropagation();const exs=(r.exercises&&r.exercises.length>0)?r.exercises.map(function(ex){return{...ex};}):Array(3).fill(null).map(function(_,j){return{id:j+1,exercise:"",sets:"",reps:"",weight:""};});setEditRotIdx(editRotIdx===i?null:i);setEditRotForm({rName:r.name,rFocus:r.focus||"",exercises:exs});}} style={editRotIdx===i?{...editPill,color:T.accent,border:"1px solid rgba(91,140,255,0.5)",background:"rgba(91,140,255,0.14)"}:editPill}><UIcon name="pencil" size={11}/>Edit</button>
             <button onClick={function(e){e.stopPropagation();removeRotItem(r.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:14}}>×</button>
@@ -878,7 +1013,7 @@ function GymSection(props){
             <div style={{fontSize:10,color:T.text2,marginBottom:4}}>Exercises</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 44px 44px 52px 24px",gap:4,marginBottom:3}}>{["Exercise","Sets","Reps","kg",""].map(function(h,hi){return<div key={hi} style={{fontSize:9,color:T.text3}}>{h}</div>;})}</div>
             {(editRotForm.exercises||[]).map(function(ex,ei){return(<div key={ex.id||ei} style={{display:"grid",gridTemplateColumns:"1fr 44px 44px 52px 24px",gap:4,marginBottom:4}}>
-              <input style={{...gs.inp,padding:"4px 6px",fontSize:11}} placeholder="Exercise" value={ex.exercise||""} onChange={function(ev){var v=ev.target.value;setEditRotForm(function(f){return{...f,exercises:f.exercises.map(function(e,j){return j===ei?{...e,exercise:v}:e;})};});}}/>
+              <input style={{...gs.inp,padding:"4px 6px",fontSize:11}} list="gymExSuggestions" placeholder="Exercise" value={ex.exercise||""} onChange={function(ev){var v=ev.target.value;setEditRotForm(function(f){return{...f,exercises:f.exercises.map(function(e,j){return j===ei?{...e,exercise:v}:e;})};});}}/>
               <input style={{...gs.inp,padding:"4px 3px",fontSize:11}} type="number" placeholder="4" value={ex.sets||""} onChange={function(ev){var v=ev.target.value;setEditRotForm(function(f){return{...f,exercises:f.exercises.map(function(e,j){return j===ei?{...e,sets:v}:e;})};});}}/>
               <input style={{...gs.inp,padding:"4px 3px",fontSize:11}} type="number" placeholder="8" value={ex.reps||""} onChange={function(ev){var v=ev.target.value;setEditRotForm(function(f){return{...f,exercises:f.exercises.map(function(e,j){return j===ei?{...e,reps:v}:e;})};});}}/>
               <input style={{...gs.inp,padding:"4px 3px",fontSize:11}} type="number" placeholder="80" value={ex.weight||""} onChange={function(ev){var v=ev.target.value;setEditRotForm(function(f){return{...f,exercises:f.exercises.map(function(e,j){return j===ei?{...e,weight:v}:e;})};});}}/>
@@ -886,13 +1021,7 @@ function GymSection(props){
             </div>);})}
             <div style={{display:"flex",gap:6,marginTop:6}}>
               <button style={{...gs.btn,fontSize:10,padding:"2px 8px"}} onClick={function(){setEditRotForm(function(f){return{...f,exercises:(f.exercises||[]).concat([{id:Date.now(),exercise:"",sets:"",reps:"",weight:""}])};});}}>+ Row</button>
-              <button style={{...gs.btnP,fontSize:10,padding:"3px 10px"}} onClick={function(){
-                trk("gym.rotation_edit");
-                var nr=rotation.map(function(rt,ri){return ri===i?{...rt,name:editRotForm.rName||rt.name,focus:editRotForm.rFocus,exercises:(editRotForm.exercises||[]).filter(function(ex){return ex.exercise&&ex.exercise.trim();})}:rt;});
-                if(onUpdateRot)onUpdateRot(nr,rotIdx);
-                setEditRotIdx(null);
-                if(window.showToast)window.showToast("Template saved!","success");
-              }}>Save template</button>
+              <button style={{...gs.btnP,fontSize:10,padding:"3px 10px"}} onClick={function(){trk("gym.rotation_edit");var nr=rotation.map(function(rt,ri){return ri===i?{...rt,name:editRotForm.rName||rt.name,focus:editRotForm.rFocus,exercises:(editRotForm.exercises||[]).filter(function(ex){return ex.exercise&&ex.exercise.trim();})}:rt;});if(onUpdateRot)onUpdateRot(nr,rotIdx);setEditRotIdx(null);if(window.showToast)window.showToast("Template saved!","success");}}>Save template</button>
               <button style={{...gs.btn,fontSize:10,padding:"2px 8px"}} onClick={function(){setEditRotIdx(null);}}>Cancel</button>
             </div>
           </div>}
@@ -905,10 +1034,48 @@ function GymSection(props){
           </div>
           <button style={gs.btnP} onClick={addRotItem}>Add session</button>
         </div>
-      </div>}
-      {tab==="archive"&&<div>
-        {(gymData.workouts||[]).length===0?<div style={{...gs.card,fontSize:12,color:T.text2}}>No workouts yet. Log one in the Workout tab.</div>:(gymData.workouts||[]).slice().reverse().map(function(wk){const rotMatch=rotation.filter(function(r){return r.id===wk.rotId;});const rotName=rotMatch.length>0?rotMatch[0].focus:null;return(<div key={wk.id} className="card-rim" style={gs.card}><div style={{display:"flex",justifyContent:"space-between",marginBottom:8,alignItems:"center"}}><div><span style={{fontWeight:600,color:T.text,fontSize:14}}>{wk.name}</span>{rotName&&<span style={{fontSize:10,color:T.success,marginLeft:8}}>{rotName}</span>}</div><span style={{fontSize:11,color:T.text3}}>{fmtDate(wk.date)}</span></div>{(wk.sets||[]).map(function(ws,wi){return(<div key={wi} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"5px 0",borderBottom:"0.5px solid "+T.border}}><span style={{color:T.text2}}>{ws.exercise}</span><span style={{color:T.text}}>{ws.sets}×{ws.reps} @ {ws.weight}kg</span></div>);})}</div>);})}
-      </div>}
+      </div>
+
+      {/* 7 — Past Workouts (grouped, expandable) */}
+      <div style={{marginBottom:8}}>
+        <div style={gs.acc} onClick={function(){setShowArchive(function(v){return!v;});}}>
+          <span style={{fontSize:12,fontWeight:500,color:T.text}}>Past workouts{archiveCount>0?" ("+archiveCount+")":""}</span>
+          <span style={{color:T.text3,fontSize:12}}>{showArchive?"▾":"▸"}</span>
+        </div>
+        {showArchive&&<div style={{paddingTop:4}}>
+          {archiveCount===0?(
+            <div style={{fontSize:12,color:T.text2,padding:"8px 0"}}>No workouts yet.</div>
+          ):wktsByMonth.map(function(grp){return(
+            <div key={grp.month} style={{marginBottom:12}}>
+              <div style={{fontSize:10,fontWeight:700,color:T.text3,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6,paddingLeft:2}}>{fmtMonth(grp.month)} · {grp.workouts.length}</div>
+              <div className="card-rim" style={{...gs.card,padding:"0",marginBottom:0,overflow:"hidden"}}>
+                {grp.workouts.map(function(wk,wi){const rotMatch=rotation.filter(function(r){return r.id===wk.rotId;});const rotFocus=rotMatch.length>0?rotMatch[0].focus:null;const isExp=expandedWktId===wk.id;return(
+                  <div key={wk.id} style={{borderBottom:wi<grp.workouts.length-1?"0.5px solid "+T.border:"none"}}>
+                    <div onClick={function(){setExpandedWktId(isExp?null:wk.id);}} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 16px",cursor:"pointer"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <span style={{fontSize:12,fontWeight:500,color:T.text}}>{wk.name}</span>
+                        {rotFocus&&<span style={{fontSize:10,color:T.text3,marginLeft:8}}>{rotFocus}</span>}
+                      </div>
+                      <span style={{fontSize:10,color:T.text3,flexShrink:0}}>{fmtDate(wk.date)}</span>
+                      <span style={{fontSize:10,color:T.text3,flexShrink:0,minWidth:36,textAlign:"right"}}>{(wk.sets||[]).length} sets</span>
+                      <span style={{fontSize:11,color:T.text3,marginLeft:2}}>{isExp?"▾":"▸"}</span>
+                    </div>
+                    {isExp&&<div style={{padding:"2px 16px 10px",borderTop:"0.5px solid "+T.border}}>
+                      {(wk.sets||[]).map(function(ws,si){return(
+                        <div key={si} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"3px 0",borderBottom:si<(wk.sets||[]).length-1?"0.5px solid rgba(255,255,255,0.04)":"none"}}>
+                          <span style={{color:T.text2}}>{ws.exercise}</span>
+                          <span style={{color:T.text3}}>{ws.sets}×{ws.reps} @ {ws.weight}kg</span>
+                        </div>
+                      );})}
+                    </div>}
+                  </div>
+                );})}
+              </div>
+            </div>
+          );})}
+        </div>}
+      </div>
+
     </div>
   );
 }
@@ -2461,6 +2628,8 @@ function App(){
   const glassMini={background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:12,boxShadow:cardShadowSoft};
   function navBtn(a){return a?{...btnGlassP,transition:"all 0.2s"}:{...btnGlass,transition:"all 0.2s"};}
   function bdg(type){const m={urgent:{bg:T.dangerBg,c:T.danger},normal:{bg:T.bg3,c:T.text2},success:{bg:T.successBg,c:T.success}};const col=m[type]||m.normal;return{display:"inline-block",fontSize:9,padding:"1px 6px",borderRadius:99,background:col.bg,color:col.c,fontWeight:600};}
+  const tagStyle={academic:{background:"rgba(55,138,221,0.18)",color:"#7eb3e8"},health:{background:"rgba(59,109,17,0.22)",color:"#8ac571"},finance:{background:"rgba(186,117,23,0.22)",color:"#e8b970"},career:{background:"rgba(127,119,221,0.22)",color:"#b3acff"},personal:{background:"rgba(136,135,128,0.22)",color:"#b4b3ac"}};
+  function getTagStyle(area){return tagStyle[(area||"personal").toLowerCase()]||tagStyle.personal;}
 
   // Auth loading spinner
   if(authLoading){return(
@@ -2667,8 +2836,9 @@ function App(){
                   <span style={{fontSize:11,color:T.warn}}>Unfinished session restored — keep logging or discard</span>
                   <button onClick={function(){try{localStorage.removeItem('gym_draft');}catch(_){}setGymDraftBanner(false);setNxtRows(nextRot&&nextRot.exercises&&nextRot.exercises.length>0?nextRot.exercises.map(function(ex,i){return{id:ex.id||i+1,exercise:ex.exercise||"",sets:ex.sets||"",reps:ex.reps||"",weight:ex.weight||""};}):[{id:1,exercise:"",sets:"",reps:"",weight:""},{id:2,exercise:"",sets:"",reps:"",weight:""},{id:3,exercise:"",sets:"",reps:"",weight:""}]);}} style={{...btnGlass,fontSize:10,padding:"3px 10px"}}>Discard</button>
                 </div>}
+                <datalist id="homeExSuggestions">{(function(){var seen={};var names=[];((data.gym||{}).exercises||[]).forEach(function(ex){var n=(ex.name||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});((data.gym||{}).rotation||[]).forEach(function(r){(r.exercises||[]).forEach(function(ex){var n=(ex.exercise||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});});return names;})().map(function(n){return React.createElement("option",{key:n,value:n});})}</datalist>
                 {mob?nxtRows.map(function(row,i){return(<div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 52px 52px 64px",gap:5,marginBottom:6}}>
-                  <input style={{...inp,padding:"8px 8px",fontSize:12}} placeholder={["Bench Press","Squat","OHP"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
+                  <input style={{...inp,padding:"8px 8px",fontSize:12}} list="homeExSuggestions" placeholder={["Bench Press","Squat","OHP"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
                   <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="Sets" value={row.sets} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,sets:ev.target.value}:x;});});}}/>
                   <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="Reps" value={row.reps} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,reps:ev.target.value}:x;});});}}/>
                   <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="kg" value={row.weight} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,weight:ev.target.value}:x;});});}}/>
@@ -2676,7 +2846,7 @@ function App(){
                 <div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 50px 50px 60px",gap:6,marginBottom:4}}>{["Exercise","Sets","Reps","kg"].map(function(h){return<div key={h} style={{fontSize:9,color:T.text3}}>{h}</div>;})}</div>
                 {nxtRows.map(function(row,i){return(<div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 50px 50px 60px",gap:6,marginBottom:6}}>
-                  <input style={inp} placeholder={["Bench Press","Squat","Overhead Press"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
+                  <input style={inp} list="homeExSuggestions" placeholder={["Bench Press","Squat","Overhead Press"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
                   <input style={inp} type="number" placeholder="4" value={row.sets} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,sets:ev.target.value}:x;});});}}/>
                   <input style={inp} type="number" placeholder="8" value={row.reps} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,reps:ev.target.value}:x;});});}}/>
                   <input style={inp} type="number" placeholder="80" value={row.weight} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,weight:ev.target.value}:x;});});}}/>
@@ -2910,7 +3080,7 @@ function App(){
     else{newExercises.push({id:'ex_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),name:r.exercise,logs:[logEntry]});}
   });
   return{...p,gym:{...p.gym,workouts:(p.gym.workouts||[]).concat([wk]),rotIdx:((p.gym.rotIdx||0)+1)%Math.max(rl,1),rotation:newRot,exercises:newExercises}};
-});}} onUpdateRot={function(rot,idx){setData(function(p){return{...p,gym:{...p.gym,rotation:rot,rotIdx:idx}};});}} onDeleteBW={deleteBWEntry}/></ErrorBoundary>}
+});}} onUpdateRot={function(rot,idx){setData(function(p){return{...p,gym:{...p.gym,rotation:rot,rotIdx:idx}};});}} onDeleteBW={deleteBWEntry} onAddBW={function(entry){trk("gym.bodyweight_log");setData(function(p){const existing=(p.gym.bodyWeight||[]).filter(function(e){return e.date!==entry.date;});const updated=existing.concat([{date:entry.date,weight:Number(entry.weight)}]).sort(function(a,b){return a.date.localeCompare(b.date);});return{...p,gym:{...p.gym,bodyWeight:updated,lastBWWeek:entry.date>=thisWeek?thisWeek:p.gym.lastBWWeek}};});showToast("Body weight logged!","success");}}/></ErrorBoundary>}
 
         {page==="Personal"&&<div style={{maxWidth:640}}>
           <div className="card-rim" style={card()}>
