@@ -449,16 +449,23 @@
     var checks = health.checks || {};
     var rows = Object.keys(checks).map(function (key) {
       var c = checks[key];
+      var col = c.ok ? C.success : C.danger;
       return createElement('div', {
         key: key,
         style: {
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          padding: '7px 0', borderBottom: '0.5px solid ' + C.border
+          padding: '8px 0', borderBottom: '0.5px solid ' + C.border
         }
       },
         createElement('span', { style: { fontSize: 12, color: C.text2 } }, key),
-        createElement('span', { style: { fontSize: 11, color: c.ok ? C.success : C.danger } },
-          (c.ok ? '✓ ' : '✗ ') + c.detail
+        createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 7 } },
+          createElement('span', { style: { fontSize: 11, color: C.text3 } }, c.detail),
+          createElement('span', {
+            style: {
+              width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+              background: col, boxShadow: '0 0 7px ' + col
+            }
+          })
         )
       );
     });
@@ -542,10 +549,14 @@
         ].map(function (s) {
           return createElement('div', {
             key: s.label,
-            style: { background: C.bg3, borderRadius: 8, padding: '10px 12px', textAlign: 'center' }
+            style: {
+              background: 'rgba(225,234,255,0.06)', border: '0.5px solid rgba(255,255,255,0.08)',
+              backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+              borderRadius: 10, padding: '10px 12px', textAlign: 'center'
+            }
           },
             createElement('div', { style: { fontSize: 18, fontWeight: 700, color: C.text } }, s.value),
-            createElement('div', { style: { fontSize: 9, color: C.text3, marginTop: 3 } }, s.label)
+            createElement('div', { style: { fontSize: 10, color: C.text3, marginTop: 3 } }, s.label)
           );
         })
       ),
@@ -670,6 +681,111 @@
     );
   }
 
+  // ── ProfileTab component ──────────────────────────────────────────────────
+
+  var PROFILE_KEY = 'dash_profile_v1';
+
+  function ProfileTab() {
+    var stored = {};
+    try { stored = JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}'); } catch (_) {}
+
+    var formPair = useState({
+      name:        stored.name        || '',
+      context:     stored.context     || '',
+      preferences: stored.preferences || '',
+      notes:       stored.notes       || ''
+    });
+    var form = formPair[0]; var setForm = formPair[1];
+    var savedPair   = useState(false); var justSaved   = savedPair[0];   var setJustSaved   = savedPair[1];
+    var copiedPair  = useState(false); var justCopied  = copiedPair[0];  var setJustCopied  = copiedPair[1];
+
+    function update(key, val) {
+      setForm(function (f) { var u = {}; u[key] = val; return Object.assign({}, f, u); });
+    }
+
+    function save() {
+      try { localStorage.setItem(PROFILE_KEY, JSON.stringify(form)); } catch (_) {}
+      setJustSaved(true);
+      setTimeout(function () { setJustSaved(false); }, 2000);
+    }
+
+    function copyForClaude() {
+      var lines = ['[Claude context — paste at the start of a new session]'];
+      if (form.name)        lines.push('Name / address me as: ' + form.name);
+      if (form.context)     lines.push('Context: '     + form.context);
+      if (form.preferences) lines.push('Preferences: ' + form.preferences);
+      if (form.notes)       lines.push('Notes: '       + form.notes);
+      try { navigator.clipboard.writeText(lines.join('\n')); } catch (_) {}
+      setJustCopied(true);
+      setTimeout(function () { setJustCopied(false); }, 2000);
+    }
+
+    var taStyle = {
+      width: '100%', padding: '9px 12px', borderRadius: 10, fontSize: 12,
+      border: '0.5px solid rgba(255,255,255,0.14)', background: 'rgba(255,255,255,0.05)',
+      backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+      color: C.text, outline: 'none', boxSizing: 'border-box',
+      resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5, minHeight: 60
+    };
+
+    function field(label, hint, key, multiline) {
+      return createElement('div', { style: { marginBottom: 16 } },
+        createElement('div', { style: { fontSize: 11, color: C.text2, marginBottom: 5, fontWeight: 500 } }, label),
+        hint && createElement('div', { style: { fontSize: 10, color: C.text3, marginBottom: 6, lineHeight: 1.5 } }, hint),
+        multiline
+          ? createElement('textarea', {
+              value: form[key],
+              onChange: function (e) { update(key, e.target.value); },
+              style: taStyle
+            })
+          : inp(form[key], function (e) { update(key, e.target.value); }, '', 'text')
+      );
+    }
+
+    return createElement('div', null,
+      card(
+        createElement('div', null,
+          sectionTitle('About you'),
+          createElement('div', { style: { fontSize: 11, color: C.text3, marginBottom: 14, lineHeight: 1.6 } },
+            'This profile is saved locally and used to prime Claude at the start of new sessions. Use "Copy for Claude" and paste it when opening a fresh chat.'
+          ),
+          field('Name / how to address you', null, 'name', false),
+          field('Background context',
+            'Job, location, tools you use, projects — anything Claude should know without being told.',
+            'context', true),
+          field('Communication preferences',
+            'How you like to work together, tone, what to avoid.',
+            'preferences', true),
+          field('Notes for Claude',
+            'Anything else — active projects, decisions in progress, things to remember.',
+            'notes', true)
+        )
+      ),
+      createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap' } },
+        createElement('button', {
+          onClick: save,
+          style: {
+            padding: '9px 22px', borderRadius: 10, border: '0.5px solid rgba(91,140,255,0.5)',
+            background: 'linear-gradient(135deg, rgba(91,140,255,0.3), rgba(91,140,255,0.15))',
+            backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+            color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+            boxShadow: '0 0 12px rgba(91,140,255,0.25)'
+          }
+        }, 'Save'),
+        justSaved && createElement('span', { style: { fontSize: 11, color: C.success } }, '✓ Saved'),
+        createElement('div', { style: { flex: 1 } }),
+        createElement('button', {
+          onClick: copyForClaude,
+          style: {
+            padding: '9px 16px', borderRadius: 10, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+            border: '0.5px solid rgba(255,255,255,0.14)', background: 'rgba(255,255,255,0.06)',
+            backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', color: C.text2
+          }
+        }, justCopied ? '✓ Copied' : 'Copy for Claude')
+      )
+    );
+  }
+
   // ── MonitoringPanel (full modal) ──────────────────────────────────────────
 
   /**
@@ -762,7 +878,7 @@
           onChange: function (e) { setSelId(e.target.value); },
           style: {
             flex: 1, padding: '5px 8px', borderRadius: 8, fontSize: 11,
-            border: '0.5px solid ' + C.border, background: C.bg3, color: C.text
+            border: '0.5px solid rgba(255,255,255,0.14)', background: 'rgba(255,255,255,0.05)', color: C.text
           }
         },
           (devices || [{ deviceId: curId, label: 'This device' }]).map(function (d) {
@@ -787,10 +903,14 @@
         ].map(function (s) {
           return createElement('div', {
             key: s.label,
-            style: { background: C.bg3, borderRadius: 8, padding: '10px 12px', textAlign: 'center' }
+            style: {
+              background: 'rgba(225,234,255,0.06)', border: '0.5px solid rgba(255,255,255,0.08)',
+              backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+              borderRadius: 10, padding: '10px 12px', textAlign: 'center'
+            }
           },
             createElement('div', { style: { fontSize: 16, fontWeight: 700, color: s.color || C.text } }, s.value),
-            createElement('div', { style: { fontSize: 9, color: C.text3, marginTop: 3 } }, s.label)
+            createElement('div', { style: { fontSize: 10, color: C.text3, marginTop: 3 } }, s.label)
           );
         })
       ),
@@ -884,6 +1004,40 @@
     );
   }
 
+  var TAB_LABELS = { health: 'Overview', logs: 'Logs', analytics: 'Analytics', usage: 'Usage', profile: 'Profile', settings: 'Settings' };
+
+  function tabIcon(t) {
+    var s = { flexShrink: 0 };
+    if (t === 'health')    return createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'none', style: s },
+      createElement('polyline', { points: '1,8 3.5,4 5.5,10 8.5,2 10.5,7 13,7', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round' })
+    );
+    if (t === 'logs')      return createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'none', style: s },
+      createElement('line', { x1: 2, y1: 3.5, x2: 12, y2: 3.5, stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' }),
+      createElement('line', { x1: 2, y1: 7,   x2: 12, y2: 7,   stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' }),
+      createElement('line', { x1: 2, y1: 10.5, x2: 8, y2: 10.5, stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' })
+    );
+    if (t === 'analytics') return createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'none', style: s },
+      createElement('rect', { x: 1.5, y: 8,   width: 3, height: 4.5, rx: 0.5, fill: 'currentColor', opacity: 0.6 }),
+      createElement('rect', { x: 5.5, y: 5,   width: 3, height: 7.5, rx: 0.5, fill: 'currentColor', opacity: 0.8 }),
+      createElement('rect', { x: 9.5, y: 1.5, width: 3, height: 11, rx: 0.5, fill: 'currentColor' })
+    );
+    if (t === 'usage')     return createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'none', style: s },
+      createElement('circle', { cx: 4.5, cy: 4.5, r: 1.5, fill: 'currentColor' }),
+      createElement('circle', { cx: 9.5, cy: 4.5, r: 1.5, fill: 'currentColor' }),
+      createElement('circle', { cx: 4.5, cy: 9.5, r: 1.5, fill: 'currentColor' }),
+      createElement('circle', { cx: 9.5, cy: 9.5, r: 1.5, fill: 'currentColor' })
+    );
+    if (t === 'profile')   return createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'none', style: s },
+      createElement('circle', { cx: 7, cy: 5, r: 2.2, stroke: 'currentColor', strokeWidth: 1.4 }),
+      createElement('path', { d: 'M2 12c0-2.76 2.24-5 5-5s5 2.24 5 5', stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round' })
+    );
+    if (t === 'settings')  return createElement('svg', { width: 14, height: 14, viewBox: '0 0 14 14', fill: 'none', style: s },
+      createElement('circle', { cx: 7, cy: 7, r: 2, stroke: 'currentColor', strokeWidth: 1.4 }),
+      createElement('path', { d: 'M7 1.5v1.2M7 11.3v1.2M1.5 7h1.2M11.3 7h1.2M3.2 3.2l.85.85M9.95 9.95l.85.85M3.2 10.8l.85-.85M9.95 4.05l.85-.85', stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round' })
+    );
+    return null;
+  }
+
   /**
    * Full monitoring panel — show as a modal overlay.
    * Props: { onClose, settings, onSaveSettings }
@@ -892,7 +1046,7 @@
     var health     = useHealthStatus();
     var net        = useNetworkStatus();
     var logs       = useErrorFeed();
-    var tabPair    = useState('logs');
+    var tabPair    = useState('health');
     var tab        = tabPair[0]; var setTab = tabPair[1];
     var filterPair = useState('all');
     var filter     = filterPair[0]; var setFilter = filterPair[1];
@@ -901,7 +1055,7 @@
       if (window.UsageTracker) window.UsageTracker.track('modal.monitoring');
     }, []);
 
-    var TABS = ['logs', 'health', 'analytics', 'usage', 'settings'];
+    var TABS = ['health', 'logs', 'analytics', 'usage', 'profile', 'settings'];
 
     var filteredLogs = filter === 'all'
       ? logs
@@ -920,7 +1074,7 @@
         style: {
           background: C.bg, backdropFilter: 'blur(24px) saturate(1.4)', WebkitBackdropFilter: 'blur(24px) saturate(1.4)',
           border: '0.5px solid rgba(91,140,255,0.35)',
-          borderRadius: 20, width: '100%', maxWidth: 520, maxHeight: '85vh',
+          borderRadius: 20, width: '100%', maxWidth: 640, maxHeight: '88vh',
           display: 'flex', flexDirection: 'column',
           boxShadow: '0 18px 46px rgba(0,0,0,0.52), 0 6px 16px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.12)'
         },
@@ -931,117 +1085,139 @@
         createElement('div', {
           style: {
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '16px 18px', borderBottom: '0.5px solid ' + C.border
+            padding: '14px 18px 12px', borderBottom: '0.5px solid rgba(255,255,255,0.06)',
+            flexShrink: 0
           }
         },
-          createElement('div', null,
-            createElement('div', { style: { fontSize: 14, fontWeight: 700, color: C.text } }, '📊 System Monitor'),
-            createElement('div', { style: { fontSize: 10, color: C.text3, marginTop: 2 } },
-              (net.online ? 'Online' : 'Offline') +
-              (net.queueSize > 0 ? ' · ' + net.queueSize + ' pending' : ' · All synced')
-            )
-          ),
+          createElement('div', { style: { fontSize: 12, fontWeight: 600, color: C.text2, letterSpacing: '0.02em' } }, 'Monitoring'),
           btn('✕', props.onClose)
         ),
 
-        // Tabs
-        createElement('div', {
-          style: {
-            display: 'flex', gap: 0,
-            borderBottom: '0.5px solid ' + C.border,
-            padding: '0 18px', overflowX: 'auto'
-          }
-        },
-          TABS.map(function (t) {
-            var active = t === tab;
-            return createElement('button', {
-              key: t, onClick: function () { if (t === 'settings' && window.UsageTracker) window.UsageTracker.track('settings.open'); setTab(t); },
-              style: {
-                padding: '10px 14px', border: 'none', background: 'none',
-                fontSize: 12, cursor: 'pointer', fontWeight: active ? 700 : 400,
-                color: active ? C.accent : C.text3,
-                borderBottom: active ? '2px solid ' + C.accent : '2px solid transparent',
-                marginBottom: -1, textTransform: 'capitalize', whiteSpace: 'nowrap',
-                flexShrink: 0
-              }
-            }, t);
-          })
-        ),
+        // Sidebar + content (two-column)
+        createElement('div', { style: { display: 'flex', flex: 1, overflow: 'hidden' } },
 
-        // Tab content
-        createElement('div', { style: { flex: 1, overflowY: 'auto', padding: '14px 18px' } },
-
-          // ── LOGS tab ──
-          tab === 'logs' && createElement('div', null,
-            createElement('div', { style: { display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' } },
-              ['all', 'critical', 'error', 'warn', 'info'].map(function (f) {
-                return createElement('button', {
-                  key: f, onClick: function () { setFilter(f); },
-                  style: {
-                    padding: '4px 10px', borderRadius: 99, fontSize: 10, cursor: 'pointer',
-                    border: '0.5px solid ' + (filter === f ? sevColor(f === 'all' ? 'info' : f) : C.border),
-                    background: filter === f ? sevColor(f === 'all' ? 'info' : f) + '20' : 'transparent',
-                    color: filter === f ? sevColor(f === 'all' ? 'info' : f) : C.text3,
-                    textTransform: 'capitalize'
-                  }
-                }, f);
-              })
-            ),
-            filteredLogs.length === 0
-              ? createElement('div', { style: { fontSize: 12, color: C.text3, textAlign: 'center', padding: '24px 0' } }, 'No logs yet ✓')
-              : filteredLogs.slice().reverse().map(function (l) {
-                  return createElement(LogEntry, { key: l.id, log: l });
-                }),
-            filteredLogs.length > 0 && createElement('div', {
-              style: { display: 'flex', gap: 8, marginTop: 16, paddingTop: 12, borderTop: '0.5px solid ' + C.border }
-            },
-              btn('⬇ Export JSON', function () { ErrorHandler && ErrorHandler.exportLogs(); },
-                { color: C.accent, borderColor: 'rgba(199,125,255,0.3)' }),
-              btn('🗑 Clear logs', function () { ErrorHandler && ErrorHandler.clearLogs(); })
-            )
+          // Left sidebar nav — always visible, never scrolls
+          createElement('div', {
+            style: {
+              width: 130, flexShrink: 0,
+              display: 'flex', flexDirection: 'column',
+              borderRight: '0.5px solid rgba(255,255,255,0.07)',
+              background: 'rgba(91,140,255,0.025)',
+              padding: '10px 8px',
+              gap: 2,
+            }
+          },
+            TABS.map(function (t) {
+              var isActive = t === tab;
+              return createElement('button', {
+                key: t,
+                onClick: function () {
+                  if (t === 'settings' && window.UsageTracker) window.UsageTracker.track('settings.open');
+                  setTab(t);
+                },
+                style: {
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '9px 10px', borderRadius: 10,
+                  background: isActive ? 'rgba(91,140,255,0.16)' : 'transparent',
+                  border: isActive ? '0.5px solid rgba(91,140,255,0.38)' : '0.5px solid transparent',
+                  color: isActive ? C.accent : C.text2,
+                  fontSize: 12, fontWeight: isActive ? 600 : 400,
+                  cursor: 'pointer', textAlign: 'left', width: '100%',
+                  transition: 'background 0.12s, color 0.12s',
+                }
+              },
+                tabIcon(t),
+                TAB_LABELS[t]
+              );
+            })
           ),
 
-          // ── HEALTH tab ──
-          tab === 'health' && createElement('div', null,
-            card(
-              createElement('div', null,
-                sectionTitle('System checks'),
-                createElement('div', { style: { fontSize: 10, color: C.text3, marginBottom: 10 } }, 'Auto-refreshes every 30 seconds'),
-                createElement(HealthChecks, { health: health })
+          // Right content — only this scrolls
+          createElement('div', { style: { flex: 1, overflowY: 'auto', padding: '18px 20px' } },
+
+            // ── LOGS tab ──
+            tab === 'logs' && createElement('div', null,
+              createElement('div', { style: { display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' } },
+                ['all', 'critical', 'error', 'warn', 'info'].map(function (f) {
+                  return createElement('button', {
+                    key: f, onClick: function () { setFilter(f); },
+                    style: {
+                      padding: '4px 10px', borderRadius: 99, fontSize: 10, cursor: 'pointer',
+                      border: '0.5px solid ' + (filter === f ? sevColor(f === 'all' ? 'info' : f) : C.border),
+                      background: filter === f ? sevColor(f === 'all' ? 'info' : f) + '20' : 'transparent',
+                      color: filter === f ? sevColor(f === 'all' ? 'info' : f) : C.text3,
+                      textTransform: 'capitalize'
+                    }
+                  }, f);
+                })
+              ),
+              filteredLogs.length === 0
+                ? createElement('div', { style: { fontSize: 12, color: C.text3, textAlign: 'center', padding: '24px 0' } }, 'No logs yet ✓')
+                : filteredLogs.slice().reverse().map(function (l) {
+                    return createElement(LogEntry, { key: l.id, log: l });
+                  }),
+              filteredLogs.length > 0 && createElement('div', {
+                style: { display: 'flex', gap: 8, marginTop: 16, paddingTop: 12, borderTop: '0.5px solid ' + C.border }
+              },
+                btn('⬇ Export JSON', function () { ErrorHandler && ErrorHandler.exportLogs(); },
+                  { color: C.accent, borderColor: 'rgba(91,140,255,0.3)' }),
+                btn('🗑 Clear logs', function () { ErrorHandler && ErrorHandler.clearLogs(); })
               )
             ),
-            card(
-              createElement('div', null,
-                sectionTitle('Network queue'),
-                net.queueSize === 0
-                  ? createElement('div', { style: { fontSize: 12, color: C.success } }, '✓ No pending operations')
-                  : createElement('div', null,
-                      createElement('div', { style: { fontSize: 12, color: C.warn, marginBottom: 8 } },
-                        net.queueSize + ' operation(s) waiting to sync'
-                      ),
-                      btn('↻ Retry now', function () {
-                        if (window.NetworkMonitor) NetworkMonitor.replayQueue();
-                      }, { color: C.accent, borderColor: 'rgba(199,125,255,0.3)' })
-                    )
+
+            // ── HEALTH (Overview) tab ──
+            tab === 'health' && createElement('div', null,
+              card(
+                createElement('div', null,
+                  sectionTitle('System checks'),
+                  createElement('div', { style: { fontSize: 10, color: C.text3, marginBottom: 10 } }, 'Auto-refreshes every 30 seconds'),
+                  createElement(HealthChecks, { health: health })
+                )
+              ),
+              card(
+                createElement('div', null,
+                  sectionTitle('Network queue'),
+                  net.queueSize === 0
+                    ? createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 7 } },
+                        createElement('span', {
+                          style: {
+                            width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                            background: C.success, boxShadow: '0 0 7px ' + C.success
+                          }
+                        }),
+                        createElement('span', { style: { fontSize: 12, color: C.text2 } }, 'No pending operations')
+                      )
+                    : createElement('div', null,
+                        createElement('div', { style: { fontSize: 12, color: C.warn, marginBottom: 8 } },
+                          net.queueSize + ' operation(s) waiting to sync'
+                        ),
+                        btn('↻ Retry now', function () {
+                          if (window.NetworkMonitor) NetworkMonitor.replayQueue();
+                        }, { color: C.accent, borderColor: 'rgba(91,140,255,0.3)' })
+                      )
+                )
               )
-            )
-          ),
+            ),
 
-          // ── ANALYTICS tab ──
-          tab === 'analytics' && createElement('div', null,
-            card(createElement(Analytics, null))
-          ),
+            // ── ANALYTICS tab ──
+            tab === 'analytics' && createElement('div', null,
+              card(createElement(Analytics, null))
+            ),
 
-          // ── USAGE tab ──
-          tab === 'usage' && createElement('div', null,
-            card(createElement(UsageView, null))
-          ),
+            // ── USAGE tab ──
+            tab === 'usage' && createElement('div', null,
+              card(createElement(UsageView, null))
+            ),
 
-          // ── SETTINGS tab ──
-          tab === 'settings' && createElement(SettingsTab, {
-            settings: props.settings || {},
-            onSaveSettings: props.onSaveSettings
-          })
+            // ── PROFILE tab ──
+            tab === 'profile' && createElement(ProfileTab, null),
+
+            // ── SETTINGS tab ──
+            tab === 'settings' && createElement(SettingsTab, {
+              settings: props.settings || {},
+              onSaveSettings: props.onSaveSettings
+            })
+          )
         )
       )
     );
