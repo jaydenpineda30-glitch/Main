@@ -44,6 +44,41 @@
       .catch(function (e){ return { ok: false, detail: e.message }; });
   }
 
+  // ── Gemini key check (cached, max once per 5 min) ─────────────────────────
+
+  var _geminiCache = null;
+
+  function checkGemini() {
+    var now = Date.now();
+    if (_geminiCache && now - _geminiCache.ts < 300000) {
+      return Promise.resolve(_geminiCache.result);
+    }
+    var key = (localStorage.getItem('__gemini_key__') || '').trim();
+    if (!key) {
+      var r = { ok: false, detail: 'no key saved' };
+      _geminiCache = { result: r, ts: now };
+      return Promise.resolve(r);
+    }
+    return fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + key,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: 'ok' }] }], generationConfig: { maxOutputTokens: 1 } })
+      }
+    ).then(function (res) {
+      var r = res.ok
+        ? { ok: true,  detail: 'key valid' }
+        : { ok: false, detail: 'key expired or invalid' };
+      _geminiCache = { result: r, ts: now };
+      return r;
+    }).catch(function () {
+      var r = { ok: false, detail: 'could not reach Gemini' };
+      _geminiCache = { result: r, ts: now };
+      return r;
+    });
+  }
+
   // ── HealthMonitor ──────────────────────────────────────────────────────────
 
   var _intervalId   = null;
@@ -55,13 +90,15 @@
     /** Most recent check snapshot. Null before first check. */
     get status() { return _latestStatus; },
 
-    /** Run all three checks now. Returns a Promise<snapshot>. */
+    /** Run all checks now. Returns a Promise<snapshot>. */
     runChecks: function () {
-      return checkFirebase().then(function (fb) {
+      return Promise.all([checkFirebase(), checkGemini()]).then(function (results) {
+        var fb  = results[0];
+        var gem = results[1];
         var ls  = checkLocalStorage();
         var net = checkNetwork();
 
-        var allOk    = ls.ok && net.ok && fb.ok;
+        var allOk    = ls.ok && net.ok && fb.ok && gem.ok;
         var snapshot = {
           timestamp: new Date().toISOString(),
           healthy:   allOk,
@@ -70,7 +107,8 @@
           checks: {
             localStorage: ls,
             network:      net,
-            firebase:     fb
+            firebase:     fb,
+            geminiKey:    gem
           }
         };
 
