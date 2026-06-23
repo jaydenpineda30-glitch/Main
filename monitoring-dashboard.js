@@ -364,7 +364,7 @@
       border: active ? '0.5px solid rgba(91,140,255,0.55)' : '0.5px solid rgba(255,255,255,0.14)',
       background: active ? 'rgba(91,140,255,0.18)' : 'rgba(255,255,255,0.06)',
       backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
-      color: active ? C.accent : C.text2, transition: 'all 0.15s'
+      color: active ? C.accent : C.text2, transition: 'background 0.12s,border 0.12s,color 0.12s'
     };
     var s = style ? Object.assign({}, base, style) : base;
     delete s._active;
@@ -1066,7 +1066,7 @@
         position: 'fixed', inset: 0, background: 'rgba(5,7,26,0.85)',
         backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
         zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 16
+        padding: 16, animation: 'backdrop-in 180ms ease-out both'
       },
       onClick: props.onClose
     },
@@ -1076,7 +1076,8 @@
           border: '0.5px solid rgba(91,140,255,0.35)',
           borderRadius: 20, width: '100%', maxWidth: 640, maxHeight: '88vh',
           display: 'flex', flexDirection: 'column',
-          boxShadow: '0 18px 46px rgba(0,0,0,0.52), 0 6px 16px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.12)'
+          boxShadow: '0 18px 46px rgba(0,0,0,0.52), 0 6px 16px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.12)',
+          animation: 'panel-in 260ms cubic-bezier(0.23,1,0.32,1) both'
         },
         onClick: function (e) { e.stopPropagation(); }
       },
