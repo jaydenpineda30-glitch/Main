@@ -21,6 +21,7 @@ const CAPTURES_DIR    = path.join(VAULT, 'Dashboard', 'Captures');
 const REFLECTIONS_DIR = path.join(VAULT, 'Dashboard', 'Reflections');
 const BACKUPS_DIR     = path.join(VAULT, 'Dashboard', 'Backups');
 const BOARDROOM_DIR   = path.join(VAULT, 'Dashboard', 'Boardroom');
+const WORK_DIR        = path.join(VAULT, 'Dashboard', 'Work');
 
 const TOPICS = [
   'Accounting', 'Tax', 'Finance', 'Fitness',
@@ -411,6 +412,7 @@ function writeFullBackup(userData, capSnap, usageSnap) {
 ensureDir(CAPTURES_DIR);
 ensureDir(REFLECTIONS_DIR);
 ensureDir(BOARDROOM_DIR);
+ensureDir(WORK_DIR);
 
 Promise.all([
   db.collection('users').doc(UID).collection('captures').get(),
@@ -549,11 +551,43 @@ Promise.all([
     console.log('  + Boardroom Overview.md');
   }
 
+  // Write work log — one markdown file per calendar month, overwritten each run.
+  var taskLog = (userData.dashData && userData.dashData.work && userData.dashData.work.taskLog) || [];
+  var wlWritten = 0;
+  if (taskLog.length) {
+    var byMonth = {};
+    taskLog.forEach(function(t) {
+      var month = (t.shiftDate || '').slice(0, 7);
+      if (!month) return;
+      if (!byMonth[month]) byMonth[month] = {};
+      if (!byMonth[month][t.shiftDate]) byMonth[month][t.shiftDate] = [];
+      byMonth[month][t.shiftDate].push(t);
+    });
+    Object.keys(byMonth).forEach(function(month) {
+      var byDate = byMonth[month];
+      var lines = ['---', 'type: work-log', 'month: ' + month, 'tags: [work, gotab]', '---', '', '# Work Log — ' + month, ''];
+      Object.keys(byDate).sort().reverse().forEach(function(date) {
+        var d = new Date(date + 'T12:00:00');
+        lines.push('## ' + d.toLocaleDateString('en-AU', {weekday:'long', day:'numeric', month:'long'}));
+        lines.push('');
+        byDate[date].forEach(function(t) {
+          var tag = t.tag ? '**' + t.tag + '** — ' : '';
+          lines.push('- ' + tag + (t.text || t.tag || ''));
+        });
+        lines.push('');
+      });
+      var dest = path.join(WORK_DIR, 'Work-Log-' + month + '.md');
+      fs.writeFileSync(dest, lines.join('\n'), 'utf8');
+      wlWritten++;
+    });
+  }
+
   console.log('');
   console.log('Done!  ' + new Date().toLocaleString('en-AU'));
   console.log('  Captures:    ' + capWritten + ' written, ' + capSkipped + ' skipped');
   console.log('  Reflections: ' + reflWritten + ' written, ' + reflSkipped + ' skipped');
   console.log('  Boardroom:   ' + brWritten + ' sessions');
+  console.log('  Work logs:   ' + wlWritten + ' month file(s)');
   console.log('  Vault: ' + VAULT);
 
 }).catch(function(e) {

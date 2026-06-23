@@ -55,7 +55,7 @@
     }
     var key = (localStorage.getItem('__gemini_key__') || '').trim();
     if (!key) {
-      var r = { ok: false, detail: 'no key saved' };
+      var r = { ok: true, detail: 'not configured' };
       _geminiCache = { result: r, ts: now };
       return Promise.resolve(r);
     }

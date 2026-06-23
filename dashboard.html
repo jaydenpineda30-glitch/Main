@@ -244,6 +244,17 @@ const INIT={
     expenses:[],
     hourlyRate:0
   },
+  work:{
+    hourlyRate:0,
+    payCycleDay:1,
+    goals:[
+      {id:"g2",label:"Pay target",target:800,unit:"$"},
+      {id:"g3",label:"Tasks logged",target:20,unit:" tasks"}
+    ],
+    shiftLogs:{},
+    taskLog:[],
+    focusGoals:[]
+  },
 };
 
 // Recursively remove undefined values — Firestore rejects any undefined in the document
@@ -286,6 +297,7 @@ function mergeWithDefaults(cloud){
       completedEvents:Array.isArray(u.completedEvents)?u.completedEvents:[],
       assessments:Array.isArray(u.assessments)&&u.assessments.length>0?reconcileAssessments(u.assessments,SYLLABUS_ASSESSMENTS):SYLLABUS_ASSESSMENTS.map(function(a){return{...a};}),
     },
+    work:(function(){var w=cloud.work||{};return{...INIT.work,...w,hourlyRate:Number(w.hourlyRate||(cloud.finance&&cloud.finance.hourlyRate)||0),payCycleDay:Number(w.payCycleDay||cloud.payCycleDay||1),goals:Array.isArray(w.goals)?w.goals:INIT.work.goals,shiftLogs:(w.shiftLogs&&typeof w.shiftLogs==="object")?w.shiftLogs:{},taskLog:Array.isArray(w.taskLog)?w.taskLog:[],focusGoals:Array.isArray(w.focusGoals)?w.focusGoals:[]};}()),
     reflections:(Array.isArray(cloud.reflections)&&cloud.reflections.length>0)?cloud.reflections:SEED_REFL,
   };
 }
@@ -1505,6 +1517,274 @@ function FinanceSection({data,onUpdate,mob,gcalEvents}){
   );
 }
 
+function WorkSection({data,mob,onUpdate,gcalEvents}){
+  mob=mob||false;
+  const [expandedShift,setExpandedShift]=useState(null);
+  const [logDraft,setLogDraft]=useState({notes:""});
+  const [goalInput,setGoalInput]=useState("");
+  const [showSettings,setShowSettings]=useState(false);
+  const [cycleOffset,setCycleOffset]=useState(0);
+  const [taskInput,setTaskInput]=useState("");
+  const [taskTag,setTaskTag]=useState(null);
+  const [taskShiftDate,setTaskShiftDate]=useState(todayStr());
+  useEffect(function(){const first=(gcalEvents||[]).filter(isGoTabEvent).sort(function(a,b){return b.date.localeCompare(a.date);})[0];if(first)setTaskShiftDate(first.date);},[]);
+  const wBtn={...btnGlass,padding:"5px 12px"};
+  const wBtnP={...btnGlassP};
+  const wInp={width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"};
+  function wCard(ex){return{position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow,...(ex||{})};}
+  const wGlassMini={background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,boxShadow:cardShadowSoft};
+  const wStatLabel={fontSize:10,fontWeight:600,color:"#8f97a6",textTransform:"uppercase",letterSpacing:"0.05em"};
+  const wST={fontSize:13,fontWeight:600,marginBottom:0,color:"#cdd5e2",letterSpacing:"-0.01em"};
+  function cellEdge(hex){return{borderBottom:"1.5px solid "+hex+"80",boxShadow:"inset 0 -5px 12px "+hex+"15"};}
+  const TAGS=[{label:"Issue resolved",col:"#69f0ae"},{label:"Escalated",col:"#ff6b6b"},{label:"Venue call",col:"#5b8cff"},{label:"Other",col:"#8f97a6"}];
+  const focusGoals=data.focusGoals||[];
+  const shiftLogs=data.shiftLogs||{};
+  const taskLog=data.taskLog||[];
+  const hrRate=Number(data.hourlyRate||0);
+  const payCycleDay=Number(data.payCycleDay||1);
+  function getPeriodRange(offset){
+    const today=new Date();const yr=today.getFullYear();const mo=today.getMonth();
+    let cs=new Date(yr,mo,payCycleDay);
+    if(today<cs)cs=new Date(yr,mo-1,payCycleDay);
+    const start=new Date(cs.getTime()+offset*14*864e5);
+    const end=new Date(start.getTime()+13*864e5);
+    return{start:dStr(start),end:dStr(end)};
+  }
+  const {start:periodStart,end:periodEnd}=getPeriodRange(cycleOffset);
+  const periodShifts=(gcalEvents||[]).filter(isGoTabEvent).filter(function(ev){return ev.date>=periodStart&&ev.date<=periodEnd;}).sort(function(a,b){return a.date.localeCompare(b.date);});
+  const periodNorm=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.normalHrs:0);},0);
+  const periodPen=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.penaltyHrs:0);},0);
+  const periodEquiv=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.totalEquiv:0);},0);
+  const estimatedPay=hrRate>0?periodEquiv*hrRate:null;
+  function estimateTax(gross){if(gross<=18200)return gross*0.02;if(gross<=45000)return(gross-18200)*0.19+gross*0.02;if(gross<=135000)return 5092+(gross-45000)*0.30+gross*0.02;if(gross<=190000)return 32092+(gross-135000)*0.37+gross*0.02;return 52442+(gross-190000)*0.45+gross*0.02;}
+  const periodDays=Math.max(1,Math.round((new Date(periodEnd)-new Date(periodStart))/864e5)+1);
+  const annualGross=estimatedPay!=null?estimatedPay/periodDays*365:0;
+  const periodTax=estimatedPay!=null?estimateTax(annualGross)/365*periodDays:null;
+  const periodNet=estimatedPay!=null&&periodTax!=null?estimatedPay-periodTax:null;
+  const periodTaskCount=taskLog.filter(function(t){return t.shiftDate>=periodStart&&t.shiftDate<=periodEnd;}).length;
+  const recentShiftDates=(gcalEvents||[]).filter(isGoTabEvent).sort(function(a,b){return b.date.localeCompare(a.date);}).slice(0,14).map(function(ev){return ev.date;});
+  function fmt$(n){return n!=null?"$"+n.toFixed(2):"—";}
+  function fmtPeriod(){const s=new Date(periodStart+"T12:00:00");const e=new Date(periodEnd+"T12:00:00");return s.toLocaleDateString("en-AU",{day:"numeric",month:"short"})+" – "+e.toLocaleDateString("en-AU",{day:"numeric",month:"short",year:"numeric"});}
+  function openShift(date){
+    if(expandedShift===date){setExpandedShift(null);return;}
+    setExpandedShift(date);
+    setLogDraft({notes:(shiftLogs[date]||{}).notes||""});
+  }
+  function saveShiftLog(){
+    onUpdate({...data,shiftLogs:{...shiftLogs,[expandedShift]:{...(shiftLogs[expandedShift]||{}),notes:logDraft.notes}}});
+    setExpandedShift(null);
+    if(window.showToast)window.showToast("Diary saved","success");
+  }
+  function addTask(){
+    if(!taskInput.trim()&&!taskTag)return;
+    const entry={id:Date.now(),shiftDate:taskShiftDate,text:taskInput.trim(),tag:taskTag,addedAt:todayStr()};
+    onUpdate({...data,taskLog:[...taskLog,entry]});
+    setTaskInput("");setTaskTag(null);
+    if(window.showToast)window.showToast("Task logged","success");
+  }
+  function removeTask(id){onUpdate({...data,taskLog:taskLog.filter(function(t){return t.id!==id;})});}
+  const tasksByDate=(function(){
+    const map={};
+    taskLog.forEach(function(t){if(!map[t.shiftDate])map[t.shiftDate]=[];map[t.shiftDate].push(t);});
+    return Object.keys(map).sort(function(a,b){return b.localeCompare(a);}).map(function(d){return{date:d,tasks:map[d]};});
+  }());
+  function addFocusGoal(){if(!goalInput.trim())return;onUpdate({...data,focusGoals:[...focusGoals,{id:Date.now(),text:goalInput.trim(),status:"active",addedAt:todayStr()}]});setGoalInput("");}
+  function toggleGoal(id){onUpdate({...data,focusGoals:focusGoals.map(function(g){return g.id===id?{...g,status:g.status==="done"?"active":"done"}:g;})});}
+  function removeGoal(id){onUpdate({...data,focusGoals:focusGoals.filter(function(g){return g.id!==id;})});}
+  return(
+    <div style={{maxWidth:mob?undefined:900}}>
+      <div className="card-rim" style={wCard({marginBottom:16})}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,paddingBottom:14,borderBottom:"0.5px solid "+T.border}}>
+          <button style={wBtn} onClick={function(){setCycleOffset(function(o){return o-1;});}}>&#8592; prev</button>
+          <div style={{flex:1,textAlign:"center",fontSize:13,fontWeight:700,color:T.text}}>{fmtPeriod()}</div>
+          <button style={wBtn} onClick={function(){setCycleOffset(function(o){return o+1;});}}>next &#8594;</button>
+          <button style={{...editPill,marginLeft:4}} onClick={function(){setShowSettings(function(v){return !v;});}}>
+            <UIcon name="gear" size={12}/> settings
+          </button>
+        </div>
+        {showSettings&&<div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"center",marginBottom:14,paddingBottom:14,borderBottom:"0.5px solid "+T.border}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,color:T.text3}}>Rate $</span><input type="number" min={0} step={0.01} style={{...wInp,width:66,padding:"3px 6px",fontSize:11}} placeholder="0.00" value={hrRate||""} onChange={function(ev){onUpdate({...data,hourlyRate:Number(ev.target.value)||0});}}/><span style={{fontSize:11,color:T.text3}}>/hr</span></div>
+          <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,color:T.text3}}>Pay cycle</span><input type="number" min={1} max={28} style={{...wInp,width:44,textAlign:"center",padding:"3px 6px",fontSize:11}} value={payCycleDay} onChange={function(ev){onUpdate({...data,payCycleDay:Math.max(1,Math.min(28,Number(ev.target.value)||1))});}}/><span style={{fontSize:11,color:T.text3}}>th of month</span></div>
+        </div>}
+        <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(3,1fr)",gap:10,marginBottom:10}}>
+          {[
+            {label:"Gross pay",value:fmt$(estimatedPay),sub:periodEquiv.toFixed(1)+"h equiv · "+periodShifts.length+" shift"+(periodShifts.length!==1?"s":""),edge:"#5b8cff"},
+            {label:"Est. tax",value:periodTax!=null?"−$"+periodTax.toFixed(2):"—",sub:hrRate>0?"ATO 2025-26 · annualised":"set rate in settings",edge:"#ff6b6b"},
+            {label:"Take-home",value:fmt$(periodNet),sub:"after est. tax",edge:"#69f0ae"}
+          ].map(function(c){return(
+            <div key={c.label} style={{...wGlassMini,padding:"16px 18px",...cellEdge(c.edge)}}>
+              <div style={{...wStatLabel,marginBottom:4}}>{c.label}</div>
+              <div style={{fontSize:mob?18:20,fontWeight:700,letterSpacing:"-0.02em",color:T.text,lineHeight:1.1}}>{c.value}</div>
+              <div style={{fontSize:10,color:T.text3,marginTop:5}}>{c.sub}</div>
+            </div>
+          );})}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:mob?"repeat(2,1fr)":"repeat(4,1fr)",gap:10}}>
+          {[
+            {label:"Standard hrs",value:periodNorm.toFixed(1)+"h",sub:"before 7pm · 1×",edge:"rgba(255,255,255,0.15)"},
+            {label:"Penalty hrs",value:periodPen.toFixed(1)+"h",sub:"after 7pm · 1.5×",edge:"#ffd166"},
+            {label:"Shifts",value:String(periodShifts.length),sub:"this period",edge:"rgba(255,255,255,0.15)"},
+            {label:"Tasks",value:String(periodTaskCount),sub:"logged this period",edge:"#c77dff"}
+          ].map(function(c){return(
+            <div key={c.label} style={{background:"rgba(225,234,255,0.07)",border:"0.5px solid rgba(255,255,255,0.10)",borderRadius:12,padding:"12px 14px",...cellEdge(c.edge)}}>
+              <div style={{...wStatLabel,marginBottom:4}}>{c.label}</div>
+              <div style={{fontSize:mob?14:16,fontWeight:700,letterSpacing:"-0.01em",color:T.text,lineHeight:1.1}}>{c.value}</div>
+              <div style={{fontSize:10,color:T.text3,marginTop:4}}>{c.sub}</div>
+            </div>
+          );})}
+        </div>
+        <div style={{fontSize:9,color:T.text3,marginTop:10}}>Tax estimate only — actual PAYG may differ</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"2fr 1fr",gap:12,alignItems:"start",marginBottom:12}}>
+        <div className="card-rim" style={wCard({marginBottom:0})}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div style={wST}>Shifts</div>
+            <div style={{fontSize:9,color:T.text3}}>click to add diary</div>
+          </div>
+          {periodShifts.length===0
+            ?<div style={{fontSize:12,color:T.text2,padding:"20px 0",textAlign:"center"}}>{gcalEvents&&gcalEvents.length>0?"No GoTab shifts this period — use prev to look back":"Connect Google Calendar to see shifts"}</div>
+            :<div>
+              {periodShifts.map(function(ev){
+                const past=daysBetween(ev.date)<0;
+                const pay=shiftPay(ev.time);
+                const rowPay=hrRate>0&&pay?fmt$(pay.totalEquiv*hrRate):"—";
+                const d=new Date(ev.date+"T12:00:00");
+                const diary=(shiftLogs[ev.date]||{}).notes||"";
+                const shiftTaskCount=taskLog.filter(function(t){return t.shiftDate===ev.date;}).length;
+                const isExp=expandedShift===ev.date;
+                const dotCol=!past?"#5b8cff":diary?"#69f0ae":T.text3;
+                const dotGlow=!past?"0 0 7px #5b8cff":diary?"0 0 7px #69f0ae":"none";
+                return(
+                  <div key={ev.id||ev.date} style={{marginBottom:6}}>
+                    <div onClick={function(){openShift(ev.date);}} style={{position:"relative",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",paddingLeft:14,borderRadius:isExp?"10px 10px 0 0":8,background:isExp?"rgba(91,140,255,0.08)":T.bg3,border:"0.5px solid "+(isExp?T.accent:T.border),borderBottom:isExp?"none":"0.5px solid "+T.border,cursor:"pointer",opacity:past&&!isExp?0.65:1,overflow:"hidden",transition:"background 0.12s,border 0.12s"}}>
+                      <div style={{position:"absolute",left:0,top:5,bottom:5,width:2,borderRadius:1,background:T.accent,opacity:past?0.35:0.7}}/>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:11,fontWeight:600,color:T.text,marginBottom:2}}>{d.toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short"})}</div>
+                        <div style={{fontSize:10,color:T.text2}}>{ev.time}</div>
+                      </div>
+                      {pay&&<div style={{display:"flex",gap:8,fontSize:10,flexShrink:0,color:T.text2}}>
+                        <span>{pay.normalHrs}h std</span>
+                        {pay.penaltyHrs>0&&<span>{pay.penaltyHrs}h pen</span>}
+                      </div>}
+                      <div style={{fontSize:12,fontWeight:700,color:T.text,flexShrink:0,minWidth:52,textAlign:"right"}}>{rowPay}</div>
+                      {shiftTaskCount>0&&<span style={{fontSize:9,color:"#c77dff",background:"rgba(199,125,255,0.12)",border:"0.5px solid rgba(199,125,255,0.25)",borderRadius:4,padding:"1px 5px",flexShrink:0}}>{shiftTaskCount} task{shiftTaskCount!==1?"s":""}</span>}
+                      <div style={{width:8,height:8,borderRadius:"50%",background:dotCol,boxShadow:dotGlow,flexShrink:0}}/>
+                    </div>
+                    {isExp&&<div style={{background:"rgba(91,140,255,0.05)",border:"0.5px solid "+T.accent,borderTop:"none",borderRadius:"0 0 10px 10px",padding:"12px 14px"}}>
+                      <div style={{fontSize:10,color:T.text3,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"}}>Shift diary</div>
+                      <textarea rows={4} placeholder="How did the shift go? Any notable incidents, wins, or patterns worth remembering." value={logDraft.notes} onChange={function(e){setLogDraft({notes:e.target.value});}} style={{...wInp,resize:"none",fontSize:11,lineHeight:1.6}}/>
+                      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
+                        <button onClick={function(){setExpandedShift(null);}} style={wBtn}>Cancel</button>
+                        <button onClick={saveShiftLog} style={wBtnP}>Save</button>
+                      </div>
+                    </div>}
+                  </div>
+                );
+              })}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderTop:"0.5px solid "+T.border,marginTop:4}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.text}}>Total</div>
+                <div style={{display:"flex",gap:14,fontSize:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                  <span style={{color:T.text2,fontWeight:600}}>{periodNorm.toFixed(1)}h std</span>
+                  {periodPen>0&&<span style={{color:T.warn,fontWeight:600}}>{periodPen.toFixed(1)}h pen</span>}
+                  <span style={{color:T.accent,fontWeight:700}}>{periodEquiv.toFixed(1)}h equiv</span>
+                  <span style={{color:T.text,fontWeight:700}}>{fmt$(estimatedPay)}</span>
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+        <div className="card-rim" style={wCard({marginBottom:0})}>
+          <div style={{marginBottom:14}}>
+            <div style={wST}>Focus Goals</div>
+          </div>
+          {focusGoals.length===0
+            ?<div style={{fontSize:11,color:T.text3,textAlign:"center",padding:"18px 0 14px"}}>No goals yet — add something you are working towards</div>
+            :<div style={{marginBottom:14}}>
+              {focusGoals.map(function(g){
+                const done=g.status==="done";
+                const dot=done?"#69f0ae":"#5b8cff";
+                const dotGlow=done?"0 0 6px #69f0ae":"0 0 6px #5b8cff";
+                return(
+                  <div key={g.id} onClick={function(){toggleGoal(g.id);}} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"8px 10px",borderRadius:8,cursor:"pointer",transition:"background 0.1s",marginBottom:4,background:"rgba(255,255,255,0.015)"}}>
+                    <div style={{width:8,height:8,borderRadius:"50%",background:dot,boxShadow:dotGlow,flexShrink:0,marginTop:3}}/>
+                    <div style={{flex:1,fontSize:12,color:done?T.text3:T.text,textDecoration:done?"line-through":"none",lineHeight:1.5,transition:"color 0.15s"}}>{g.text}</div>
+                    <button onClick={function(e){e.stopPropagation();removeGoal(g.id);}} style={{background:"none",border:"none",color:T.text3,fontSize:14,lineHeight:1,cursor:"pointer",padding:"0 2px",flexShrink:0}}>&#215;</button>
+                  </div>
+                );
+              })}
+            </div>
+          }
+          <div style={{display:"flex",gap:6,borderTop:"0.5px solid "+T.border,paddingTop:12}}>
+            <input type="text" placeholder="what are you going for?" value={goalInput} onChange={function(e){setGoalInput(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter"){e.preventDefault();addFocusGoal();}}} style={{...wInp,flex:1,fontSize:11}}/>
+            <button onClick={addFocusGoal} style={wBtnP}>Add</button>
+          </div>
+        </div>
+      </div>
+      <div className="card-rim" style={wCard({marginBottom:0})}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={wST}>Work Log</div>
+          <div style={{fontSize:9,color:T.text3}}>individual tasks &amp; actions</div>
+        </div>
+        <div style={{marginBottom:14,paddingBottom:14,borderBottom:"0.5px solid "+T.border}}>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+            {TAGS.map(function(tag){
+              const active=taskTag===tag.label;
+              return(
+                <button key={tag.label} onClick={function(){setTaskTag(active?null:tag.label);}} style={{...editPill,border:"0.5px solid "+(active?tag.col+"90":"rgba(255,255,255,0.14)"),background:active?tag.col+"1a":"rgba(255,255,255,0.04)",color:active?tag.col:T.text2,transition:"all 0.12s",display:"flex",alignItems:"center",gap:5}}>
+                  <span style={{width:5,height:5,borderRadius:"50%",background:tag.col,display:"inline-block",flexShrink:0}}/>
+                  {tag.label}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:mob?"wrap":"nowrap"}}>
+            <input type="text" placeholder={taskTag?"Describe what happened…":"Pick a tag or just type what you did"} value={taskInput} onChange={function(e){setTaskInput(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter"){e.preventDefault();addTask();}}} style={{...wInp,flex:1}}/>
+            <select value={taskShiftDate} onChange={function(e){setTaskShiftDate(e.target.value);}} style={{background:"rgba(255,255,255,0.05)",border:"0.5px solid rgba(255,255,255,0.14)",color:T.text,fontSize:11,borderRadius:8,padding:"7px 10px",cursor:"pointer",flexShrink:0}}>
+              {recentShiftDates.map(function(sd){const dd=new Date(sd+"T12:00:00");return <option key={sd} value={sd}>{dd.toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short"})}</option>;})}
+              {recentShiftDates.indexOf(taskShiftDate)===-1&&<option value={taskShiftDate}>{new Date(taskShiftDate+"T12:00:00").toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short"})}</option>}
+            </select>
+            <button onClick={addTask} style={{...wBtnP,flexShrink:0}}>Log it</button>
+          </div>
+        </div>
+        {tasksByDate.length===0
+          ?<div style={{fontSize:12,color:T.text2,textAlign:"center",padding:"28px 0"}}>No tasks logged yet — pick a tag above and describe what you did</div>
+          :<div style={{borderLeft:"1px solid rgba(255,255,255,0.07)",paddingLeft:16}}>
+            {tasksByDate.map(function(group){
+              const shiftMatch=(gcalEvents||[]).filter(isGoTabEvent).find(function(ev){return ev.date===group.date;});
+              const dd=new Date(group.date+"T12:00:00");
+              const dateLabel=dd.toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"short"});
+              return(
+                <div key={group.date} style={{marginBottom:20}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,marginLeft:-19}}>
+                    <div style={{width:7,height:7,borderRadius:"50%",background:T.accent,boxShadow:"0 0 6px "+T.accent,flexShrink:0}}/>
+                    <div style={{fontSize:11,fontWeight:700,color:T.text}}>{dateLabel}</div>
+                    {shiftMatch&&<div style={{fontSize:10,color:T.text3}}>· {shiftMatch.time}</div>}
+                    <div style={{marginLeft:"auto",fontSize:9,color:T.text3}}>{group.tasks.length} task{group.tasks.length!==1?"s":""}</div>
+                  </div>
+                  {group.tasks.map(function(task){
+                    const tagObj=TAGS.find(function(t){return t.label===task.tag;});
+                    const tagCol=tagObj?tagObj.col:"#8f97a6";
+                    return(
+                      <div key={task.id} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"7px 10px",borderRadius:8,background:"rgba(255,255,255,0.02)",border:"0.5px solid rgba(255,255,255,0.06)",marginBottom:5}}>
+                        <div style={{width:5,height:5,borderRadius:"50%",background:tagCol,flexShrink:0,marginTop:5}}/>
+                        <div style={{flex:1,minWidth:0}}>
+                          {task.tag&&<div style={{fontSize:9,color:tagCol,fontWeight:600,marginBottom:2,textTransform:"uppercase",letterSpacing:"0.04em"}}>{task.tag}</div>}
+                          <div style={{fontSize:11,color:task.text?T.text:T.text3,lineHeight:1.5,fontStyle:task.text?"normal":"italic"}}>{task.text||task.tag}</div>
+                        </div>
+                        <button onClick={function(){removeTask(task.id);}} style={{...wBtn,padding:"1px 7px",fontSize:12,color:T.text3,flexShrink:0,lineHeight:1}}>&#215;</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        }
+      </div>
+    </div>
+  );
+}
+
 function App(){
   const [page,setPage]=useState("Dashboard");
   const [data,setData]=useState(function(){try{const s=localStorage.getItem("dash_v1");if(!s)return mergeWithDefaults({...INIT,reflections:SEED_REFL});const saved=JSON.parse(s);const fin=saved.finance||{};let out=saved;if(!fin.financeVersion||fin.financeVersion<2){out={...out,finance:INIT.finance};}return mergeWithDefaults(out);}catch(_){return mergeWithDefaults({...INIT,reflections:SEED_REFL});}});
@@ -2522,6 +2802,7 @@ function App(){
    }catch(err){captureError(err,"saveModal");}
   }
   function updateFinance(fin){setData(function(p){return{...p,finance:fin};});}
+  function updateWork(w){setData(function(p){return{...p,work:w};});}
   function submitRefl(){
     if(!reflIn.trim()){showToast("Write something before continuing.");return;}
     const na=reflAns.concat([{q:REFL_QS[reflStep-1],a:reflIn}]);
@@ -2946,43 +3227,53 @@ function App(){
             const uc28=new Date();uc28.setDate(uc28.getDate()+28);const ucEnd=dStr(uc28);
             const upcomingClasses=dedupedEvents.filter(function(ev){return isUniCalEv(ev)&&!isAssessmentEvent(ev)&&!ev.allDay&&ev.date>=todayStr()&&ev.date<=ucEnd;}).sort(function(a,b){return a.date.localeCompare(b.date)||(a.time||"").localeCompare(b.time||"");});
             return(<React.Fragment>
-              {/* ── Assessment Hub ── */}
+              {/* ── Assessments ── */}
               <div className="card-rim" style={card()}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:totalA>0?10:0}}>
                   <div>
-                    <div style={sT}>Assessment Hub</div>
-                    <div style={{fontSize:10,color:T.text3,marginTop:2}}>{doneA} of {totalA} complete</div>
+                    <div style={sT}>Assessments</div>
+                    {totalA>0&&<div style={{fontSize:10,color:T.text3,marginTop:2}}>{doneA} of {totalA} complete</div>}
                   </div>
                   <div style={{display:"flex",gap:6}}>
                     <button style={{...btn,fontSize:10}} onClick={function(){setShowAddAssess(true);}}>+ Add</button>
-                    <button style={{...editPill,color:T.accent,borderColor:"rgba(91,140,255,0.4)"}} onClick={function(){setShowSyllabusImport(true);}}><UIcon name="upload" size={11}/>Import</button>
+                    <button style={{...editPill,borderColor:"rgba(91,140,255,0.4)"}} onClick={function(){setShowSyllabusImport(true);}}><UIcon name="upload" size={11}/>Import</button>
                   </div>
                 </div>
+                {totalA>0&&<div style={{height:2,borderRadius:1,background:"rgba(255,255,255,0.06)",marginBottom:14}}>
+                  <div style={{height:"100%",borderRadius:1,background:doneA===totalA?"#69f0ae":"#5b8cff",width:Math.round(doneA/totalA*100)+"%",transition:"width 0.4s"}}/>
+                </div>}
                 {assessments.length===0
-                  ?<div style={{fontSize:12,color:T.text2,padding:"8px 0"}}>No assessments — use Import to load your syllabus.</div>
+                  ?<div style={{textAlign:"center",padding:"36px 0 24px"}}>
+                    <div style={{fontSize:12,color:T.text2,marginBottom:14}}>No assessments this semester</div>
+                    <button style={{...editPill,borderColor:"rgba(91,140,255,0.4)",padding:"6px 16px"}} onClick={function(){setShowSyllabusImport(true);}}>
+                      <UIcon name="upload" size={11}/> Import syllabus
+                    </button>
+                  </div>
                   :(function(){
                     const upcoming2=assessments.filter(function(a){return !a.done&&daysBetween(a.date)>=0;}).sort(function(a,b){return a.date.localeCompare(b.date);});
                     const overdue=assessments.filter(function(a){return !a.done&&daysBetween(a.date)<0;}).sort(function(a,b){return b.date.localeCompare(a.date);});
                     const done2=assessments.filter(function(a){return a.done;}).sort(function(a,b){return b.date.localeCompare(a.date);});
                     return upcoming2.concat(overdue).concat(done2).map(function(a){
                       const days=daysBetween(a.date);
-                      const col=SC[a.subject]||T.accent;
                       const badge=typeBadge(a.type);
                       const isUrg=!a.done&&days>=0&&days<=3;
                       const isPast=!a.done&&days<0;
-                      const dayLabel=days===0?"Today":days===1?"Tomorrow":days<=13?WX_DAYS[new Date(a.date+"T00:00").getDay()]+" · "+days+" days":fmtDate(a.date);
-                      const rowGlow=a.done?"none":isPast?"0 0 14px rgba(255,107,107,0.38)":isUrg?"0 0 8px rgba(255,107,107,0.18)":"none";
-                      return(<div key={a.id} style={{position:"relative",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",paddingLeft:a.done?12:14,borderRadius:8,background:a.done?"rgba(105,240,174,0.04)":T.bg3,border:"0.5px solid "+T.border,boxShadow:rowGlow,marginBottom:6,opacity:a.done?0.5:1,transition:"all 0.15s",overflow:"hidden"}}>
-                        {!a.done&&<div style={{position:"absolute",left:0,top:6,bottom:6,width:2,borderRadius:1,background:isPast?T.danger:col,opacity:isPast?1:0.7}}/>}
-                        <div style={{width:18,height:18,borderRadius:5,border:"1.5px solid "+(a.done?T.success:T.border2),background:a.done?T.success:"transparent",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={function(){toggleAssessmentDone(a.id);}}>
+                      const dayLabel=days===0?"Today":days===1?"Tomorrow":days<=13?WX_DAYS[new Date(a.date+"T00:00").getDay()]+" · "+days+"d":fmtDate(a.date);
+                      const dotCol=a.done?"#69f0ae":isPast?"#ff6b6b":isUrg?"#ffd166":"#5b8cff";
+                      const dotGlow=a.done?"0 0 6px #69f0ae":isPast?"0 0 6px #ff6b6b":isUrg?"0 0 5px #ffd166":"0 0 6px #5b8cff";
+                      const barCol=isPast?T.danger:a.done?"#69f0ae":"#5b8cff";
+                      return(<div key={a.id} style={{position:"relative",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",paddingLeft:14,borderRadius:8,background:T.bg3,border:"0.5px solid "+(isPast&&!a.done?"rgba(255,107,107,0.2)":T.border),marginBottom:5,opacity:a.done?0.5:1,overflow:"hidden",transition:"all 0.15s"}}>
+                        <div style={{position:"absolute",left:0,top:5,bottom:5,width:2,borderRadius:1,background:barCol,opacity:a.done?0.35:isPast?1:0.7}}/>
+                        <div style={{width:18,height:18,borderRadius:5,border:"1.5px solid "+(a.done?"#69f0ae":T.border2),background:a.done?"#69f0ae":"transparent",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={function(){toggleAssessmentDone(a.id);}}>
                           {a.done&&<span style={{fontSize:10,color:"#05071a",fontWeight:700}}>✓</span>}
                         </div>
                         <div style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                          <span style={{color:col,fontWeight:700,fontSize:12}}>{a.subject}</span>
-                          <span style={{color:a.done?T.text3:T.text,fontSize:12,textDecoration:a.done?"line-through":"none"}}>{" — "}{a.name}</span>
+                          <span style={{fontSize:9,fontWeight:700,color:T.text3,textTransform:"uppercase",letterSpacing:"0.04em",marginRight:6}}>{a.subject}</span>
+                          <span style={{fontSize:12,color:a.done?T.text3:T.text,textDecoration:a.done?"line-through":"none"}}>{a.name}</span>
                         </div>
-                        <span style={{fontSize:9,fontWeight:600,color:badge.color,background:badge.bg,border:"1px solid "+badge.border,padding:"2px 8px",borderRadius:999,flexShrink:0,letterSpacing:0.1,whiteSpace:"nowrap"}}>{badge.label}</span>
-                        <span style={{fontSize:10,color:isPast&&!a.done?T.danger:isUrg?T.danger:a.done?T.text3:T.text2,fontWeight:600,flexShrink:0,whiteSpace:"nowrap",minWidth:60,textAlign:"right"}}>{a.done?fmtDate(a.date):isPast?Math.abs(days)+"d overdue":dayLabel}</span>
+                        <span style={{fontSize:9,fontWeight:600,color:T.text3,background:"rgba(255,255,255,0.05)",border:"0.5px solid rgba(255,255,255,0.10)",padding:"2px 7px",borderRadius:999,flexShrink:0,whiteSpace:"nowrap"}}>{badge.label}</span>
+                        <div style={{width:8,height:8,borderRadius:"50%",background:dotCol,boxShadow:dotGlow,flexShrink:0}}/>
+                        <span style={{fontSize:10,color:T.text3,flexShrink:0,whiteSpace:"nowrap",minWidth:56,textAlign:"right"}}>{a.done?fmtDate(a.date):isPast?Math.abs(days)+"d overdue":dayLabel}</span>
                         <button style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:13,padding:"0 2px",flexShrink:0,opacity:0.4,lineHeight:1}} onClick={function(){removeAssessment(a.id);}}>×</button>
                       </div>);
                     });
@@ -2995,108 +3286,13 @@ function App(){
                   <div style={sT}>Upcoming Classes</div>
                   <div style={{fontSize:9,color:T.text3}}>next 28 days</div>
                 </div>
-                {upcomingClasses.length===0?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No upcoming classes in the next 28 days.":"Connect Google Calendar to see your schedule."}</div>:(function(){let lastDate2="";return upcomingClasses.map(function(ev){const showDate=ev.date!==lastDate2;lastDate2=ev.date;const col=evColor(ev);const isToday=ev.date===todayStr();return(<div key={ev.id}>{showDate&&<div style={{fontSize:10,fontWeight:600,color:isToday?T.accent:T.text2,marginTop:10,marginBottom:6,paddingTop:8,borderTop:"0.5px solid "+T.border}}>{isToday?"Today — ":""}{new Date(ev.date+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"short"})}</div>}<div style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start"}}><div style={{width:2,borderRadius:2,background:col,alignSelf:"stretch",minHeight:28,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:col,marginBottom:1}}>{evLabel(ev)}</div><div style={{fontSize:12,color:T.text,lineHeight:1.5}}>{ev.title}</div>{ev.description&&<div style={{fontSize:10,color:T.text3,marginTop:2,lineHeight:1.4}}>{ev.description.slice(0,120)}{ev.description.length>120?"…":""}</div>}<div style={{fontSize:10,color:T.text3,marginTop:2}}>{ev.time}</div></div></div></div>);});}())}
+                {upcomingClasses.length===0?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No upcoming classes in the next 28 days.":"Connect Google Calendar to see your schedule."}</div>:(function(){let lastDate2="";return upcomingClasses.map(function(ev){const showDate=ev.date!==lastDate2;lastDate2=ev.date;const col=evColor(ev);const isToday=ev.date===todayStr();return(<div key={ev.id}>{showDate&&<div style={{fontSize:10,fontWeight:600,color:isToday?T.accent:T.text2,marginTop:10,marginBottom:6,paddingTop:8,borderTop:"0.5px solid "+T.border}}>{isToday?"Today — ":""}{new Date(ev.date+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"short"})}</div>}<div style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start"}}><div style={{width:2,borderRadius:2,background:col,alignSelf:"stretch",minHeight:28,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:T.text2,marginBottom:1}}>{evLabel(ev)}</div><div style={{fontSize:12,color:T.text,lineHeight:1.5}}>{ev.title}</div>{ev.description&&<div style={{fontSize:10,color:T.text3,marginTop:2,lineHeight:1.4}}>{ev.description.slice(0,120)}{ev.description.length>120?"…":""}</div>}<div style={{fontSize:10,color:T.text3,marginTop:2}}>{ev.time}</div></div></div></div>);});}())}
               </div>
             </React.Fragment>);
           })()}
         </div>}
 
-        {page==="Work"&&(function(){
-          const payCycleDay=Number(data.payCycleDay||1);
-          const hrRate=Number((data.finance&&data.finance.hourlyRate)||0);
-          function getCurrentPayPeriod(cycDay){const today=new Date();const yr=today.getFullYear();const mo=today.getMonth();const cycleStart=new Date(yr,mo,cycDay);if(today<cycleStart){const start=new Date(yr,mo-1,cycDay);const end=new Date(yr,mo,cycDay-1);return{start:dStr(start),end:dStr(end)};}return{start:dStr(cycleStart),end:dStr(new Date(yr,mo+1,cycDay-1))};}
-          const {start:periodStart,end:periodEnd}=getCurrentPayPeriod(payCycleDay);
-          const periodShifts=dedupedEvents.filter(isGoTabEvent).filter(function(ev){return ev.date>=periodStart&&ev.date<=periodEnd;}).sort(function(a,b){return a.date.localeCompare(b.date);});
-          const periodNorm=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.normalHrs:0);},0);
-          const periodPen=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.penaltyHrs:0);},0);
-          const periodEquiv=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.totalEquiv:0);},0);
-          const estimatedPay=hrRate>0?periodEquiv*hrRate:null;
-          function estimateTax(gross){if(gross<=18200)return gross*0.02;if(gross<=45000)return(gross-18200)*0.19+gross*0.02;if(gross<=135000)return 5092+(gross-45000)*0.30+gross*0.02;if(gross<=190000)return 32092+(gross-135000)*0.37+gross*0.02;return 52442+(gross-190000)*0.45+gross*0.02;}
-          const periodDays=Math.max(1,Math.round((new Date(periodEnd)-new Date(periodStart))/864e5)+1);
-          const annualGross=estimatedPay!=null?estimatedPay/periodDays*365:0;
-          const periodTax=estimatedPay!=null?estimateTax(annualGross)/365*periodDays:null;
-          const periodNet=estimatedPay!=null&&periodTax!=null?estimatedPay-periodTax:null;
-          const normPay=hrRate>0?periodNorm*hrRate:null;
-          const penPay=hrRate>0?periodPen*hrRate*1.5:null;
-          function fmtPeriod(){const s=new Date(periodStart+"T12:00:00");const e=new Date(periodEnd+"T12:00:00");return s.toLocaleDateString("en-AU",{day:"numeric",month:"short"})+" – "+e.toLocaleDateString("en-AU",{day:"numeric",month:"short",year:"numeric"});}
-          function fmt$(n){return n!=null?"$"+n.toFixed(2):"—";}
-          return(
-            <div style={{maxWidth:700}}>
-              {/* Card 1: Pay Summary */}
-              <div className="card-rim" style={card()}>
-                <div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"center",marginBottom:16,paddingBottom:14,borderBottom:"0.5px solid "+T.border}}>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,color:T.text3}}>Rate $</span><input type="number" min={0} step={0.01} style={{...inp,width:66,padding:"3px 6px",fontSize:11}} placeholder="0.00" value={(data.finance&&data.finance.hourlyRate)||""} onChange={function(ev){setData(function(p){return{...p,finance:{...p.finance,hourlyRate:Number(ev.target.value)||0}};});}}/><span style={{fontSize:11,color:T.text3}}>/hr</span></div>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,color:T.text3}}>Pay cycle</span><input type="number" min={1} max={28} style={{...inp,width:44,textAlign:"center",padding:"3px 6px",fontSize:11}} value={payCycleDay} onChange={function(ev){setData(function(p){return{...p,payCycleDay:Math.max(1,Math.min(28,Number(ev.target.value)||1))};});}}/><span style={{fontSize:11,color:T.text3}}>th of month</span></div>
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(3,1fr)",gap:12,marginBottom:14}}>
-                  <div style={{...glassMini,padding:"16px 18px"}}>
-                    <div style={{...statLabel,marginBottom:4}}>Gross pay</div>
-                    <div style={{fontSize:mob?24:30,fontWeight:800,letterSpacing:"-0.02em",color:T.accent,lineHeight:1.05}}>{fmt$(estimatedPay)}</div>
-                    <div style={{fontSize:10,color:T.text3,marginTop:5}}>{periodEquiv.toFixed(1)}h equiv · {periodShifts.length} shift{periodShifts.length!==1?"s":""}</div>
-                  </div>
-                  <div style={{...glassMini,padding:"16px 18px"}}>
-                    <div style={{...statLabel,marginBottom:4}}>Est. tax</div>
-                    <div style={{fontSize:mob?24:30,fontWeight:800,letterSpacing:"-0.02em",color:periodTax!=null?T.danger:T.text3,lineHeight:1.05}}>{periodTax!=null?"−$"+periodTax.toFixed(2):"—"}</div>
-                    <div style={{fontSize:10,color:T.text3,marginTop:5}}>{hrRate>0?"ATO 2025-26 · annualised":"Set rate above"}</div>
-                  </div>
-                  <div style={{...glassMini,padding:"16px 18px"}}>
-                    <div style={{...statLabel,marginBottom:4}}>Take-home</div>
-                    <div style={{fontSize:mob?24:30,fontWeight:800,letterSpacing:"-0.02em",color:periodNet!=null?T.success:T.text3,lineHeight:1.05}}>{fmt$(periodNet)}</div>
-                    <div style={{fontSize:10,color:T.text3,marginTop:5}}>after est. tax</div>
-                  </div>
-                </div>
-                <div style={{fontSize:9,color:T.text3}}>{fmtPeriod()} · Tax estimate only — actual PAYG may differ</div>
-              </div>
-              {/* Card 2: Hours breakdown */}
-              <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(3,1fr)",gap:10,marginBottom:12}}>
-                {[
-                  {label:"Standard hrs",value:periodNorm.toFixed(1)+"h",sub:normPay!=null?fmt$(normPay)+" earned":"before 7pm · 1.0×",color:T.success},
-                  {label:"Penalty hrs",value:periodPen.toFixed(1)+"h",sub:penPay!=null?fmt$(penPay)+" (equiv)":"after 7pm · 1.5×",color:T.warn},
-                  {label:"Shifts",value:String(periodShifts.length),sub:"this pay period",color:"#f3f7fd"}
-                ].map(function(s){return(<div key={s.label} className="card-rim" style={{...glassMini,padding:"14px 16px"}}><div style={{...statLabel,marginBottom:4}}>{s.label}</div><div style={{fontSize:mob?20:24,fontWeight:800,letterSpacing:"-0.02em",color:s.color,lineHeight:1.05}}>{s.value}</div><div style={{fontSize:10,color:T.text3,marginTop:5}}>{s.sub}</div></div>);})}
-              </div>
-              {/* Card 3: Shift list */}
-              <div className="card-rim" style={card()}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                  <div style={sT}>Shift breakdown</div>
-                  <div style={{fontSize:9,color:T.text3}}>Penalty = after 7pm × 1.5</div>
-                </div>
-                {periodShifts.length===0
-                  ?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No GoTab shifts found for this pay period.":"Connect Google Calendar to see your shifts."}</div>
-                  :<div>
-                    {periodShifts.map(function(ev){
-                      const past=daysBetween(ev.date)<0;
-                      const pay=shiftPay(ev.time);
-                      const rowPay=hrRate>0&&pay?fmt$(pay.totalEquiv*hrRate):"—";
-                      const d=new Date(ev.date+"T12:00:00");
-                      return(<div key={ev.id} style={{position:"relative",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",paddingLeft:14,borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:6,opacity:past?0.55:1,overflow:"hidden"}}>
-                        <div style={{position:"absolute",left:0,top:6,bottom:6,width:2,borderRadius:1,background:T.accent,opacity:past?0.35:0.7}}/>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:11,fontWeight:600,color:T.text,marginBottom:2}}>{d.toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short"})}</div>
-                          <div style={{fontSize:10,color:T.text2}}>{ev.time}</div>
-                        </div>
-                        {pay&&<div style={{display:"flex",gap:10,fontSize:10,flexShrink:0}}>
-                          <span style={{color:T.success}}>{pay.normalHrs}h std</span>
-                          {pay.penaltyHrs>0&&<span style={{color:T.warn}}>{pay.penaltyHrs}h pen</span>}
-                        </div>}
-                        <div style={{fontSize:12,fontWeight:700,color:T.text,flexShrink:0,minWidth:60,textAlign:"right"}}>{rowPay}</div>
-                      </div>);
-                    })}
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderTop:"0.5px solid "+T.border,marginTop:4}}>
-                      <div style={{fontSize:10,fontWeight:700,color:T.text}}>Total</div>
-                      <div style={{display:"flex",gap:14,fontSize:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                        <span style={{color:T.success,fontWeight:600}}>{periodNorm.toFixed(1)}h std</span>
-                        {periodPen>0&&<span style={{color:T.warn,fontWeight:600}}>{periodPen.toFixed(1)}h pen</span>}
-                        <span style={{color:T.accent,fontWeight:700}}>{periodEquiv.toFixed(1)}h equiv</span>
-                        <span style={{color:T.text,fontWeight:700}}>{fmt$(estimatedPay)}</span>
-                      </div>
-                    </div>
-                  </div>
-                }
-              </div>
-            </div>
-          );
-        })()}
+        {page==="Work"&&<div style={{maxWidth:mob?undefined:900}}><ErrorBoundary name="Work"><WorkSection mob={mob} data={data.work||{}} onUpdate={updateWork} gcalEvents={dedupedEvents}/></ErrorBoundary></div>}
 
         {page==="Gym"&&<ErrorBoundary name="Gym"><GymSection mob={mob} gymData={data.gym} onAddEx={function(){setModal("add_exercise");setMForm({});}} onLogW={function(ex){setModal("log_weight");setMForm({exId:ex.id,exName:ex.name});}} onSave={function(wk){setData(function(p){
   const rl=p.gym.rotation?p.gym.rotation.length:1;
