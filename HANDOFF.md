@@ -1,14 +1,24 @@
-# Dashboard Handoff — May 16 2026
+# Dashboard Handoff — May 16 2026 (operational facts updated 2026-06-24)
+
+> **Current state (2026-06-24):** the redesign is merged to `main`, and the app is
+> now **precompiled** — JSX lives in `app.jsx`, compiled to `app.js` by `build.js`.
+> Edit `app.jsx`, run `node build.js` (a pre-commit hook does this too), then push.
+> See `README.md` and the Obsidian note "Build Workflow — Precompiled App". The
+> session log below is historical (May 16) — architecture is still accurate, but
+> file/workflow details have moved on; this top block is the source of truth.
 
 ## What This Project Is
 
-Jayden's personal dashboard — a single HTML file using React 18 (CDN/UMD), Babel Standalone, Firebase Auth + Firestore, Google Calendar API (read-only), and Gemini 2.5 Flash. 
+Jayden's personal dashboard — a React 18 (CDN/UMD) app, Firebase Auth + Firestore,
+Google Calendar API (read-only), Gemini 2.5 Flash, and Groq for the Boardroom.
+JSX is precompiled to `app.js` (no in-browser Babel).
 
 - **Live site:** `https://jaydenpineda30-glitch.github.io/Main/dashboard.html`
 - **GitHub repo:** `git@github.com:jaydenpineda30-glitch/Main.git`
-- **Local files:** `C:\Users\Jayde\my-project\`
+- **Local files:** `/Users/jashleypineda/Library/CloudStorage/OneDrive-Personal/Documents/my-project/`
 
-Auto-push is active: every `git commit` triggers `git push` via `.git/hooks/post-commit`. Live site updates ~60s after any commit.
+There is **no auto-push hook** — push deliberately. (A pre-commit hook only rebuilds
+`app.js` from `app.jsx`.) Live site updates ~60s after a push to `main`.
 
 ---
 
@@ -16,7 +26,9 @@ Auto-push is active: every `git commit` triggers `git push` via `.git/hooks/post
 
 | File | Purpose |
 |------|---------|
-| `dashboard.html` | Entire app — React, UI, Firebase logic |
+| `app.jsx` | **The app** — React, UI, Firebase logic (edit this; compiled to `app.js`) |
+| `app.js` | Generated bundle (do not hand-edit); `dashboard.html` is now just the shell that loads it |
+| `build.js` | Compiles `app.jsx` → `app.js` |
 | `gemini-service.js` | Quick Capture classification via Gemini 2.5 Flash |
 | `ollama-service.js` | AI routing for check-ins + reflection analysis (Gemini 2.5 Flash, no Ollama fallback needed) |
 | `gcal-sync.js` | Google Calendar read-only sync |
@@ -113,13 +125,14 @@ Three places updated in `dashboard.html`:
 ## How to Pick Up Next Session
 
 1. Live site: `https://jaydenpineda30-glitch.github.io/Main/dashboard.html`
-2. Make changes to `dashboard.html` (and service files if needed)
-3. `git add dashboard.html && git commit -m "..."` — auto-push handles the rest
-4. Hard refresh the browser (Ctrl+Shift+R) to pick up changes — GitHub Pages takes ~60s to deploy
+2. Make changes to `app.jsx` (and service files if needed)
+3. `node build.js` (or rely on the pre-commit hook) to regenerate `app.js`
+4. `git add app.jsx app.js && git commit -m "..." && git push`
+5. Hard refresh the browser (Cmd/Ctrl+Shift+R) — GitHub Pages takes ~60s to deploy
 
 **To run Obsidian export manually:**
-```powershell
-node "C:\Users\Jayde\my-project\export-to-obsidian.js"
+```bash
+node export-to-obsidian.js
 ```
 
 ---
@@ -141,7 +154,9 @@ Two AI coaches that both reply to every message, available via a 🧠 floating a
 - **Alex** — Hormozi-style: direct, logic-based, zero fluff, pushes for action and concrete numbers.
 - **Chris** — Williamson-style: psychologically deep, seeks root cause, ends every reply with one genuine question.
 
-Both run via **Groq** (model: `llama-3.3-70b-versatile`).
+Both run via **Groq** (model: `gpt-oss-120b`). As of 2026-06-24 the Boardroom uses a
+deliberation loop, intent detection (direction vs how-to), and a Project Context panel;
+the persona/API list below predates that — see `boardroom-service.js` for the current API.
 
 ### Files
 
