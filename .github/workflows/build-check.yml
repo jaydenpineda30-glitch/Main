@@ -1,0 +1,44 @@
+name: Build check
+
+# Verifies app.js is the genuine compile of app.jsx, so a stale bundle never
+# reaches the live site. Runs on any push/PR that touches the app source.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app.jsx'
+      - 'app.js'
+      - 'build.js'
+      - 'package.json'
+      - 'package-lock.json'
+  pull_request:
+    paths:
+      - 'app.jsx'
+      - 'app.js'
+      - 'build.js'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install build deps
+        run: npm install --no-audit --no-fund
+
+      - name: Rebuild app.js from app.jsx
+        run: node build.js
+
+      - name: Fail if committed app.js is out of date
+        run: |
+          if ! git diff --quiet -- app.js; then
+            echo "::error::app.js does not match app.jsx. Run 'node build.js' (or 'npm run build') and commit the result."
+            git --no-pager diff --stat -- app.js
+            exit 1
+          fi
+          echo "app.js is in sync with app.jsx ✓"

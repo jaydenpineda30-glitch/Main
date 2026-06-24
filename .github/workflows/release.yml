@@ -4,9 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - 'dashboard.html'
+      - 'app.jsx'          # app source (compiled to app.js)
+      - 'app.js'           # compiled bundle that actually ships
+      - 'dashboard.html'   # shell (CDN scripts, mount point)
       - 'gemini-service.js'
       - 'ollama-service.js'
+      - 'boardroom-service.js'
       - 'gcal-sync.js'
       - 'export-to-obsidian.js'
 
