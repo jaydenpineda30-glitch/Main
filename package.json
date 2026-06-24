@@ -1,5 +1,11 @@
 {
+  "scripts": {
+    "build": "node build.js"
+  },
   "dependencies": {
     "firebase-admin": "^13.10.0"
+  },
+  "devDependencies": {
+    "@babel/standalone": "7.23.2"
   }
 }
