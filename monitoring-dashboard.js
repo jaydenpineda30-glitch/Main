@@ -5,11 +5,9 @@
  *
  * Depends on: React (global), error-handler.js, health-monitor.js, network-monitor.js
  * Exposes globals:
- *   window.StatusBar          — compact always-visible status strip
  *   window.MonitoringPanel    — full monitoring panel (logs, analytics, health, settings)
  *
  * Usage inside JSX (Babel compiled):
- *   <StatusBar onOpenPanel={function(){ setShowMonitor(true); }} />
  *   {showMonitor && <MonitoringPanel
  *     onClose={function(){ setShowMonitor(false); }}
  *     settings={{ geminiKey, githubPAT }}
@@ -385,58 +383,6 @@
         color: C.text, outline: 'none', boxSizing: 'border-box'
       }
     });
-  }
-
-  // ── StatusBar component ───────────────────────────────────────────────────
-
-  /**
-   * Compact strip shown at the top of the dashboard.
-   * Props: { onOpenPanel }
-   */
-  function StatusBar(props) {
-    var health = useHealthStatus();
-    var net    = useNetworkStatus();
-
-    var allOk   = health ? health.healthy  : true;
-    var offline = !net.online;
-    var queued  = net.queueSize;
-
-    var label  = offline      ? '⚠ Offline'
-               : !allOk      ? '⚠ System issue'
-               : queued > 0  ? '↻ Syncing (' + queued + ')'
-               : '✓ All systems healthy';
-
-    var labelColor = offline || !allOk ? C.danger
-                   : queued > 0        ? C.warn
-                   : C.success;
-
-    // Frameless: no black bar, no glow, no Logs button (Logs lives in the side rail now)
-    return createElement('div', {
-      style: {
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '8px 2px 2px', fontSize: 11
-      }
-    },
-      createElement('div', {
-        style: { display: 'flex', alignItems: 'center', gap: 6, color: labelColor }
-      },
-        createElement('span', {
-          style: {
-            width: 7, height: 7, borderRadius: '50%', background: labelColor,
-            display: 'inline-block'
-          }
-        }),
-        label,
-        offline && queued > 0 && createElement('span', { style: { color: C.text3 } },
-          ' · ' + queued + ' pending'
-        )
-      ),
-      health && createElement('span', { style: { color: C.text3, fontSize: 10 } },
-        'checked ' + (health.timestamp
-          ? new Date(health.timestamp).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })
-          : '—')
-      )
-    );
   }
 
   // ── HealthChecks sub-component ────────────────────────────────────────────
@@ -1225,7 +1171,6 @@
   }
 
   // ── Export ─────────────────────────────────────────────────────────────────
-  window.StatusBar       = StatusBar;
   window.MonitoringPanel = MonitoringPanel;
 
 })();

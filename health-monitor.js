@@ -124,11 +124,13 @@
       });
     },
 
-    /** Start periodic checks. Runs one immediately. */
+    /** Start periodic checks. First run is deferred ~3s so its Firebase ping
+     *  doesn't compete with the critical initial Firestore data load on mount. */
     start: function (intervalMs) {
       if (_intervalId) return;
-      this.runChecks();
-      _intervalId = setInterval(this.runChecks.bind(this), intervalMs || CHECK_INTERVAL_MS);
+      var run = this.runChecks.bind(this);
+      setTimeout(run, 3000);
+      _intervalId = setInterval(run, intervalMs || CHECK_INTERVAL_MS);
     },
 
     stop: function () {

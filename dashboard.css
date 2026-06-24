@@ -43,8 +43,7 @@ input,select,textarea,button{-webkit-tap-highlight-color:transparent;}
 
 /* ── Apple glass card + hover rim light + cursor spotlight ── */
 .card-rim{position:relative;overflow:hidden;transition:box-shadow .3s var(--ease-out),transform .2s var(--ease-out);}
-/* glossy top-corner refraction streak — gives every card the liquid-glass sheen */
-.card-rim>.card-gloss,.card-rim::marker{display:none;}
+.card-rim::marker{display:none;}
 
 /* Cursor-tracking spotlight */
 .card-rim::before,.glow-item::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;z-index:1;}
@@ -66,12 +65,6 @@ input,select,textarea,button{-webkit-tap-highlight-color:transparent;}
   .card-rim:hover{box-shadow:0 0 55px rgba(30,100,255,.45),0 0 130px rgba(20,70,220,.26),0 0 260px rgba(15,50,200,.14);transform:translateY(-2px);}
   .glow-item:hover{box-shadow:0 0 18px rgba(60,110,235,.22),inset 0 0 0 1px rgba(120,160,255,.28);}
 }
-/* ── Boardroom button glow ── */
-@keyframes brSoft { 0%,100%{box-shadow:0 4px 20px rgba(99,102,241,0.45);} 50%{box-shadow:0 4px 28px rgba(255,209,102,0.6);} }
-@keyframes brUrgent { 0%,100%{box-shadow:0 4px 20px rgba(255,107,107,0.5);} 50%{box-shadow:0 4px 32px rgba(255,107,107,0.95);} }
-.br-glow-soft { animation: brSoft 2.4s ease-in-out infinite; }
-.br-glow-urgent { animation: brUrgent 1.4s ease-in-out infinite; }
-
 /* ── Monitoring panel entry ── */
 @keyframes backdrop-in{from{opacity:0;}to{opacity:1;}}
 @keyframes panel-in{from{opacity:0;transform:scale(0.97) translateY(8px);}to{opacity:1;transform:scale(1) translateY(0);}}
@@ -79,7 +72,6 @@ input,select,textarea,button{-webkit-tap-highlight-color:transparent;}
 /* ── Taste: accessibility + typography utilities ── */
 html{scroll-behavior:smooth;}
 button:focus-visible{outline:2px solid rgba(91,140,255,0.7);outline-offset:3px;border-radius:8px;}
-.tabnum{font-variant-numeric:tabular-nums;}
 
 /* ── Emil: button press feedback ── */
 button{transition:transform 140ms ease-out;}
