@@ -2422,12 +2422,14 @@ function App(){
     setBrPendingIntent(null);
     brRun(text,intent,hist,userMsg);
   }
+  // Tap-to-confirm when intent was ambiguous: route the original message to the chosen mode.
   function brConfirmIntent(intent){
     if(!brPendingIntent) return;
     var pi=brPendingIntent;
     setBrPendingIntent(null);
     brRun(pi.text,intent,pi.hist,pi.userMsg);
   }
+  // Shared runner: 'direction' → deliberation loop, 'howto' → step-by-step. userMsg is already rendered; hist is the history before it.
   function brRun(text,intent,hist,userMsg){
     setBrLoading(true);
     setBrIntentMode(intent);
@@ -2456,6 +2458,7 @@ function App(){
       });
       setBrLoading(false);
     }).catch(function(e){
+      // Preserve any turns that already streamed before the error (e.g. a 429 mid-deliberation).
       if(coachMsgs.length){
         setBrLastSpeaker(coachMsgs[coachMsgs.length-1].persona);
         setData(function(p){
