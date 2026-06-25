@@ -552,35 +552,48 @@ Promise.all([
   }
 
   // Write work log — one markdown file per calendar month, overwritten each run.
-  var taskLog = (userData.dashData && userData.dashData.work && userData.dashData.work.taskLog) || [];
+  // Includes BOTH the per-shift diary (shiftLogs) and the logged tasks (taskLog).
+  var work      = (userData.dashData && userData.dashData.work) || {};
+  var taskLog   = work.taskLog || [];
+  var shiftLogs = work.shiftLogs || {};
   var wlWritten = 0;
-  if (taskLog.length) {
-    var byMonth = {};
-    taskLog.forEach(function(t) {
-      var month = (t.shiftDate || '').slice(0, 7);
-      if (!month) return;
-      if (!byMonth[month]) byMonth[month] = {};
-      if (!byMonth[month][t.shiftDate]) byMonth[month][t.shiftDate] = [];
-      byMonth[month][t.shiftDate].push(t);
-    });
-    Object.keys(byMonth).forEach(function(month) {
-      var byDate = byMonth[month];
-      var lines = ['---', 'type: work-log', 'month: ' + month, 'tags: [work, gotab]', '---', '', '# Work Log — ' + month, ''];
-      Object.keys(byDate).sort().reverse().forEach(function(date) {
-        var d = new Date(date + 'T12:00:00');
-        lines.push('## ' + d.toLocaleDateString('en-AU', {weekday:'long', day:'numeric', month:'long'}));
-        lines.push('');
-        byDate[date].forEach(function(t) {
+  var byMonth   = {}; // month -> date -> { diary: '', tasks: [] }
+  function workSlot(date) {
+    var month = (date || '').slice(0, 7);
+    if (!month) return null;
+    if (!byMonth[month]) byMonth[month] = {};
+    if (!byMonth[month][date]) byMonth[month][date] = { diary: '', tasks: [] };
+    return byMonth[month][date];
+  }
+  taskLog.forEach(function(t) { var s = workSlot(t.shiftDate); if (s) s.tasks.push(t); });
+  Object.keys(shiftLogs).forEach(function(key) {
+    var entry = shiftLogs[key] || {};
+    // New entries store their own date; legacy entries were keyed by the date itself.
+    var date  = entry.date || (/^\d{4}-\d{2}-\d{2}/.test(key) ? key.slice(0, 10) : null);
+    if (!date || !entry.notes) return;
+    var s = workSlot(date); if (s) s.diary = entry.notes;
+  });
+  Object.keys(byMonth).forEach(function(month) {
+    var byDate = byMonth[month];
+    var lines  = ['---', 'type: work-log', 'month: ' + month, 'tags: [work, gotab]', '---', '', '# Work Log — ' + month, ''];
+    Object.keys(byDate).sort().reverse().forEach(function(date) {
+      var d   = new Date(date + 'T12:00:00');
+      var rec = byDate[date];
+      lines.push('## ' + d.toLocaleDateString('en-AU', {weekday:'long', day:'numeric', month:'long'}));
+      lines.push('');
+      if (rec.diary) { lines.push('**Shift diary**'); lines.push(''); lines.push(rec.diary); lines.push(''); }
+      if (rec.tasks.length) {
+        rec.tasks.forEach(function(t) {
           var tag = t.tag ? '**' + t.tag + '** — ' : '';
           lines.push('- ' + tag + (t.text || t.tag || ''));
         });
         lines.push('');
-      });
-      var dest = path.join(WORK_DIR, 'Work-Log-' + month + '.md');
-      fs.writeFileSync(dest, lines.join('\n'), 'utf8');
-      wlWritten++;
+      }
     });
-  }
+    var dest = path.join(WORK_DIR, 'Work-Log-' + month + '.md');
+    fs.writeFileSync(dest, lines.join('\n'), 'utf8');
+    wlWritten++;
+  });
 
   console.log('');
   console.log('Done!  ' + new Date().toLocaleString('en-AU'));

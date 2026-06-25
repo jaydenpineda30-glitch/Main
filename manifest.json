@@ -1,0 +1,12 @@
+{
+  "name": "Jayden's Dashboard",
+  "short_name": "Dashboard",
+  "start_url": "./dashboard.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#05071a",
+  "theme_color": "#0e1028",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

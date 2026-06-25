@@ -397,7 +397,10 @@
 
   function summarizeSession(transcript, mode) {
     var convo = transcript.map(function (m) { return (m.persona || 'Jayden') + ': ' + m.text; }).join('\n');
-    var prompt = 'Summarize this coaching session in ONE sentence (max 25 words) capturing the key realization or commitment. Then list any concrete commitments Jayden made as a JSON array of short strings. Respond ONLY as JSON: {"summary":"...","commitments":["..."]}\n\nSESSION (' + mode + '):\n' + convo;
+    var prompt = 'Summarize this coaching session in ONE sentence (max 25 words) capturing the key realization or commitment. '
+      + 'Then list 1-3 concrete next actions for Jayden as a JSON array of short imperative strings (e.g. "Draft the first paragraph of the PFR report"). '
+      + 'ALWAYS return at least one action — small and doable in the next day or two — even if the session was mostly emotional; never return an empty array. '
+      + 'Respond ONLY as JSON: {"summary":"...","commitments":["..."]}\n\nSESSION (' + mode + '):\n' + convo;
     return chat('You compress coaching sessions into durable memory. Be precise, no fluff.', [], prompt)
       .then(function (text) {
         var m = text.match(/\{[\s\S]*\}/);
@@ -416,10 +419,22 @@
       .then(function (t) { var m = t.match(/\[[\s\S]*\]/); return m ? JSON.parse(m[0]) : [oldMoments.map(function (x) { return x.summary; }).join(' ')]; });
   }
 
-  function closingRound(transcript) {
+  function closingRound(transcript, northStar) {
     var flatTranscript = transcript.map(function (m) {
       return (m.persona || 'Jayden') + ': ' + m.text;
     }).join('\n');
+
+    // The conclusion MUST land on direction, not just another question. Give the coaches
+    // the current North Star (or tell them to articulate one) so the wrap-up ties the
+    // session's short-term steps to the long-term direction instead of staying tactical.
+    var nsBlock = northStar
+      ? ('\n\nJAYDEN\'S NORTH STAR (anchor the conclusion to this): ' + northStar)
+      : ('\n\nNO NORTH STAR IS DEFINED YET. Part of this conclusion is to NAME one: a single, clear long-term direction Jayden is moving toward, in one sentence ("You are becoming...").');
+    var closeRules = '\n\nHARD RULES FOR THIS DEBRIEF:\n'
+      + '- This is a CONCLUSION, not more exploration. Do NOT end on a question to Jayden. Do NOT keep interrogating.\n'
+      + '- Explicitly connect the session to the long-term direction (the North Star), and say how today\'s short-term step serves it.\n'
+      + '- Land 1 concrete goal or commitment Jayden is leaving with — stated as a decision, not a maybe.\n'
+      + '- When you and your co-coach have reached a solid joint conclusion (direction named + one concrete commitment), end your message with the word CLOSE on its own line.';
 
     var results = [];
     var maxTurns = 4;
@@ -436,14 +451,14 @@
            + 'You are speaking directly to Chris, not to Jayden. '
            + 'Summarise in 2-3 punchy sentences what you observed and your key recommendation for Jayden. '
            + 'If Chris has already spoken, respond with your final layer and land a concrete joint conclusion. '
-           + 'When you feel you have both reached a solid joint conclusion, end your message with the word CLOSE on its own line.\n\n'
+           + nsBlock + closeRules + '\n\n'
            + 'SESSION TRANSCRIPT:\n' + flatTranscript
            + (lastResult ? '\n\nChris said: ' + lastResult.text : ''))
         : ('You are Chris, closing a coaching session with your co-coach Alex. '
            + 'You are speaking directly to Alex, not to Jayden. '
            + 'Add the psychological layer to what Alex observed — the root cause or the deeper pattern. '
            + 'If this is the final exchange, land a concrete joint conclusion for Jayden. '
-           + 'When you feel you have both reached a solid joint conclusion, end your message with the word CLOSE on its own line.\n\n'
+           + nsBlock + closeRules + '\n\n'
            + 'SESSION TRANSCRIPT:\n' + flatTranscript
            + (lastResult ? '\n\nAlex said: ' + lastResult.text : ''));
 

@@ -341,6 +341,21 @@ function isGoTabEvent(ev){
     (ev.title&&(ev.title.toLowerCase().includes("gotab")||ev.title.toLowerCase().includes("shift")))
   );
 }
+// Stable per-shift key so two shifts on the SAME day don't collide in shiftLogs/expanded state.
+function shiftKey(ev){return (ev&&ev.id!=null)?String(ev.id):((ev&&ev.date||"")+"|"+(ev&&ev.time||""));}
+// Classify a work-calendar event: payable shift, paid meeting (highlighted differently), or ignored.
+// Rules by day+time (Australia local): Sat 7–8am = ignore (never attended/unpaid);
+// Tue 2:00pm & Fri 11:00am = recurring paid meeting; everything else = shift.
+function classifyWorkEvent(ev){
+  if(!ev||!ev.date||!ev.time)return"shift";
+  var dow=new Date(ev.date+"T12:00:00").getDay();
+  var t=parseTimes(ev.time);
+  function near(v,target){return Math.abs(v-target)<=10;}
+  if(dow===6&&near(t.start,7*60))return"ignore";   // Saturday 7am event
+  if(dow===2&&near(t.start,14*60))return"meeting";  // Tuesday 2:00pm
+  if(dow===5&&near(t.start,11*60))return"meeting";  // Friday 11:00am
+  return"shift";
+}
 
 function dedupeEvents(evs){
   var seen=new Map();
@@ -1009,6 +1024,8 @@ function FinanceSection({data,onUpdate,mob,gcalEvents}){
   const [editExpForm,setEditExpForm]=useState({name:"",amount:"",cat:"Other"});
   const [editSrc,setEditSrc]=useState(false);
   const [showRecMgr,setShowRecMgr]=useState(false);
+  const [editRecId,setEditRecId]=useState(null);
+  const [editRecForm,setEditRecForm]=useState({name:"",amount:"",cat:"Bills",dueDay:""});
   const [recForm,setRecForm]=useState({name:"",amount:"",cat:"Bills",dueDay:""});
   const fBtnP={...btnGlassP};
   const fInp={width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"};
@@ -1032,7 +1049,7 @@ function FinanceSection({data,onUpdate,mob,gcalEvents}){
   const allThisMonth=recurringThisMonth.concat(oneOffThisMonth);
   const srcAmounts=monthlyIncome[month]||{};
   const hourlyRate=Number(data.hourlyRate||0);
-  const monthShifts=(gcalEvents||[]).filter(function(ev){return ev.date&&ev.date.startsWith(month)&&isGoTabEvent(ev);});
+  const monthShifts=(gcalEvents||[]).filter(function(ev){return ev.date&&ev.date.startsWith(month)&&isGoTabEvent(ev)&&classifyWorkEvent(ev)!=="ignore";});
   const calcGoTabIncome=hourlyRate>0?monthShifts.reduce(function(a,ev){const pay=shiftPay(ev.time);return a+(pay?pay.totalEquiv*hourlyRate:0);},0):0;
   const totalIncome=sources.reduce(function(a,s){var amt=srcAmounts[s.id]!==undefined?Number(srcAmounts[s.id]):Number(s.amount)||0;if(s.id===1&&calcGoTabIncome>0)amt=calcGoTabIncome;return a+amt;},0);
   const totalExpenses=allThisMonth.reduce(function(a,e){return a+Number(e.amount);},0);
@@ -1068,14 +1085,15 @@ function FinanceSection({data,onUpdate,mob,gcalEvents}){
   function saveEditExp(){if(!editExpForm.name||!editExpForm.amount)return;trk("finance.expense_edit");onUpdate({...data,expenses:allExpenses.map(function(e){return e.id===editExpId?{...e,name:editExpForm.name,amount:Number(editExpForm.amount),cat:editExpForm.cat}:e;})});setEditExpId(null);}
   function skipRecurring(tId){const mo={...monthOverrides,[tId]:{...(monthOverrides[tId]||{}),excluded:true}};onUpdate({...data,monthlyRecurringOverrides:{...monthlyRecurringOverrides,[month]:mo}});}
   function restoreRecurring(tId){const mo={...monthOverrides};if(mo[tId]){const n={...mo[tId]};delete n.excluded;mo[tId]=n;}onUpdate({...data,monthlyRecurringOverrides:{...monthlyRecurringOverrides,[month]:mo}});}
-  function deleteTemplate(tId){onUpdate({...data,recurringTemplates:recurringTemplates.filter(function(t){return t.id!==tId;})});}
+  function deleteTemplate(tId){if(editRecId===tId)setEditRecId(null);onUpdate({...data,recurringTemplates:recurringTemplates.filter(function(t){return t.id!==tId;})});}
+  function saveEditRec(){if(!editRecForm.name||!editRecForm.amount)return;trk("finance.recurring_edit");onUpdate({...data,recurringTemplates:recurringTemplates.map(function(t){return t.id===editRecId?{...t,name:editRecForm.name,amount:Number(editRecForm.amount),cat:editRecForm.cat,dueDay:Number(editRecForm.dueDay)||null}:t;})});setEditRecId(null);}
   function addRecurring(){
     if(window.DataValidator){
       const r=DataValidator.validate("financeEntry",{amount:Number(recForm.amount),category:recForm.cat||"Bills",date:month+"-01"});
       if(!r.valid){if(window.showToast)showToast(r.firstError);return;}
     }else if(!recForm.name||!recForm.amount)return;
-    onUpdate({...data,recurringTemplates:recurringTemplates.concat([{id:"r"+Date.now(),name:recForm.name,amount:Number(recForm.amount),cat:recForm.cat}])});
-    setRecForm({name:"",amount:"",cat:"Bills"});
+    onUpdate({...data,recurringTemplates:recurringTemplates.concat([{id:"r"+Date.now(),name:recForm.name,amount:Number(recForm.amount),cat:recForm.cat,dueDay:Number(recForm.dueDay)||null}])});
+    setRecForm({name:"",amount:"",cat:"Bills",dueDay:""});
     if(window.showToast)showToast("Recurring entry added!","success");
   }
   function updateSourceIncome(srcId,val){const mi={...monthlyIncome,[month]:{...(monthlyIncome[month]||{}),[srcId]:Number(val)}};onUpdate({...data,monthlyIncome:mi});}
@@ -1105,9 +1123,9 @@ function FinanceSection({data,onUpdate,mob,gcalEvents}){
     <div style={{maxWidth:700}}>
       {/* Month nav */}
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
-        <button style={editPill} onClick={function(){setMonth(shiftMonth(-1));}}>← prev</button>
+        <button style={editPill} onClick={function(){setEditRecId(null);setMonth(shiftMonth(-1));}}>← prev</button>
         <div style={{flex:1,textAlign:"center",fontSize:15,fontWeight:700,color:T.text}}>{fmtM(month)}</div>
-        <button style={editPill} onClick={function(){setMonth(shiftMonth(1));}}>next →</button>
+        <button style={editPill} onClick={function(){setEditRecId(null);setMonth(shiftMonth(1));}}>next →</button>
       </div>
       {/* Hero strip */}
       {(function(){
@@ -1263,7 +1281,7 @@ function FinanceSection({data,onUpdate,mob,gcalEvents}){
             <div style={fST}>Expenses — {fmtM(month)}</div>
             <div style={{fontSize:10,color:T.text3,marginTop:3}}>recurring auto-apply · one-off you log manually</div>
           </div>
-          <button style={editPill} onClick={function(){setShowRecMgr(function(s){return !s;});}}><UIcon name="gear" size={11}/>Manage</button>
+          <button style={editPill} onClick={function(){setShowRecMgr(function(s){if(s)setEditRecId(null);return !s;});}}><UIcon name="gear" size={11}/>{showRecMgr?"Done":"Manage"}</button>
         </div>
         {/* Add expense form */}
         <div style={{padding:"10px 12px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:14}}>
@@ -1287,21 +1305,47 @@ function FinanceSection({data,onUpdate,mob,gcalEvents}){
           <div style={{fontSize:9,color:T.text3,marginBottom:6}}>SKIPPED THIS MONTH — tap to restore</div>
           {skippedThisMonth.map(function(t){return(<button key={t.id} onClick={function(){restoreRecurring(t.id);}} style={{...editPill,marginRight:4,marginBottom:4,fontSize:10,textDecoration:"line-through",color:T.text3}}>{t.name}</button>);})}
         </div>}
-        {/* Recurring rows */}
-        {recurringThisMonth.length>0&&<div style={{marginBottom:12}}>
+        {/* Recurring rows — edit inline (no separate Manage card) */}
+        {(recurringThisMonth.length>0||showRecMgr)&&<div style={{marginBottom:12}}>
           <div style={{...fStatLabel,marginBottom:6}}>Recurring</div>
-          {recurringThisMonth.map(function(e){return(
+          {recurringThisMonth.map(function(e){
+            if(showRecMgr&&editRecId===e.id){return(
+              <div key={e.id||e.name} style={mob?{display:"flex",flexDirection:"column",gap:6,marginBottom:8,padding:"10px 12px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border}:{display:"grid",gridTemplateColumns:"1fr 90px 100px 50px 36px 36px",gap:5,marginBottom:6,alignItems:"center"}}>
+                <input style={fInp} placeholder="Name" value={editRecForm.name} onChange={function(ev){setEditRecForm(function(f){return{...f,name:ev.target.value};});}}/>
+                <input style={fInp} type="number" step="0.01" placeholder="$/mo" value={editRecForm.amount} onChange={function(ev){setEditRecForm(function(f){return{...f,amount:ev.target.value};});}}/>
+                <select style={fInp} value={editRecForm.cat} onChange={function(ev){setEditRecForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select>
+                <input style={fInp} type="number" min={1} max={31} placeholder="due day" value={editRecForm.dueDay||""} onChange={function(ev){setEditRecForm(function(f){return{...f,dueDay:ev.target.value};});}}/>
+                <div style={mob?{display:"flex",gap:6}:{display:"contents"}}>
+                  <button style={mob?{...fBtnP,flex:1}:fBtnP} onClick={saveEditRec}>{mob?"Save ✓":"✓"}</button>
+                  <button style={mob?{...editPill,flex:1,textAlign:"center"}:editPill} onClick={function(){setEditRecId(null);}}>{mob?"Cancel":"✕"}</button>
+                </div>
+              </div>
+            );}
+            return(
             <div key={e.id||e.name} style={{position:"relative",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 12px",paddingLeft:14,borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:6,overflow:"hidden"}}>
               <div style={{position:"absolute",left:0,top:6,bottom:6,width:2,borderRadius:1,background:T.accent,opacity:0.6}}/>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <div><div style={{fontSize:12,color:T.text}}>{e.name}</div><div style={{fontSize:9,color:CAT_COL[e.cat]}}>{e.cat}</div></div>
+                <div><div style={{fontSize:12,color:T.text}}>{e.name}</div><div style={{fontSize:9,color:CAT_COL[e.cat]}}>{e.cat}{e.dueDay?" · due "+e.dueDay+"th":""}</div></div>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 <span style={{fontSize:12,fontWeight:600,color:T.text}}>−${fmtNum(Number(e.amount))}</span>
+                {showRecMgr&&<button onClick={function(){var base=recurringTemplates.find(function(t){return t.id===e.id;})||e;setEditRecId(e.id);setEditRecForm({name:base.name,amount:base.amount,cat:base.cat,dueDay:base.dueDay||""});}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",display:"flex",alignItems:"center",padding:2}}><UIcon name="pencil" size={13}/></button>}
                 <button onClick={function(){skipRecurring(e.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:10}}>skip</button>
+                {showRecMgr&&<button onClick={function(){deleteTemplate(e.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,lineHeight:1}}>×</button>}
               </div>
             </div>
           );})}
+          {recurringThisMonth.length===0&&showRecMgr&&<div style={{fontSize:11,color:T.text3,padding:"4px 0 8px"}}>No recurring entries yet — add one below.</div>}
+          {showRecMgr&&<div style={{marginTop:8,paddingTop:10,borderTop:"0.5px solid "+T.border}}>
+            <div style={{...fStatLabel,marginBottom:8}}>Add recurring</div>
+            <div style={mob?{display:"flex",flexDirection:"column",gap:6}:{display:"grid",gridTemplateColumns:"1fr 80px 100px 50px 44px",gap:6,alignItems:"center"}}>
+              <input style={fInp} placeholder="Name" value={recForm.name} onChange={function(ev){setRecForm(function(f){return{...f,name:ev.target.value};});}}/>
+              <input style={fInp} type="number" step="0.01" placeholder="$/mo" value={recForm.amount} onChange={function(ev){setRecForm(function(f){return{...f,amount:ev.target.value};});}}/>
+              <select style={fInp} value={recForm.cat} onChange={function(ev){setRecForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select>
+              <input style={fInp} type="number" min={1} max={31} placeholder={mob?"due day of month":"day"} title="Due day of month" value={recForm.dueDay||""} onChange={function(ev){setRecForm(function(f){return{...f,dueDay:ev.target.value};});}}/>
+              <button style={mob?{...fBtnP,padding:"10px",justifyContent:"center"}:fBtnP} onClick={addRecurring}>{mob?"+ Add recurring":"+"}</button>
+            </div>
+          </div>}
         </div>}
         {/* One-off rows */}
         <div>
@@ -1341,34 +1385,7 @@ function FinanceSection({data,onUpdate,mob,gcalEvents}){
           <span style={{fontSize:14,fontWeight:700,color:T.text}}>−${fmtNum(totalExpenses)}</span>
         </div>}
       </div>
-      {/* Recurring manager */}
-      {showRecMgr&&<div className="card-rim" style={fCard()}>
-        <div style={fST}>Manage Recurring</div>
-        <div style={{fontSize:10,color:T.text3,marginTop:4,marginBottom:12}}>Apply every month automatically. Use "skip" above to exclude for a specific month.</div>
-        {recurringTemplates.map(function(t){return(
-          <div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:6}}>
-            <div>
-              <span style={{fontSize:12,color:T.text}}>{t.name}</span>
-              <span style={{fontSize:9,color:CAT_COL[t.cat]||T.text2,marginLeft:8}}>{t.cat}</span>
-              {t.dueDay&&<span style={{fontSize:9,color:T.text3,marginLeft:6}}>due {t.dueDay}th</span>}
-            </div>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <span style={{fontSize:12,fontWeight:600,color:T.text}}>${fmtNum(Number(t.amount))}/mo</span>
-              <button onClick={function(){deleteTemplate(t.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,lineHeight:1}}>×</button>
-            </div>
-          </div>
-        );})}
-        <div style={{marginTop:12,paddingTop:10,borderTop:"0.5px solid "+T.border}}>
-          <div style={{...fStatLabel,marginBottom:8}}>Add recurring</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 80px 100px 50px 44px",gap:6,alignItems:"center"}}>
-            <input style={fInp} placeholder="Name" value={recForm.name} onChange={function(ev){setRecForm(function(f){return{...f,name:ev.target.value};});}}/>
-            <input style={fInp} type="number" step="0.01" placeholder="$/mo" value={recForm.amount} onChange={function(ev){setRecForm(function(f){return{...f,amount:ev.target.value};});}}/>
-            <select style={fInp} value={recForm.cat} onChange={function(ev){setRecForm(function(f){return{...f,cat:ev.target.value};});}}>{CATS.map(function(c){return<option key={c}>{c}</option>;})}</select>
-            <input style={fInp} type="number" min={1} max={31} placeholder="day" title="Due day of month" value={recForm.dueDay||""} onChange={function(ev){setRecForm(function(f){return{...f,dueDay:ev.target.value};});}}/>
-            <button style={fBtnP} onClick={addRecurring}>+</button>
-          </div>
-        </div>
-      </div>}
+      {/* Recurring manager removed — recurring entries now edit inline in the Expenses card above. */}
       {/* Savings Goal */}
       <div className="card-rim" style={fCard()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
@@ -1448,15 +1465,20 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
   const hrRate=Number(data.hourlyRate||0);
   const payCycleDay=Number(data.payCycleDay||1);
   function getPeriodRange(offset){
-    const today=new Date();const yr=today.getFullYear();const mo=today.getMonth();
-    let cs=new Date(yr,mo,payCycleDay);
-    if(today<cs)cs=new Date(yr,mo-1,payCycleDay);
-    const start=new Date(cs.getTime()+offset*14*864e5);
-    const end=new Date(start.getTime()+13*864e5);
+    // Pay-cycle MONTH: from payCycleDay of one month through the day before the next month's payCycleDay.
+    // Clamp the anchor to each month's length so cycles tile with no gap/overlap (handles payCycleDay 29–31, Feb).
+    const today=new Date();let yr=today.getFullYear();let mo=today.getMonth();
+    if(today.getDate()<payCycleDay)mo-=1; // before this month's pay day → cycle began last month
+    function dim(y,m){return new Date(y,m+1,0).getDate();}
+    function anchor(y,m){return new Date(y,m,Math.min(payCycleDay,dim(y,m)));}
+    const start=anchor(yr,mo+offset);
+    const end=new Date(anchor(yr,mo+offset+1).getTime()-864e5); // day before next anchor
     return{start:dStr(start),end:dStr(end)};
   }
   const {start:periodStart,end:periodEnd}=getPeriodRange(cycleOffset);
-  const periodShifts=(gcalEvents||[]).filter(isGoTabEvent).filter(function(ev){return ev.date>=periodStart&&ev.date<=periodEnd;}).sort(function(a,b){return a.date.localeCompare(b.date);});
+  const periodShifts=(gcalEvents||[]).filter(isGoTabEvent).filter(function(ev){return classifyWorkEvent(ev)!=="ignore";}).filter(function(ev){return ev.date>=periodStart&&ev.date<=periodEnd;}).sort(function(a,b){return a.date.localeCompare(b.date);});
+  const periodMeetingCount=periodShifts.filter(function(ev){return classifyWorkEvent(ev)==="meeting";}).length;
+  const periodShiftOnlyCount=periodShifts.length-periodMeetingCount;
   const periodNorm=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.normalHrs:0);},0);
   const periodPen=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.penaltyHrs:0);},0);
   const periodEquiv=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.totalEquiv:0);},0);
@@ -1467,16 +1489,21 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
   const periodTax=estimatedPay!=null?estimateTax(annualGross)/365*periodDays:null;
   const periodNet=estimatedPay!=null&&periodTax!=null?estimatedPay-periodTax:null;
   const periodTaskCount=taskLog.filter(function(t){return t.shiftDate>=periodStart&&t.shiftDate<=periodEnd;}).length;
-  const recentShiftDates=(gcalEvents||[]).filter(isGoTabEvent).sort(function(a,b){return b.date.localeCompare(a.date);}).slice(0,14).map(function(ev){return ev.date;});
+  const recentShiftDates=(gcalEvents||[]).filter(isGoTabEvent).filter(function(ev){return classifyWorkEvent(ev)!=="ignore";}).sort(function(a,b){return b.date.localeCompare(a.date);}).slice(0,14).map(function(ev){return ev.date;});
   function fmt$(n){return n!=null?"$"+n.toFixed(2):"—";}
   function fmtPeriod(){const s=new Date(periodStart+"T12:00:00");const e=new Date(periodEnd+"T12:00:00");return s.toLocaleDateString("en-AU",{day:"numeric",month:"short"})+" – "+e.toLocaleDateString("en-AU",{day:"numeric",month:"short",year:"numeric"});}
-  function openShift(date){
-    if(expandedShift===date){setExpandedShift(null);return;}
-    setExpandedShift(date);
-    setLogDraft({notes:(shiftLogs[date]||{}).notes||""});
+  function openShift(ev){
+    const k=shiftKey(ev);
+    if(expandedShift===k){setExpandedShift(null);return;}
+    setExpandedShift(k);
+    setLogDraft({notes:(shiftLogs[k]||shiftLogs[ev.date]||{}).notes||""});
   }
-  function saveShiftLog(){
-    onUpdate({...data,shiftLogs:{...shiftLogs,[expandedShift]:{...(shiftLogs[expandedShift]||{}),notes:logDraft.notes}}});
+  function saveShiftLog(ev){
+    const k=ev?shiftKey(ev):expandedShift;
+    const prev=shiftLogs[k]||(ev?shiftLogs[ev.date]:null)||{};
+    const next={...shiftLogs,[k]:{...prev,notes:logDraft.notes,date:ev?ev.date:prev.date,time:ev?ev.time:prev.time}};
+    if(ev&&k!==ev.date&&next[ev.date])delete next[ev.date]; // migrate legacy date-keyed entry onto the per-shift key
+    onUpdate({...data,shiftLogs:next});
     setExpandedShift(null);
     if(window.showToast)window.showToast("Diary saved","success");
   }
@@ -1513,7 +1540,7 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
         </div>}
         <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(3,1fr)",gap:10,marginBottom:10}}>
           {[
-            {label:"Gross pay",value:fmt$(estimatedPay),sub:periodEquiv.toFixed(1)+"h equiv · "+periodShifts.length+" shift"+(periodShifts.length!==1?"s":""),edge:"#5b8cff"},
+            {label:"Gross pay",value:fmt$(estimatedPay),sub:periodEquiv.toFixed(1)+"h equiv · "+periodShiftOnlyCount+" shift"+(periodShiftOnlyCount!==1?"s":"")+(periodMeetingCount>0?" + "+periodMeetingCount+" mtg":""),edge:"#5b8cff"},
             {label:"Est. tax",value:periodTax!=null?"−$"+periodTax.toFixed(2):"—",sub:hrRate>0?"ATO 2025-26 · annualised":"set rate in settings",edge:"#ff6b6b"},
             {label:"Take-home",value:fmt$(periodNet),sub:"after est. tax",edge:"#69f0ae"}
           ].map(function(c){return(
@@ -1528,7 +1555,7 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
           {[
             {label:"Standard hrs",value:periodNorm.toFixed(1)+"h",sub:"before 7pm · 1×",edge:"rgba(255,255,255,0.15)"},
             {label:"Penalty hrs",value:periodPen.toFixed(1)+"h",sub:"after 7pm · 1.5×",edge:"#ffd166"},
-            {label:"Shifts",value:String(periodShifts.length),sub:"this period",edge:"rgba(255,255,255,0.15)"},
+            {label:"Shifts",value:String(periodShiftOnlyCount),sub:periodMeetingCount>0?("+ "+periodMeetingCount+" meeting"+(periodMeetingCount!==1?"s":"")):"this period",edge:"rgba(255,255,255,0.15)"},
             {label:"Tasks",value:String(periodTaskCount),sub:"logged this period",edge:"#c77dff"}
           ].map(function(c){return(
             <div key={c.label} style={{background:"rgba(225,234,255,0.07)",border:"0.5px solid rgba(255,255,255,0.10)",borderRadius:12,padding:"12px 14px",...cellEdge(c.edge)}}>
@@ -1554,15 +1581,19 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
                 const pay=shiftPay(ev.time);
                 const rowPay=hrRate>0&&pay?fmt$(pay.totalEquiv*hrRate):"—";
                 const d=new Date(ev.date+"T12:00:00");
-                const diary=(shiftLogs[ev.date]||{}).notes||"";
+                const sk=shiftKey(ev);
+                const diary=(shiftLogs[sk]||shiftLogs[ev.date]||{}).notes||"";
                 const shiftTaskCount=taskLog.filter(function(t){return t.shiftDate===ev.date;}).length;
-                const isExp=expandedShift===ev.date;
-                const dotCol=!past?"#5b8cff":diary?"#69f0ae":T.text3;
-                const dotGlow=!past?"0 0 7px #5b8cff":diary?"0 0 7px #69f0ae":"none";
+                const isExp=expandedShift===sk;
+                const kind=classifyWorkEvent(ev);
+                const isMeeting=kind==="meeting";
+                const MEET="#ffa94d";
+                const dotCol=isMeeting?MEET:(!past?"#5b8cff":diary?"#69f0ae":T.text3);
+                const dotGlow=isMeeting?("0 0 6px "+MEET):(!past?"0 0 7px #5b8cff":diary?"0 0 7px #69f0ae":"none");
                 return(
-                  <div key={ev.id||ev.date} style={{marginBottom:6}}>
-                    <div onClick={function(){openShift(ev.date);}} style={{position:"relative",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",paddingLeft:14,borderRadius:isExp?"10px 10px 0 0":8,background:isExp?"rgba(91,140,255,0.08)":T.bg3,border:"0.5px solid "+(isExp?T.accent:T.border),borderBottom:isExp?"none":"0.5px solid "+T.border,cursor:"pointer",opacity:past&&!isExp?0.65:1,overflow:"hidden",transition:"background 0.12s,border 0.12s"}}>
-                      <div style={{position:"absolute",left:0,top:5,bottom:5,width:2,borderRadius:1,background:T.accent,opacity:past?0.35:0.7}}/>
+                  <div key={sk} style={{marginBottom:6}}>
+                    <div onClick={function(){openShift(ev);}} style={{position:"relative",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",paddingLeft:14,borderRadius:isExp?"10px 10px 0 0":8,background:isExp?"rgba(91,140,255,0.08)":(isMeeting?"rgba(255,169,77,0.05)":T.bg3),border:"0.5px solid "+(isExp?T.accent:(isMeeting?"rgba(255,169,77,0.35)":T.border)),borderBottom:isExp?"none":"0.5px solid "+(isMeeting?"rgba(255,169,77,0.35)":T.border),cursor:"pointer",opacity:past&&!isExp?0.65:1,overflow:"hidden",transition:"background 0.12s,border 0.12s"}}>
+                      <div style={{position:"absolute",left:0,top:5,bottom:5,width:isMeeting?2:3,borderRadius:1,background:isMeeting?MEET:T.accent,opacity:past?0.45:0.85}}/>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:11,fontWeight:600,color:T.text,marginBottom:2}}>{d.toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short"})}</div>
                         <div style={{fontSize:10,color:T.text2}}>{ev.time}</div>
@@ -1572,6 +1603,7 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
                         {pay.penaltyHrs>0&&<span>{pay.penaltyHrs}h pen</span>}
                       </div>}
                       <div style={{fontSize:12,fontWeight:700,color:T.text,flexShrink:0,minWidth:52,textAlign:"right"}}>{rowPay}</div>
+                      {isMeeting&&<span style={{fontSize:9,color:MEET,background:"rgba(255,169,77,0.12)",border:"0.5px solid rgba(255,169,77,0.3)",borderRadius:4,padding:"1px 5px",flexShrink:0,fontWeight:600}}>Meeting</span>}
                       {shiftTaskCount>0&&<span style={{fontSize:9,color:"#c77dff",background:"rgba(199,125,255,0.12)",border:"0.5px solid rgba(199,125,255,0.25)",borderRadius:4,padding:"1px 5px",flexShrink:0}}>{shiftTaskCount} task{shiftTaskCount!==1?"s":""}</span>}
                       <div style={{width:8,height:8,borderRadius:"50%",background:dotCol,boxShadow:dotGlow,flexShrink:0}}/>
                     </div>
@@ -1580,7 +1612,7 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
                       <textarea rows={4} placeholder="How did the shift go? Any notable incidents, wins, or patterns worth remembering." value={logDraft.notes} onChange={function(e){setLogDraft({notes:e.target.value});}} style={{...wInp,resize:"none",fontSize:11,lineHeight:1.6}}/>
                       <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
                         <button onClick={function(){setExpandedShift(null);}} style={wBtn}>Cancel</button>
-                        <button onClick={saveShiftLog} style={wBtnP}>Save</button>
+                        <button onClick={function(){saveShiftLog(ev);}} style={wBtnP}>Save</button>
                       </div>
                     </div>}
                   </div>
@@ -1733,6 +1765,7 @@ function App(){
   const [brLoading,setBrLoading]=useState(false);
   const [brLastSpeaker,setBrLastSpeaker]=useState(null); // kept for Firestore compat only
   const [brGoalProposals,setBrGoalProposals]=useState([]);
+  const [brTaskProposals,setBrTaskProposals]=useState([]); // commitments from the last session, addable as real tasks
   const [brClosing,setBrClosing]=useState(false);
   const [brIntentMode,setBrIntentMode]=useState(null); // 'howto' | 'direction' — for header badge / loading copy
   const [brPendingIntent,setBrPendingIntent]=useState(null); // {text, reconfirmed} awaiting a one-tap mode choice
@@ -1919,6 +1952,17 @@ function App(){
 
   // Listen for auth state — sets DASH_DOC to users/{uid} once signed in
   useEffect(function(){
+    // Persist the session locally (helps iOS Safari stay signed in) and complete any
+    // redirect-based sign-in started on mobile (where popups are unreliable / blocked).
+    // setPersistence returns a promise — chain (don't try/catch) so a rejected persistence write
+    // (e.g. iOS Safari Private mode blocking storage) degrades gracefully instead of becoming an
+    // unhandled rejection, then complete any redirect sign-in.
+    _auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+      .catch(function(){return _auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);})
+      .catch(function(){return _auth.setPersistence(firebase.auth.Auth.Persistence.NONE);})
+      .catch(function(){})
+      .then(function(){return _auth.getRedirectResult();})
+      .catch(function(e){if(e&&e.code!=="auth/no-auth-event"&&window.ErrorHandler)ErrorHandler.warn("Sign-in failed: "+e.message,"auth");});
     var unsub=_auth.onAuthStateChanged(function(user){
       window._currentUser=user;
       if(user){
@@ -2354,37 +2398,44 @@ function App(){
     setBrClosing(true);
     var mode=brSessionMode();
     var fullTranscript=brMessages.slice();
-    BoardroomService.closingRound(fullTranscript).then(function(closingMsgs){
+    var existingNS=(data.boardroom&&data.boardroom.northStar)||"";
+    BoardroomService.closingRound(fullTranscript,existingNS).then(function(closingMsgs){
       var allMsgs=fullTranscript.concat(closingMsgs.map(function(m){return{role:"assistant",persona:m.persona,text:m.text,ts:Date.now()};}));
       setBrMessages(function(p){return p.concat(closingMsgs.map(function(m){return{role:"assistant",persona:m.persona,text:m.text,ts:Date.now()};}));});
       return BoardroomService.summarizeSession(allMsgs,mode).then(function(km){
         var newMoment={date:todayStr(),summary:km.summary,commitments:(km.commitments||[]).map(function(c){return{text:c,done:false};}),mode:mode,transcript:allMsgs.map(function(m){return{role:m.role,persona:m.persona||null,text:m.text};})};
+        // Surface the session's commitments as addable to-do tasks so a concluded session
+        // always leaves Jayden with something actionable (even if no long-term goal surfaced).
+        setBrTaskProposals((km.commitments||[]).map(function(c){return typeof c==="string"?c:(c&&c.text)||"";}).filter(Boolean));
         var prev=(data.boardroom&&data.boardroom.keyMoments)||[];
         var existingGoals=(data.boardroom&&data.boardroom.goals)||[];
-        function finishSave(moments){
-          setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),keyMoments:moments,messages:[],sessionStartedAt:null,lastSpeaker:null}};});
+        function finishSave(moments,nsVal){
+          setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),northStar:nsVal||(p.boardroom&&p.boardroom.northStar)||"",keyMoments:moments,messages:[],sessionStartedAt:null,lastSpeaker:null}};});
           setBrMessages([]);
           setBrLastSpeaker(null);
           setBrClosing(false);
           setBrLoading(false);
           setShowBoardroom(false);
-          showToast("Session saved","success");
+          showToast(nsVal&&!existingNS?"Session saved · North Star set":"Session saved","success");
           setPage("Boardroom");
         }
-        function saveWithGoals(moments){
+        function saveWithGoals(moments,nsVal){
           BoardroomService.extractGoals(allMsgs,existingGoals).then(function(proposed){
             setBrGoalProposals(proposed||[]);
             if(prev.length>=15){
               BoardroomService.amalgamate(prev.slice(0,10)).then(function(patterns){
                 var compacted=patterns.map(function(s){return{date:"pattern",summary:s,commitments:[],mode:"amalgamated"};});
-                finishSave(compacted.concat(prev.slice(10)).concat([moments]));
-              }).catch(function(){finishSave(prev.concat([moments]).slice(-15));});
+                finishSave(compacted.concat(prev.slice(10)).concat([moments]),nsVal);
+              }).catch(function(){finishSave(prev.concat([moments]).slice(-15),nsVal);});
             } else {
-              finishSave(prev.concat([moments]));
+              finishSave(prev.concat([moments]),nsVal);
             }
-          });
+          }).catch(function(){finishSave(prev.concat([moments]).slice(-15),nsVal);});
         }
-        saveWithGoals(newMoment);
+        // Ensure a North Star is defined — synthesise one from this session if none exists yet,
+        // so the conclusion always anchors short-term steps to a long-term direction.
+        if(existingNS){ saveWithGoals(newMoment,existingNS); }
+        else { BoardroomService.buildNorthStar(allMsgs).then(function(ns){ saveWithGoals(newMoment,(ns||"").trim()); }).catch(function(){ saveWithGoals(newMoment,""); }); }
       });
     }).catch(function(){
       setBrClosing(false);
@@ -2411,6 +2462,14 @@ function App(){
   }
   function brSkipGoal(proposed){
     setBrGoalProposals(function(p){return p.filter(function(g){return g.title!==proposed.title;});});
+  }
+  function brAcceptTask(text){
+    setData(function(p){var ts=(p.personal&&p.personal.tasks)||[];return{...p,personal:{...p.personal,tasks:ts.concat([{id:Date.now(),name:text,cat:"Errands",priority:"normal",due:null,done:false,addedAt:todayStr(),editedAt:null}])}};});
+    setBrTaskProposals(function(p){return p.filter(function(t){return t!==text;});});
+    showToast("Task added","success");
+  }
+  function brSkipTask(text){
+    setBrTaskProposals(function(p){return p.filter(function(t){return t!==text;});});
   }
   function brMarkGoalAchieved(goalId){
     setData(function(p){
@@ -2449,6 +2508,7 @@ function App(){
           return{...p,boardroom:{...pb,onboarded:true,northStar:(ns||"").trim(),keyMoments:pkm.concat([moment]),messages:[],sessionStartedAt:null,lastSpeaker:null}};
         });
         BoardroomService.extractGoals(transcript,existingGoals).then(function(proposed){setBrGoalProposals(proposed||[]);}).catch(function(){});
+        setBrTaskProposals((km.commitments||[]).map(function(c){return typeof c==="string"?c:(c&&c.text)||"";}).filter(Boolean));
         setBrMessages([]);
         setBrLastSpeaker(null);
         setBrLoading(false);
@@ -2866,7 +2926,14 @@ function App(){
         <div style={{display:"flex",justifyContent:"center",color:T.accent,marginBottom:8}}><UIcon name="sparkle" size={30}/></div>
         <div style={{fontSize:20,fontWeight:700,color:T.text,marginBottom:6}}>Jayden's Dashboard</div>
         <div style={{fontSize:13,color:T.text2,marginBottom:28,lineHeight:1.6}}>Sign in with Google to access your dashboard and sync your data across devices.</div>
-        <button onClick={function(){_auth.signInWithPopup(_googleProvider).catch(function(e){if(window.ErrorHandler)ErrorHandler.warn("Sign-in failed: "+e.message,"auth");});}} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,width:"100%",padding:"13px 20px",borderRadius:12,border:"1px solid rgba(255,255,255,0.2)",background:"rgba(255,255,255,0.1)",color:T.text,fontSize:14,fontWeight:600,cursor:"pointer",transition:"background 0.2s"}}
+        <button onClick={function(){
+          var isMobileUA=/iphone|ipad|ipod|android/i.test(navigator.userAgent||"")||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+          if(isMobileUA){_auth.signInWithRedirect(_googleProvider).catch(function(e){if(window.ErrorHandler)ErrorHandler.warn("Sign-in failed: "+e.message,"auth");});return;}
+          _auth.signInWithPopup(_googleProvider).catch(function(e){
+            if(e&&(e.code==="auth/popup-blocked"||e.code==="auth/cancelled-popup-request"||e.code==="auth/operation-not-supported-in-this-environment")){_auth.signInWithRedirect(_googleProvider).catch(function(e2){if(window.ErrorHandler)ErrorHandler.warn("Sign-in failed: "+e2.message,"auth");});return;}
+            if(window.ErrorHandler)ErrorHandler.warn("Sign-in failed: "+e.message,"auth");
+          });
+        }} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,width:"100%",padding:"13px 20px",borderRadius:12,border:"1px solid rgba(255,255,255,0.2)",background:"rgba(255,255,255,0.1)",color:T.text,fontSize:14,fontWeight:600,cursor:"pointer",transition:"background 0.2s"}}
           onMouseOver={function(e){e.currentTarget.style.background="rgba(255,255,255,0.18)";}}
           onMouseOut={function(e){e.currentTarget.style.background="rgba(255,255,255,0.1)";}}
         >
@@ -3691,6 +3758,19 @@ function App(){
               );})}
             </div>}
 
+            {brTaskProposals.length>0&&<div className="card-rim" style={{background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(199,125,255,0.28)",borderRadius:14,padding:"14px 18px",marginBottom:20,boxShadow:cardShadow}}>
+              <div style={{fontSize:11,fontWeight:600,color:"rgba(199,125,255,0.85)",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.08em"}}>To-dos from your last session</div>
+              {brTaskProposals.map(function(t,i){return(
+                <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"8px 0",borderBottom:i<brTaskProposals.length-1?"0.5px solid rgba(255,255,255,0.06)":"none"}}>
+                  <span style={{fontSize:13,color:"rgba(255,255,255,0.85)",lineHeight:1.45}}>{t}</span>
+                  <div style={{display:"flex",gap:6,flexShrink:0}}>
+                    <button onClick={function(){brAcceptTask(t);}} style={{...btnGlassP,fontSize:11,padding:"4px 12px"}}>Add task</button>
+                    <button onClick={function(){brSkipTask(t);}} style={{...btnGlass,fontSize:11,padding:"4px 12px"}}>Skip</button>
+                  </div>
+                </div>
+              );})}
+            </div>}
+
             <div style={{marginBottom:24}}>
               <div style={{...sectLabel,marginBottom:12}}>Active Goals</div>
               {goals.length===0&&brGoalProposals.length===0&&<div style={{fontSize:13,color:"rgba(255,255,255,0.3)",padding:"20px 0"}}>Open a session to surface your first goal.</div>}
@@ -3773,6 +3853,11 @@ function App(){
           </div>
         );
       })()}
+
+      {/* ── Quick Task floating button ── */}
+      <button onClick={function(){trk("task.quick_open");setMForm({priority:"normal",cat:"Errands"});setModal("add_task");}} style={{...whitePill,position:"fixed",bottom:mob?108:122,right:20,zIndex:150,padding:"7px 14px",fontSize:12,background:"linear-gradient(135deg,rgba(199,125,255,0.92),rgba(150,80,220,0.94))",border:"1px solid rgba(199,125,255,0.55)",color:"#fff",boxShadow:"0 4px 18px rgba(150,80,220,0.45),inset 0 1px 0 rgba(255,255,255,0.20)"}}>
+        <span style={{display:"flex",fontSize:15,lineHeight:1,fontWeight:800}}>+</span>Task
+      </button>
 
       {/* ── Quick Capture floating button ── */}
       <button onClick={function(){trk("capture.quick_open");setShowCapture(true);setCaptureResult(null);}} style={{...whitePill,position:"fixed",bottom:mob?70:80,right:20,zIndex:150,padding:"7px 14px",fontSize:12,background:"linear-gradient(135deg,rgba(91,140,255,0.92),rgba(50,85,204,0.94))",border:"1px solid rgba(91,140,255,0.55)",color:"#fff",boxShadow:"0 4px 18px rgba(50,90,200,0.45),inset 0 1px 0 rgba(255,255,255,0.20)"}}>
