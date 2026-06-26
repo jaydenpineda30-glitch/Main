@@ -163,6 +163,8 @@ const INIT={
       {id:"g3",label:"Tasks logged",target:20,unit:" tasks"}
     ],
     shiftLogs:{},
+    progressiveSince:"",
+    attendanceMigrated:false,
     taskLog:[],
     focusGoals:[]
   },
@@ -208,7 +210,7 @@ function mergeWithDefaults(cloud){
       completedEvents:Array.isArray(u.completedEvents)?u.completedEvents:[],
       assessments:Array.isArray(u.assessments)&&u.assessments.length>0?reconcileAssessments(u.assessments,SYLLABUS_ASSESSMENTS):SYLLABUS_ASSESSMENTS.map(function(a){return{...a};}),
     },
-    work:(function(){var w=cloud.work||{};return{...INIT.work,...w,hourlyRate:Number(w.hourlyRate||(cloud.finance&&cloud.finance.hourlyRate)||0),payCycleDay:Number(w.payCycleDay||cloud.payCycleDay||1),goals:Array.isArray(w.goals)?w.goals:INIT.work.goals,shiftLogs:(w.shiftLogs&&typeof w.shiftLogs==="object")?w.shiftLogs:{},taskLog:Array.isArray(w.taskLog)?w.taskLog:[],focusGoals:Array.isArray(w.focusGoals)?w.focusGoals:[]};}()),
+    work:(function(){var w=cloud.work||{};return{...INIT.work,...w,hourlyRate:Number(w.hourlyRate||(cloud.finance&&cloud.finance.hourlyRate)||0),payCycleDay:Number(w.payCycleDay||cloud.payCycleDay||1),goals:Array.isArray(w.goals)?w.goals:INIT.work.goals,shiftLogs:(w.shiftLogs&&typeof w.shiftLogs==="object")?w.shiftLogs:{},progressiveSince:w.progressiveSince||"",attendanceMigrated:!!w.attendanceMigrated,taskLog:Array.isArray(w.taskLog)?w.taskLog:[],focusGoals:Array.isArray(w.focusGoals)?w.focusGoals:[]};}()),
     reflections:(Array.isArray(cloud.reflections)&&cloud.reflections.length>0)?cloud.reflections:SEED_REFL,
   };
 }
@@ -355,6 +357,19 @@ function classifyWorkEvent(ev){
   if(dow===2&&near(t.start,14*60))return"meeting";  // Tuesday 2:00pm
   if(dow===5&&near(t.start,11*60))return"meeting";  // Friday 11:00am
   return"shift";
+}
+// Shared attendance predicate (used by Work + Finance). A shift/meeting counts toward REAL pay
+// only when actually worked/attended: shifts when marked worked or (legacy) before the cutoff;
+// meetings only when explicitly marked attended.
+function workEntryFor(ev,shiftLogs){return (shiftLogs&&(shiftLogs[shiftKey(ev)]||shiftLogs[ev.date]))||{};}
+function isWorkEventCounted(ev,shiftLogs,progressiveSince){
+  var kind=classifyWorkEvent(ev);
+  if(kind==="ignore")return false;
+  var e=workEntryFor(ev,shiftLogs);
+  if(kind==="meeting")return e.attended===true;
+  if(e.attended===true)return true;
+  if(e.attended===false)return false;
+  return progressiveSince?ev.date<progressiveSince:true;
 }
 
 function dedupeEvents(evs){
@@ -1016,7 +1031,7 @@ function GymSection(props){
   );
 }
 
-function FinanceSection({data,onUpdate,mob,gcalEvents}){
+function FinanceSection({data,onUpdate,mob,gcalEvents,work}){
   mob=mob||false;
   const [month,setMonth]=useState(todayStr().slice(0,7));
   const [expForm,setExpForm]=useState({name:"",amount:"",cat:"Other"});
@@ -1049,7 +1064,9 @@ function FinanceSection({data,onUpdate,mob,gcalEvents}){
   const allThisMonth=recurringThisMonth.concat(oneOffThisMonth);
   const srcAmounts=monthlyIncome[month]||{};
   const hourlyRate=Number(data.hourlyRate||0);
-  const monthShifts=(gcalEvents||[]).filter(function(ev){return ev.date&&ev.date.startsWith(month)&&isGoTabEvent(ev)&&classifyWorkEvent(ev)!=="ignore";});
+  const _workLogs=(work&&work.shiftLogs)||{};const _workSince=(work&&work.progressiveSince)||"";
+  // Match the Work tab: count only shifts worked + meetings attended (real pay), not all scheduled.
+  const monthShifts=(gcalEvents||[]).filter(function(ev){return ev.date&&ev.date.startsWith(month)&&isGoTabEvent(ev)&&isWorkEventCounted(ev,_workLogs,_workSince);});
   const calcGoTabIncome=hourlyRate>0?monthShifts.reduce(function(a,ev){const pay=shiftPay(ev.time);return a+(pay?pay.totalEquiv*hourlyRate:0);},0):0;
   const totalIncome=sources.reduce(function(a,s){var amt=srcAmounts[s.id]!==undefined?Number(srcAmounts[s.id]):Number(s.amount)||0;if(s.id===1&&calcGoTabIncome>0)amt=calcGoTabIncome;return a+amt;},0);
   const totalExpenses=allThisMonth.reduce(function(a,e){return a+Number(e.amount);},0);
@@ -1450,6 +1467,21 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
   const [taskTag,setTaskTag]=useState(null);
   const [taskShiftDate,setTaskShiftDate]=useState(todayStr());
   useEffect(function(){const first=(gcalEvents||[]).filter(isGoTabEvent).sort(function(a,b){return b.date.localeCompare(a.date);})[0];if(first)setTaskShiftDate(first.date);},[]);
+  // One-time migration: set the progressive cutoff to today (past shifts auto-count as worked,
+  // since Jayden's never missed one) and mark this month's Friday 11–12 meetings (~1/week) attended.
+  useEffect(function(){
+    if(data.attendanceMigrated||!(gcalEvents&&gcalEvents.length))return;
+    const today=todayStr();const month=today.slice(0,7);
+    const updates={...(data.shiftLogs||{})};
+    gcalEvents.filter(isGoTabEvent).forEach(function(ev){
+      if(classifyWorkEvent(ev)!=="meeting"||!ev.date.startsWith(month)||ev.date>today)return;
+      if(new Date(ev.date+"T12:00:00").getDay()!==5)return; // Friday → ~1 meeting/week
+      const k=shiftKey(ev);
+      if(updates[k]&&updates[k].attended!=null)return;
+      updates[k]={...(updates[k]||{}),attended:true,date:ev.date,time:ev.time};
+    });
+    onUpdate({...data,shiftLogs:updates,progressiveSince:today,attendanceMigrated:true});
+  },[gcalEvents]);
   const wBtn={...btnGlass,padding:"5px 12px"};
   const wBtnP={...btnGlassP};
   const wInp={width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"};
@@ -1476,13 +1508,23 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
     return{start:dStr(start),end:dStr(end)};
   }
   const {start:periodStart,end:periodEnd}=getPeriodRange(cycleOffset);
-  const periodShifts=(gcalEvents||[]).filter(isGoTabEvent).filter(function(ev){return classifyWorkEvent(ev)!=="ignore";}).filter(function(ev){return ev.date>=periodStart&&ev.date<=periodEnd;}).sort(function(a,b){return a.date.localeCompare(b.date);});
-  const periodMeetingCount=periodShifts.filter(function(ev){return classifyWorkEvent(ev)==="meeting";}).length;
-  const periodShiftOnlyCount=periodShifts.length-periodMeetingCount;
-  const periodNorm=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.normalHrs:0);},0);
-  const periodPen=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.penaltyHrs:0);},0);
-  const periodEquiv=periodShifts.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.totalEquiv:0);},0);
+  const progressiveSince=data.progressiveSince||"";
+  function entryFor(ev){return workEntryFor(ev,shiftLogs);}
+  function isCounted(ev){return isWorkEventCounted(ev,shiftLogs,progressiveSince);}
+  const isMeetingEv=function(ev){return classifyWorkEvent(ev)==="meeting";};
+  const periodScheduled=(gcalEvents||[]).filter(isGoTabEvent).filter(function(ev){return classifyWorkEvent(ev)!=="ignore";}).filter(function(ev){return ev.date>=periodStart&&ev.date<=periodEnd;}).sort(function(a,b){return a.date.localeCompare(b.date);});
+  const periodShifts=periodScheduled; // the list still renders every scheduled event, with worked state
+  const periodWorked=periodScheduled.filter(isCounted);
+  const scheduledMeetingCount=periodScheduled.filter(isMeetingEv).length;
+  const scheduledShiftCount=periodScheduled.length-scheduledMeetingCount;
+  const attendedMeetingCount=periodWorked.filter(isMeetingEv).length;
+  const workedShiftCount=periodWorked.length-attendedMeetingCount;
+  const periodNorm=periodWorked.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.normalHrs:0);},0);
+  const periodPen=periodWorked.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.penaltyHrs:0);},0);
+  const periodEquiv=periodWorked.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.totalEquiv:0);},0);
   const estimatedPay=hrRate>0?periodEquiv*hrRate:null;
+  const projectedEquiv=periodScheduled.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.totalEquiv:0);},0);
+  const projectedPay=hrRate>0?projectedEquiv*hrRate:null;
   function estimateTax(gross){if(gross<=18200)return gross*0.02;if(gross<=45000)return(gross-18200)*0.19+gross*0.02;if(gross<=135000)return 5092+(gross-45000)*0.30+gross*0.02;if(gross<=190000)return 32092+(gross-135000)*0.37+gross*0.02;return 52442+(gross-190000)*0.45+gross*0.02;}
   const periodDays=Math.max(1,Math.round((new Date(periodEnd)-new Date(periodStart))/864e5)+1);
   const annualGross=estimatedPay!=null?estimatedPay/periodDays*365:0;
@@ -1499,13 +1541,23 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
     setLogDraft({notes:(shiftLogs[k]||shiftLogs[ev.date]||{}).notes||""});
   }
   function saveShiftLog(ev){
+    // Saving a shift diary = marking the shift WORKED. Force a journal note.
+    if(!logDraft.notes||!logDraft.notes.trim()){if(window.showToast)window.showToast("Add a note to mark this shift worked","warn");return;}
     const k=ev?shiftKey(ev):expandedShift;
     const prev=shiftLogs[k]||(ev?shiftLogs[ev.date]:null)||{};
-    const next={...shiftLogs,[k]:{...prev,notes:logDraft.notes,date:ev?ev.date:prev.date,time:ev?ev.time:prev.time}};
+    const next={...shiftLogs,[k]:{...prev,notes:logDraft.notes,date:ev?ev.date:prev.date,time:ev?ev.time:prev.time,attended:true}};
     if(ev&&k!==ev.date&&next[ev.date])delete next[ev.date]; // migrate legacy date-keyed entry onto the per-shift key
     onUpdate({...data,shiftLogs:next});
     setExpandedShift(null);
-    if(window.showToast)window.showToast("Diary saved","success");
+    if(window.showToast)window.showToast("Shift marked worked","success");
+  }
+  // Set worked/attended on a shift or meeting. For meetings (no journal) and for un-marking a shift.
+  function setAttendance(ev,val){
+    const k=shiftKey(ev);
+    const prev=shiftLogs[k]||shiftLogs[ev.date]||{};
+    const next={...shiftLogs,[k]:{...prev,date:ev.date,time:ev.time,attended:val}};
+    if(k!==ev.date&&next[ev.date])delete next[ev.date];
+    onUpdate({...data,shiftLogs:next});
   }
   function addTask(){
     if(!taskInput.trim()&&!taskTag)return;
@@ -1540,7 +1592,7 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
         </div>}
         <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"repeat(3,1fr)",gap:10,marginBottom:10}}>
           {[
-            {label:"Gross pay",value:fmt$(estimatedPay),sub:periodEquiv.toFixed(1)+"h equiv · "+periodShiftOnlyCount+" shift"+(periodShiftOnlyCount!==1?"s":"")+(periodMeetingCount>0?" + "+periodMeetingCount+" mtg":""),edge:"#5b8cff"},
+            {label:"Gross pay",value:fmt$(estimatedPay),sub:periodEquiv.toFixed(1)+"h · "+workedShiftCount+"/"+scheduledShiftCount+" shifts worked"+(projectedPay!=null&&projectedEquiv>periodEquiv+0.01?" · proj "+fmt$(projectedPay):""),edge:"#5b8cff"},
             {label:"Est. tax",value:periodTax!=null?"−$"+periodTax.toFixed(2):"—",sub:hrRate>0?"ATO 2025-26 · annualised":"set rate in settings",edge:"#ff6b6b"},
             {label:"Take-home",value:fmt$(periodNet),sub:"after est. tax",edge:"#69f0ae"}
           ].map(function(c){return(
@@ -1555,7 +1607,7 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
           {[
             {label:"Standard hrs",value:periodNorm.toFixed(1)+"h",sub:"before 7pm · 1×",edge:"rgba(255,255,255,0.15)"},
             {label:"Penalty hrs",value:periodPen.toFixed(1)+"h",sub:"after 7pm · 1.5×",edge:"#ffd166"},
-            {label:"Shifts",value:String(periodShiftOnlyCount),sub:periodMeetingCount>0?("+ "+periodMeetingCount+" meeting"+(periodMeetingCount!==1?"s":"")):"this period",edge:"rgba(255,255,255,0.15)"},
+            {label:"Shifts",value:workedShiftCount+"/"+scheduledShiftCount,sub:scheduledMeetingCount>0?(attendedMeetingCount+"/"+scheduledMeetingCount+" meeting"+(scheduledMeetingCount!==1?"s":"")+" attended"):"worked / scheduled",edge:"rgba(255,255,255,0.15)"},
             {label:"Tasks",value:String(periodTaskCount),sub:"logged this period",edge:"#c77dff"}
           ].map(function(c){return(
             <div key={c.label} style={{background:"rgba(225,234,255,0.07)",border:"0.5px solid rgba(255,255,255,0.10)",borderRadius:12,padding:"12px 14px",...cellEdge(c.edge)}}>
@@ -1571,7 +1623,7 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
         <div className="card-rim" style={wCard({marginBottom:0})}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
             <div style={wST}>Shifts</div>
-            <div style={{fontSize:9,color:T.text3}}>click to add diary</div>
+            <div style={{fontSize:9,color:T.text3}}>tap a shift → journal to mark worked</div>
           </div>
           {periodShifts.length===0
             ?<div style={{fontSize:12,color:T.text2,padding:"20px 0",textAlign:"center"}}>{gcalEvents&&gcalEvents.length>0?"No GoTab shifts this period — use prev to look back":"Connect Google Calendar to see shifts"}</div>
@@ -1588,11 +1640,14 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
                 const kind=classifyWorkEvent(ev);
                 const isMeeting=kind==="meeting";
                 const MEET="#ffa94d";
+                const counted=isCounted(ev);
+                const future=daysBetween(ev.date)>0;
+                const markedMissed=entryFor(ev).attended===false;
                 const dotCol=isMeeting?MEET:(!past?"#5b8cff":diary?"#69f0ae":T.text3);
                 const dotGlow=isMeeting?("0 0 6px "+MEET):(!past?"0 0 7px #5b8cff":diary?"0 0 7px #69f0ae":"none");
                 return(
                   <div key={sk} style={{marginBottom:6}}>
-                    <div onClick={function(){openShift(ev);}} style={{position:"relative",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",paddingLeft:14,borderRadius:isExp?"10px 10px 0 0":8,background:isExp?"rgba(91,140,255,0.08)":(isMeeting?"rgba(255,169,77,0.05)":T.bg3),border:"0.5px solid "+(isExp?T.accent:(isMeeting?"rgba(255,169,77,0.35)":T.border)),borderBottom:isExp?"none":"0.5px solid "+(isMeeting?"rgba(255,169,77,0.35)":T.border),cursor:"pointer",opacity:past&&!isExp?0.65:1,overflow:"hidden",transition:"background 0.12s,border 0.12s"}}>
+                    <div onClick={function(){if(!isMeeting)openShift(ev);}} style={{position:"relative",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",paddingLeft:14,borderRadius:isExp?"10px 10px 0 0":8,background:isExp?"rgba(91,140,255,0.08)":(isMeeting?"rgba(255,169,77,0.05)":T.bg3),border:"0.5px solid "+(isExp?T.accent:(isMeeting?"rgba(255,169,77,0.35)":T.border)),borderBottom:isExp?"none":"0.5px solid "+(isMeeting?"rgba(255,169,77,0.35)":T.border),cursor:isMeeting?"default":"pointer",opacity:(past||markedMissed)&&!isExp?0.6:1,overflow:"hidden",transition:"background 0.12s,border 0.12s"}}>
                       <div style={{position:"absolute",left:0,top:5,bottom:5,width:isMeeting?2:3,borderRadius:1,background:isMeeting?MEET:T.accent,opacity:past?0.45:0.85}}/>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:11,fontWeight:600,color:T.text,marginBottom:2}}>{d.toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short"})}</div>
@@ -1602,17 +1657,29 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
                         <span>{pay.normalHrs}h std</span>
                         {pay.penaltyHrs>0&&<span>{pay.penaltyHrs}h pen</span>}
                       </div>}
-                      <div style={{fontSize:12,fontWeight:700,color:T.text,flexShrink:0,minWidth:52,textAlign:"right"}}>{rowPay}</div>
+                      <div style={{fontSize:12,fontWeight:700,color:counted?T.text:T.text3,flexShrink:0,minWidth:52,textAlign:"right",textDecoration:markedMissed?"line-through":"none"}}>{rowPay}</div>
                       {isMeeting&&<span style={{fontSize:9,color:MEET,background:"rgba(255,169,77,0.12)",border:"0.5px solid rgba(255,169,77,0.3)",borderRadius:4,padding:"1px 5px",flexShrink:0,fontWeight:600}}>Meeting</span>}
                       {shiftTaskCount>0&&<span style={{fontSize:9,color:"#c77dff",background:"rgba(199,125,255,0.12)",border:"0.5px solid rgba(199,125,255,0.25)",borderRadius:4,padding:"1px 5px",flexShrink:0}}>{shiftTaskCount} task{shiftTaskCount!==1?"s":""}</span>}
-                      <div style={{width:8,height:8,borderRadius:"50%",background:dotCol,boxShadow:dotGlow,flexShrink:0}}/>
+                      {isMeeting
+                        ?<div style={{display:"flex",gap:4,flexShrink:0}} onClick={function(e){e.stopPropagation();}}>
+                          <button onClick={function(){setAttendance(ev,true);}} style={{fontSize:9,padding:"2px 7px",borderRadius:5,border:"0.5px solid "+(counted?"#69f0ae":"rgba(255,255,255,0.18)"),background:counted?"rgba(105,240,174,0.15)":"transparent",color:counted?"#69f0ae":T.text3,cursor:"pointer",fontWeight:600}}>Went</button>
+                          <button onClick={function(){setAttendance(ev,false);}} style={{fontSize:9,padding:"2px 7px",borderRadius:5,border:"0.5px solid "+(markedMissed?"#ff6b6b":"rgba(255,255,255,0.18)"),background:markedMissed?"rgba(255,107,107,0.12)":"transparent",color:markedMissed?"#ff6b6b":T.text3,cursor:"pointer",fontWeight:600}}>Skip</button>
+                        </div>
+                        :(counted
+                          ?<span style={{fontSize:9,color:"#69f0ae",background:"rgba(105,240,174,0.12)",border:"0.5px solid rgba(105,240,174,0.3)",borderRadius:4,padding:"1px 6px",flexShrink:0,fontWeight:600}}>✓ worked</span>
+                          :(future
+                            ?<span style={{fontSize:9,color:T.text3,flexShrink:0}}>scheduled</span>
+                            :<span style={{fontSize:9,color:"#5b8cff",background:"rgba(91,140,255,0.12)",border:"0.5px solid rgba(91,140,255,0.3)",borderRadius:4,padding:"1px 6px",flexShrink:0,fontWeight:600}}>mark worked</span>))}
                     </div>
                     {isExp&&<div style={{background:"rgba(91,140,255,0.05)",border:"0.5px solid "+T.accent,borderTop:"none",borderRadius:"0 0 10px 10px",padding:"12px 14px"}}>
-                      <div style={{fontSize:10,color:T.text3,marginBottom:6,letterSpacing:"0.02em"}}>Shift diary</div>
-                      <textarea rows={4} placeholder="How did the shift go? Any notable incidents, wins, or patterns worth remembering." value={logDraft.notes} onChange={function(e){setLogDraft({notes:e.target.value});}} style={{...wInp,resize:"none",fontSize:11,lineHeight:1.6}}/>
-                      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
-                        <button onClick={function(){setExpandedShift(null);}} style={wBtn}>Cancel</button>
-                        <button onClick={function(){saveShiftLog(ev);}} style={wBtnP}>Save</button>
+                      <div style={{fontSize:10,color:T.text3,marginBottom:6,letterSpacing:"0.02em"}}>Shift diary — a note marks this shift as worked &amp; counts its pay</div>
+                      <textarea rows={4} placeholder="What did you do this shift? Incidents, wins, patterns worth remembering." value={logDraft.notes} onChange={function(e){setLogDraft({notes:e.target.value});}} style={{...wInp,resize:"none",fontSize:11,lineHeight:1.6}}/>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginTop:10}}>
+                        <div>{counted&&<button onClick={function(){setAttendance(ev,false);setExpandedShift(null);}} style={{...wBtn,color:T.danger}}>Didn't work</button>}</div>
+                        <div style={{display:"flex",gap:8}}>
+                          <button onClick={function(){setExpandedShift(null);}} style={wBtn}>Cancel</button>
+                          <button onClick={function(){saveShiftLog(ev);}} style={wBtnP}>Save &amp; mark worked</button>
+                        </div>
                       </div>
                     </div>}
                   </div>
@@ -1627,6 +1694,7 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
                   <span style={{color:T.text,fontWeight:700}}>{fmt$(estimatedPay)}</span>
                 </div>
               </div>
+              {projectedPay!=null&&projectedEquiv>periodEquiv+0.01&&<div style={{display:"flex",justifyContent:"flex-end",fontSize:9,color:T.text3,padding:"0 12px 4px"}}>Projected if all scheduled worked: {projectedEquiv.toFixed(1)}h equiv · {fmt$(projectedPay)}</div>}
             </div>
           }
         </div>
@@ -3326,7 +3394,7 @@ function App(){
           <div className="card-rim" style={card()}><div style={sT}>Knowledge base</div><div style={{fontSize:11,color:T.text2,marginBottom:10}}>Notes here feed your daily check-in context.</div>{(data.docs||[]).map(function(d){return(<div key={d.id} style={{marginBottom:8,padding:"8px 10px",background:T.bg3,borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><div style={{fontSize:12,fontWeight:500,color:T.text}}>{d.title}</div><div style={{fontSize:10,color:T.text3,marginTop:2}}>{d.content.slice(0,80)}...</div><div style={{marginTop:4,display:"flex",gap:4}}>{(d.tags||[]).map(function(tag){return<span key={tag} style={{fontSize:9,padding:"1px 6px",borderRadius:99,background:T.accentBg,color:T.accent}}>{tag}</span>;})}</div></div><button onClick={function(){trk("kb.doc_delete");setData(function(p){return{...p,docs:(p.docs||[]).filter(function(x){return x.id!==d.id;})};});}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,marginLeft:8}}>×</button></div>);})}<div style={{marginTop:12,display:"flex",flexDirection:"column",gap:6}}><input style={inp} placeholder="Title" value={docIn.title} onChange={function(ev){setDocIn(function(p){return{...p,title:ev.target.value};});}}/><input style={inp} placeholder="Tags (comma separated)" value={docIn.tags} onChange={function(ev){setDocIn(function(p){return{...p,tags:ev.target.value};});}}/><textarea style={{...inp,resize:"vertical"}} rows={3} placeholder="Content..." value={docIn.content} onChange={function(ev){setDocIn(function(p){return{...p,content:ev.target.value};});}}/><button style={btnP} onClick={function(){if(!docIn.title||!docIn.content)return;trk("kb.doc_add");setData(function(p){return{...p,docs:(p.docs||[]).concat([{id:"doc"+Date.now(),title:docIn.title,tags:docIn.tags.split(",").map(function(t){return t.trim();}),content:docIn.content}])};});setDocIn({title:"",tags:"",content:""});}}>Add document</button></div></div>
         </div>}
 
-        {page==="Finance"&&<div style={{maxWidth:mob?undefined:900}}><ErrorBoundary name="Finance"><FinanceSection mob={mob} data={data.finance||{}} onUpdate={updateFinance} gcalEvents={visibleGcalEvents}/></ErrorBoundary></div>}
+        {page==="Finance"&&<div style={{maxWidth:mob?undefined:900}}><ErrorBoundary name="Finance"><FinanceSection mob={mob} data={data.finance||{}} onUpdate={updateFinance} gcalEvents={visibleGcalEvents} work={data.work||{}}/></ErrorBoundary></div>}
 
         {page==="Journal"&&<div style={{display:"flex",gap:6,marginBottom:14}}>
           {[{key:"captures",label:"Captures",icon:"bolt"},{key:"reflection",label:"Reflection",icon:"target"}].map(function(t){const active=journalTab===t.key;return(<button key={t.key} onClick={function(){setJournalTab(t.key);}} style={{padding:"6px 14px",borderRadius:99,fontSize:12,cursor:"pointer",border:active?"1px solid "+T.accent:"0.5px solid "+T.border,background:active?T.accentBg:"transparent",color:active?T.accent:T.text2,fontWeight:active?600:400,display:"flex",alignItems:"center",gap:6}}><span style={{display:"flex"}}><UIcon name={t.icon} size={13}/></span>{t.label}</button>);})}

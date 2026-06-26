@@ -627,6 +627,8 @@ var INIT = {
       unit: " tasks"
     }],
     shiftLogs: {},
+    progressiveSince: "",
+    attendanceMigrated: false,
     taskLog: [],
     focusGoals: []
   }
@@ -699,6 +701,8 @@ function mergeWithDefaults(cloud) {
         payCycleDay: Number(w.payCycleDay || cloud.payCycleDay || 1),
         goals: Array.isArray(w.goals) ? w.goals : INIT.work.goals,
         shiftLogs: w.shiftLogs && _typeof(w.shiftLogs) === "object" ? w.shiftLogs : {},
+        progressiveSince: w.progressiveSince || "",
+        attendanceMigrated: !!w.attendanceMigrated,
         taskLog: Array.isArray(w.taskLog) ? w.taskLog : [],
         focusGoals: Array.isArray(w.focusGoals) ? w.focusGoals : []
       });
@@ -961,6 +965,21 @@ function classifyWorkEvent(ev) {
   if (dow === 2 && near(t.start, 14 * 60)) return "meeting"; // Tuesday 2:00pm
   if (dow === 5 && near(t.start, 11 * 60)) return "meeting"; // Friday 11:00am
   return "shift";
+}
+// Shared attendance predicate (used by Work + Finance). A shift/meeting counts toward REAL pay
+// only when actually worked/attended: shifts when marked worked or (legacy) before the cutoff;
+// meetings only when explicitly marked attended.
+function workEntryFor(ev, shiftLogs) {
+  return shiftLogs && (shiftLogs[shiftKey(ev)] || shiftLogs[ev.date]) || {};
+}
+function isWorkEventCounted(ev, shiftLogs, progressiveSince) {
+  var kind = classifyWorkEvent(ev);
+  if (kind === "ignore") return false;
+  var e = workEntryFor(ev, shiftLogs);
+  if (kind === "meeting") return e.attended === true;
+  if (e.attended === true) return true;
+  if (e.attended === false) return false;
+  return progressiveSince ? ev.date < progressiveSince : true;
 }
 function dedupeEvents(evs) {
   var seen = new Map();
@@ -3674,7 +3693,8 @@ function FinanceSection(_ref) {
   var data = _ref.data,
     onUpdate = _ref.onUpdate,
     mob = _ref.mob,
-    gcalEvents = _ref.gcalEvents;
+    gcalEvents = _ref.gcalEvents,
+    work = _ref.work;
   mob = mob || false;
   var _useState37 = useState(todayStr().slice(0, 7)),
     _useState38 = _slicedToArray(_useState37, 2),
@@ -3827,8 +3847,11 @@ function FinanceSection(_ref) {
   var allThisMonth = recurringThisMonth.concat(oneOffThisMonth);
   var srcAmounts = monthlyIncome[month] || {};
   var hourlyRate = Number(data.hourlyRate || 0);
+  var _workLogs = work && work.shiftLogs || {};
+  var _workSince = work && work.progressiveSince || "";
+  // Match the Work tab: count only shifts worked + meetings attended (real pay), not all scheduled.
   var monthShifts = (gcalEvents || []).filter(function (ev) {
-    return ev.date && ev.date.startsWith(month) && isGoTabEvent(ev) && classifyWorkEvent(ev) !== "ignore";
+    return ev.date && ev.date.startsWith(month) && isGoTabEvent(ev) && isWorkEventCounted(ev, _workLogs, _workSince);
   });
   var calcGoTabIncome = hourlyRate > 0 ? monthShifts.reduce(function (a, ev) {
     var pay = shiftPay(ev.time);
@@ -5805,6 +5828,30 @@ function WorkSection(_ref2) {
     })[0];
     if (first) setTaskShiftDate(first.date);
   }, []);
+  // One-time migration: set the progressive cutoff to today (past shifts auto-count as worked,
+  // since Jayden's never missed one) and mark this month's Friday 11–12 meetings (~1/week) attended.
+  useEffect(function () {
+    if (data.attendanceMigrated || !(gcalEvents && gcalEvents.length)) return;
+    var today = todayStr();
+    var month = today.slice(0, 7);
+    var updates = _objectSpread({}, data.shiftLogs || {});
+    gcalEvents.filter(isGoTabEvent).forEach(function (ev) {
+      if (classifyWorkEvent(ev) !== "meeting" || !ev.date.startsWith(month) || ev.date > today) return;
+      if (new Date(ev.date + "T12:00:00").getDay() !== 5) return; // Friday → ~1 meeting/week
+      var k = shiftKey(ev);
+      if (updates[k] && updates[k].attended != null) return;
+      updates[k] = _objectSpread(_objectSpread({}, updates[k] || {}), {}, {
+        attended: true,
+        date: ev.date,
+        time: ev.time
+      });
+    });
+    onUpdate(_objectSpread(_objectSpread({}, data), {}, {
+      shiftLogs: updates,
+      progressiveSince: today,
+      attendanceMigrated: true
+    }));
+  }, [gcalEvents]);
   var wBtn = _objectSpread(_objectSpread({}, btnGlass), {}, {
     padding: "5px 12px"
   });
@@ -5901,30 +5948,47 @@ function WorkSection(_ref2) {
   var _getPeriodRange = getPeriodRange(cycleOffset),
     periodStart = _getPeriodRange.start,
     periodEnd = _getPeriodRange.end;
-  var periodShifts = (gcalEvents || []).filter(isGoTabEvent).filter(function (ev) {
+  var progressiveSince = data.progressiveSince || "";
+  function entryFor(ev) {
+    return workEntryFor(ev, shiftLogs);
+  }
+  function isCounted(ev) {
+    return isWorkEventCounted(ev, shiftLogs, progressiveSince);
+  }
+  var isMeetingEv = function isMeetingEv(ev) {
+    return classifyWorkEvent(ev) === "meeting";
+  };
+  var periodScheduled = (gcalEvents || []).filter(isGoTabEvent).filter(function (ev) {
     return classifyWorkEvent(ev) !== "ignore";
   }).filter(function (ev) {
     return ev.date >= periodStart && ev.date <= periodEnd;
   }).sort(function (a, b) {
     return a.date.localeCompare(b.date);
   });
-  var periodMeetingCount = periodShifts.filter(function (ev) {
-    return classifyWorkEvent(ev) === "meeting";
-  }).length;
-  var periodShiftOnlyCount = periodShifts.length - periodMeetingCount;
-  var periodNorm = periodShifts.reduce(function (a, ev) {
+  var periodShifts = periodScheduled; // the list still renders every scheduled event, with worked state
+  var periodWorked = periodScheduled.filter(isCounted);
+  var scheduledMeetingCount = periodScheduled.filter(isMeetingEv).length;
+  var scheduledShiftCount = periodScheduled.length - scheduledMeetingCount;
+  var attendedMeetingCount = periodWorked.filter(isMeetingEv).length;
+  var workedShiftCount = periodWorked.length - attendedMeetingCount;
+  var periodNorm = periodWorked.reduce(function (a, ev) {
     var p = shiftPay(ev.time);
     return a + (p ? p.normalHrs : 0);
   }, 0);
-  var periodPen = periodShifts.reduce(function (a, ev) {
+  var periodPen = periodWorked.reduce(function (a, ev) {
     var p = shiftPay(ev.time);
     return a + (p ? p.penaltyHrs : 0);
   }, 0);
-  var periodEquiv = periodShifts.reduce(function (a, ev) {
+  var periodEquiv = periodWorked.reduce(function (a, ev) {
     var p = shiftPay(ev.time);
     return a + (p ? p.totalEquiv : 0);
   }, 0);
   var estimatedPay = hrRate > 0 ? periodEquiv * hrRate : null;
+  var projectedEquiv = periodScheduled.reduce(function (a, ev) {
+    var p = shiftPay(ev.time);
+    return a + (p ? p.totalEquiv : 0);
+  }, 0);
+  var projectedPay = hrRate > 0 ? projectedEquiv * hrRate : null;
   function estimateTax(gross) {
     if (gross <= 18200) return gross * 0.02;
     if (gross <= 45000) return (gross - 18200) * 0.19 + gross * 0.02;
@@ -5973,19 +6037,39 @@ function WorkSection(_ref2) {
     });
   }
   function saveShiftLog(ev) {
+    // Saving a shift diary = marking the shift WORKED. Force a journal note.
+    if (!logDraft.notes || !logDraft.notes.trim()) {
+      if (window.showToast) window.showToast("Add a note to mark this shift worked", "warn");
+      return;
+    }
     var k = ev ? shiftKey(ev) : expandedShift;
     var prev = shiftLogs[k] || (ev ? shiftLogs[ev.date] : null) || {};
     var next = _objectSpread(_objectSpread({}, shiftLogs), {}, _defineProperty({}, k, _objectSpread(_objectSpread({}, prev), {}, {
       notes: logDraft.notes,
       date: ev ? ev.date : prev.date,
-      time: ev ? ev.time : prev.time
+      time: ev ? ev.time : prev.time,
+      attended: true
     })));
     if (ev && k !== ev.date && next[ev.date]) delete next[ev.date]; // migrate legacy date-keyed entry onto the per-shift key
     onUpdate(_objectSpread(_objectSpread({}, data), {}, {
       shiftLogs: next
     }));
     setExpandedShift(null);
-    if (window.showToast) window.showToast("Diary saved", "success");
+    if (window.showToast) window.showToast("Shift marked worked", "success");
+  }
+  // Set worked/attended on a shift or meeting. For meetings (no journal) and for un-marking a shift.
+  function setAttendance(ev, val) {
+    var k = shiftKey(ev);
+    var prev = shiftLogs[k] || shiftLogs[ev.date] || {};
+    var next = _objectSpread(_objectSpread({}, shiftLogs), {}, _defineProperty({}, k, _objectSpread(_objectSpread({}, prev), {}, {
+      date: ev.date,
+      time: ev.time,
+      attended: val
+    })));
+    if (k !== ev.date && next[ev.date]) delete next[ev.date];
+    onUpdate(_objectSpread(_objectSpread({}, data), {}, {
+      shiftLogs: next
+    }));
   }
   function addTask() {
     if (!taskInput.trim() && !taskTag) return;
@@ -6189,7 +6273,7 @@ function WorkSection(_ref2) {
   }, [{
     label: "Gross pay",
     value: fmt$(estimatedPay),
-    sub: periodEquiv.toFixed(1) + "h equiv · " + periodShiftOnlyCount + " shift" + (periodShiftOnlyCount !== 1 ? "s" : "") + (periodMeetingCount > 0 ? " + " + periodMeetingCount + " mtg" : ""),
+    sub: periodEquiv.toFixed(1) + "h · " + workedShiftCount + "/" + scheduledShiftCount + " shifts worked" + (projectedPay != null && projectedEquiv > periodEquiv + 0.01 ? " · proj " + fmt$(projectedPay) : ""),
     edge: "#5b8cff"
   }, {
     label: "Est. tax",
@@ -6245,8 +6329,8 @@ function WorkSection(_ref2) {
     edge: "#ffd166"
   }, {
     label: "Shifts",
-    value: String(periodShiftOnlyCount),
-    sub: periodMeetingCount > 0 ? "+ " + periodMeetingCount + " meeting" + (periodMeetingCount !== 1 ? "s" : "") : "this period",
+    value: workedShiftCount + "/" + scheduledShiftCount,
+    sub: scheduledMeetingCount > 0 ? attendedMeetingCount + "/" + scheduledMeetingCount + " meeting" + (scheduledMeetingCount !== 1 ? "s" : "") + " attended" : "worked / scheduled",
     edge: "rgba(255,255,255,0.15)"
   }, {
     label: "Tasks",
@@ -6315,7 +6399,7 @@ function WorkSection(_ref2) {
       fontSize: 9,
       color: T.text3
     }
-  }, "click to add diary")), periodShifts.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  }, "tap a shift \u2192 journal to mark worked")), periodShifts.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: T.text2,
@@ -6336,6 +6420,9 @@ function WorkSection(_ref2) {
     var kind = classifyWorkEvent(ev);
     var isMeeting = kind === "meeting";
     var MEET = "#ffa94d";
+    var counted = isCounted(ev);
+    var future = daysBetween(ev.date) > 0;
+    var markedMissed = entryFor(ev).attended === false;
     var dotCol = isMeeting ? MEET : !past ? "#5b8cff" : diary ? "#69f0ae" : T.text3;
     var dotGlow = isMeeting ? "0 0 6px " + MEET : !past ? "0 0 7px #5b8cff" : diary ? "0 0 7px #69f0ae" : "none";
     return /*#__PURE__*/React.createElement("div", {
@@ -6345,7 +6432,7 @@ function WorkSection(_ref2) {
       }
     }, /*#__PURE__*/React.createElement("div", {
       onClick: function onClick() {
-        openShift(ev);
+        if (!isMeeting) openShift(ev);
       },
       style: {
         position: "relative",
@@ -6358,8 +6445,8 @@ function WorkSection(_ref2) {
         background: isExp ? "rgba(91,140,255,0.08)" : isMeeting ? "rgba(255,169,77,0.05)" : T.bg3,
         border: "0.5px solid " + (isExp ? T.accent : isMeeting ? "rgba(255,169,77,0.35)" : T.border),
         borderBottom: isExp ? "none" : "0.5px solid " + (isMeeting ? "rgba(255,169,77,0.35)" : T.border),
-        cursor: "pointer",
-        opacity: past && !isExp ? 0.65 : 1,
+        cursor: isMeeting ? "default" : "pointer",
+        opacity: (past || markedMissed) && !isExp ? 0.6 : 1,
         overflow: "hidden",
         transition: "background 0.12s,border 0.12s"
       }
@@ -6407,10 +6494,11 @@ function WorkSection(_ref2) {
       style: {
         fontSize: 12,
         fontWeight: 700,
-        color: T.text,
+        color: counted ? T.text : T.text3,
         flexShrink: 0,
         minWidth: 52,
-        textAlign: "right"
+        textAlign: "right",
+        textDecoration: markedMissed ? "line-through" : "none"
       }
     }, rowPay), isMeeting && /*#__PURE__*/React.createElement("span", {
       style: {
@@ -6433,16 +6521,72 @@ function WorkSection(_ref2) {
         padding: "1px 5px",
         flexShrink: 0
       }
-    }, shiftTaskCount, " task", shiftTaskCount !== 1 ? "s" : ""), /*#__PURE__*/React.createElement("div", {
+    }, shiftTaskCount, " task", shiftTaskCount !== 1 ? "s" : ""), isMeeting ? /*#__PURE__*/React.createElement("div", {
       style: {
-        width: 8,
-        height: 8,
-        borderRadius: "50%",
-        background: dotCol,
-        boxShadow: dotGlow,
+        display: "flex",
+        gap: 4,
+        flexShrink: 0
+      },
+      onClick: function onClick(e) {
+        e.stopPropagation();
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        setAttendance(ev, true);
+      },
+      style: {
+        fontSize: 9,
+        padding: "2px 7px",
+        borderRadius: 5,
+        border: "0.5px solid " + (counted ? "#69f0ae" : "rgba(255,255,255,0.18)"),
+        background: counted ? "rgba(105,240,174,0.15)" : "transparent",
+        color: counted ? "#69f0ae" : T.text3,
+        cursor: "pointer",
+        fontWeight: 600
+      }
+    }, "Went"), /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        setAttendance(ev, false);
+      },
+      style: {
+        fontSize: 9,
+        padding: "2px 7px",
+        borderRadius: 5,
+        border: "0.5px solid " + (markedMissed ? "#ff6b6b" : "rgba(255,255,255,0.18)"),
+        background: markedMissed ? "rgba(255,107,107,0.12)" : "transparent",
+        color: markedMissed ? "#ff6b6b" : T.text3,
+        cursor: "pointer",
+        fontWeight: 600
+      }
+    }, "Skip")) : counted ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 9,
+        color: "#69f0ae",
+        background: "rgba(105,240,174,0.12)",
+        border: "0.5px solid rgba(105,240,174,0.3)",
+        borderRadius: 4,
+        padding: "1px 6px",
+        flexShrink: 0,
+        fontWeight: 600
+      }
+    }, "\u2713 worked") : future ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 9,
+        color: T.text3,
         flexShrink: 0
       }
-    })), isExp && /*#__PURE__*/React.createElement("div", {
+    }, "scheduled") : /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 9,
+        color: "#5b8cff",
+        background: "rgba(91,140,255,0.12)",
+        border: "0.5px solid rgba(91,140,255,0.3)",
+        borderRadius: 4,
+        padding: "1px 6px",
+        flexShrink: 0,
+        fontWeight: 600
+      }
+    }, "mark worked")), isExp && /*#__PURE__*/React.createElement("div", {
       style: {
         background: "rgba(91,140,255,0.05)",
         border: "0.5px solid " + T.accent,
@@ -6457,9 +6601,9 @@ function WorkSection(_ref2) {
         marginBottom: 6,
         letterSpacing: "0.02em"
       }
-    }, "Shift diary"), /*#__PURE__*/React.createElement("textarea", {
+    }, "Shift diary \u2014 a note marks this shift as worked & counts its pay"), /*#__PURE__*/React.createElement("textarea", {
       rows: 4,
-      placeholder: "How did the shift go? Any notable incidents, wins, or patterns worth remembering.",
+      placeholder: "What did you do this shift? Incidents, wins, patterns worth remembering.",
       value: logDraft.notes,
       onChange: function onChange(e) {
         setLogDraft({
@@ -6474,9 +6618,23 @@ function WorkSection(_ref2) {
     }), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
-        justifyContent: "flex-end",
+        justifyContent: "space-between",
+        alignItems: "center",
         gap: 8,
         marginTop: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", null, counted && /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        setAttendance(ev, false);
+        setExpandedShift(null);
+      },
+      style: _objectSpread(_objectSpread({}, wBtn), {}, {
+        color: T.danger
+      })
+    }, "Didn't work")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8
       }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: function onClick() {
@@ -6488,7 +6646,7 @@ function WorkSection(_ref2) {
         saveShiftLog(ev);
       },
       style: wBtnP
-    }, "Save"))));
+    }, "Save & mark worked")))));
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -6532,7 +6690,15 @@ function WorkSection(_ref2) {
       color: T.text,
       fontWeight: 700
     }
-  }, fmt$(estimatedPay)))))), /*#__PURE__*/React.createElement("div", {
+  }, fmt$(estimatedPay)))), projectedPay != null && projectedEquiv > periodEquiv + 0.01 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "flex-end",
+      fontSize: 9,
+      color: T.text3,
+      padding: "0 12px 4px"
+    }
+  }, "Projected if all scheduled worked: ", projectedEquiv.toFixed(1), "h equiv \xB7 ", fmt$(projectedPay)))), /*#__PURE__*/React.createElement("div", {
     className: "card-rim",
     style: wCard({
       marginBottom: 0
@@ -12812,7 +12978,8 @@ function App() {
     mob: mob,
     data: data.finance || {},
     onUpdate: updateFinance,
-    gcalEvents: visibleGcalEvents
+    gcalEvents: visibleGcalEvents,
+    work: data.work || {}
   }))), page === "Journal" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
