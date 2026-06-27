@@ -5786,6 +5786,7 @@ function WorkSection(_ref2) {
   var data = _ref2.data,
     mob = _ref2.mob,
     onUpdate = _ref2.onUpdate,
+    onFlush = _ref2.onFlush,
     gcalEvents = _ref2.gcalEvents;
   mob = mob || false;
   var _useState55 = useState(null),
@@ -5798,6 +5799,10 @@ function WorkSection(_ref2) {
     _useState58 = _slicedToArray(_useState57, 2),
     logDraft = _useState58[0],
     setLogDraft = _useState58[1];
+  // Live refs so the draft-autosave (which fires on close/unmount) reads current
+  // values instead of stale closure values captured when the shift was opened.
+  var _draftRef = useRef(logDraft);
+  _draftRef.current = logDraft;
   var _useState59 = useState(""),
     _useState60 = _slicedToArray(_useState59, 2),
     goalInput = _useState60[0],
@@ -5966,6 +5971,38 @@ function WorkSection(_ref2) {
     return a.date.localeCompare(b.date);
   });
   var periodShifts = periodScheduled; // the list still renders every scheduled event, with worked state
+  // Keep live refs for the draft-autosave cleanup (runs on close/unmount with stale closures otherwise).
+  var _shiftLogsRef = useRef(shiftLogs);
+  _shiftLogsRef.current = shiftLogs;
+  var _dataRef = useRef(data);
+  _dataRef.current = data;
+  var _periodShiftsRef = useRef(periodShifts);
+  _periodShiftsRef.current = periodShifts;
+  // Autosave the shift-diary draft when the row closes, switches, or the page unmounts —
+  // so typed text is never lost if you navigate away without clicking "Save & mark worked".
+  // Stored under draftNotes (NOT notes) so it does NOT mark the shift worked until you save.
+  useEffect(function () {
+    var key = expandedShift;
+    if (!key) return undefined;
+    return function persistDraftOnClose() {
+      var txt = (_draftRef.current && _draftRef.current.notes || "").trim();
+      if (!txt) return;
+      var sl = _shiftLogsRef.current || {};
+      var prev = sl[key] || {};
+      // Nothing new to keep: already committed as a real note, or draft unchanged.
+      if ((prev.notes || "") === txt || (prev.draftNotes || "") === txt) return;
+      var ev = (_periodShiftsRef.current || []).find(function (e) {
+        return shiftKey(e) === key;
+      });
+      onUpdate(_objectSpread(_objectSpread({}, _dataRef.current), {}, {
+        shiftLogs: _objectSpread(_objectSpread({}, sl), {}, _defineProperty({}, key, _objectSpread(_objectSpread({}, prev), {}, {
+          draftNotes: txt,
+          date: prev.date || ev && ev.date,
+          time: prev.time || ev && ev.time
+        })))
+      }));
+    };
+  }, [expandedShift]);
   var periodWorked = periodScheduled.filter(isCounted);
   var scheduledMeetingCount = periodScheduled.filter(isMeetingEv).length;
   var scheduledShiftCount = periodScheduled.length - scheduledMeetingCount;
@@ -6032,10 +6069,12 @@ function WorkSection(_ref2) {
       return;
     }
     setExpandedShift(k);
+    var e = shiftLogs[k] || shiftLogs[ev.date] || {};
     setLogDraft({
-      notes: (shiftLogs[k] || shiftLogs[ev.date] || {}).notes || ""
-    });
+      notes: e.notes || e.draftNotes || ""
+    }); // fall back to an autosaved draft
   }
+
   function saveShiftLog(ev) {
     // Saving a shift diary = marking the shift WORKED. Force a journal note.
     if (!logDraft.notes || !logDraft.notes.trim()) {
@@ -6044,16 +6083,19 @@ function WorkSection(_ref2) {
     }
     var k = ev ? shiftKey(ev) : expandedShift;
     var prev = shiftLogs[k] || (ev ? shiftLogs[ev.date] : null) || {};
+    // Commit notes + attended; drop draftNotes now that it's a real saved note.
     var next = _objectSpread(_objectSpread({}, shiftLogs), {}, _defineProperty({}, k, _objectSpread(_objectSpread({}, prev), {}, {
       notes: logDraft.notes,
       date: ev ? ev.date : prev.date,
       time: ev ? ev.time : prev.time,
-      attended: true
+      attended: true,
+      draftNotes: undefined
     })));
     if (ev && k !== ev.date && next[ev.date]) delete next[ev.date]; // migrate legacy date-keyed entry onto the per-shift key
     onUpdate(_objectSpread(_objectSpread({}, data), {}, {
       shiftLogs: next
     }));
+    if (onFlush) onFlush(); // push to the cloud now, not after the 2s debounce — survives an immediate refresh
     setExpandedShift(null);
     if (window.showToast) window.showToast("Shift marked worked", "success");
   }
@@ -6070,7 +6112,9 @@ function WorkSection(_ref2) {
     onUpdate(_objectSpread(_objectSpread({}, data), {}, {
       shiftLogs: next
     }));
+    if (onFlush) onFlush(); // immediate cloud write
   }
+
   function addTask() {
     if (!taskInput.trim() && !taskTag) return;
     var entry = {
@@ -6641,7 +6685,7 @@ function WorkSection(_ref2) {
         setExpandedShift(null);
       },
       style: wBtn
-    }, "Cancel"), /*#__PURE__*/React.createElement("button", {
+    }, "Close"), /*#__PURE__*/React.createElement("button", {
       onClick: function onClick() {
         saveShiftLog(ev);
       },
@@ -7353,6 +7397,7 @@ function App() {
   var _fbReady = useRef(false);
   var _dataLoaded = useRef(false); // only true after we've confirmed Firebase state
   var _saveTimer = useRef(null);
+  var _flushNow = useRef(false); // set to skip the 2s debounce for discrete saves (e.g. shift logs)
   var _useState179 = useState({
       title: "",
       tags: "",
@@ -7928,6 +7973,10 @@ function App() {
     }
     setSyncStatus("syncing");
     if (_saveTimer.current) clearTimeout(_saveTimer.current);
+    // Discrete actions (saving a shift diary, marking attended) request an immediate flush so a
+    // quick refresh can't lose them; ordinary typing keeps the 2s debounce.
+    var delay = _flushNow.current ? 0 : 2000;
+    _flushNow.current = false;
     _saveTimer.current = setTimeout(function () {
       window.DASH_DOC.set({
         dashData: stripUndefined(data)
@@ -7937,7 +7986,7 @@ function App() {
         console.error("[Firestore] Write failed:", e.message);
         setSyncStatus("offline");
       });
-    }, 2000);
+    }, delay);
   }, [data]);
   useEffect(function () {
     if (!_fbReady.current || !_dataLoaded.current || !window.DASH_DOC) return;
@@ -9511,6 +9560,9 @@ function App() {
       });
     });
   }
+  function requestImmediateSave() {
+    _flushNow.current = true;
+  } // bypass the 2s debounce on the next data save
   function submitRefl() {
     if (!reflIn.trim()) {
       showToast("Write something before continuing.");
@@ -12459,6 +12511,7 @@ function App() {
     mob: mob,
     data: data.work || {},
     onUpdate: updateWork,
+    onFlush: requestImmediateSave,
     gcalEvents: dedupedEvents
   }))), page === "Gym" && /*#__PURE__*/React.createElement(ErrorBoundary, {
     name: "Gym"

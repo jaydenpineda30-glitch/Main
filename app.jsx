@@ -1456,10 +1456,13 @@ function FinanceSection({data,onUpdate,mob,gcalEvents,work}){
   );
 }
 
-function WorkSection({data,mob,onUpdate,gcalEvents}){
+function WorkSection({data,mob,onUpdate,onFlush,gcalEvents}){
   mob=mob||false;
   const [expandedShift,setExpandedShift]=useState(null);
   const [logDraft,setLogDraft]=useState({notes:""});
+  // Live refs so the draft-autosave (which fires on close/unmount) reads current
+  // values instead of stale closure values captured when the shift was opened.
+  const _draftRef=useRef(logDraft);_draftRef.current=logDraft;
   const [goalInput,setGoalInput]=useState("");
   const [showSettings,setShowSettings]=useState(false);
   const [cycleOffset,setCycleOffset]=useState(0);
@@ -1514,6 +1517,27 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
   const isMeetingEv=function(ev){return classifyWorkEvent(ev)==="meeting";};
   const periodScheduled=(gcalEvents||[]).filter(isGoTabEvent).filter(function(ev){return classifyWorkEvent(ev)!=="ignore";}).filter(function(ev){return ev.date>=periodStart&&ev.date<=periodEnd;}).sort(function(a,b){return a.date.localeCompare(b.date);});
   const periodShifts=periodScheduled; // the list still renders every scheduled event, with worked state
+  // Keep live refs for the draft-autosave cleanup (runs on close/unmount with stale closures otherwise).
+  const _shiftLogsRef=useRef(shiftLogs);_shiftLogsRef.current=shiftLogs;
+  const _dataRef=useRef(data);_dataRef.current=data;
+  const _periodShiftsRef=useRef(periodShifts);_periodShiftsRef.current=periodShifts;
+  // Autosave the shift-diary draft when the row closes, switches, or the page unmounts —
+  // so typed text is never lost if you navigate away without clicking "Save & mark worked".
+  // Stored under draftNotes (NOT notes) so it does NOT mark the shift worked until you save.
+  useEffect(function(){
+    const key=expandedShift;
+    if(!key)return undefined;
+    return function persistDraftOnClose(){
+      const txt=((_draftRef.current&&_draftRef.current.notes)||"").trim();
+      if(!txt)return;
+      const sl=_shiftLogsRef.current||{};
+      const prev=sl[key]||{};
+      // Nothing new to keep: already committed as a real note, or draft unchanged.
+      if((prev.notes||"")===txt||(prev.draftNotes||"")===txt)return;
+      const ev=(_periodShiftsRef.current||[]).find(function(e){return shiftKey(e)===key;});
+      onUpdate({..._dataRef.current,shiftLogs:{...sl,[key]:{...prev,draftNotes:txt,date:prev.date||(ev&&ev.date),time:prev.time||(ev&&ev.time)}}});
+    };
+  },[expandedShift]);
   const periodWorked=periodScheduled.filter(isCounted);
   const scheduledMeetingCount=periodScheduled.filter(isMeetingEv).length;
   const scheduledShiftCount=periodScheduled.length-scheduledMeetingCount;
@@ -1538,16 +1562,19 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
     const k=shiftKey(ev);
     if(expandedShift===k){setExpandedShift(null);return;}
     setExpandedShift(k);
-    setLogDraft({notes:(shiftLogs[k]||shiftLogs[ev.date]||{}).notes||""});
+    const e=shiftLogs[k]||shiftLogs[ev.date]||{};
+    setLogDraft({notes:e.notes||e.draftNotes||""}); // fall back to an autosaved draft
   }
   function saveShiftLog(ev){
     // Saving a shift diary = marking the shift WORKED. Force a journal note.
     if(!logDraft.notes||!logDraft.notes.trim()){if(window.showToast)window.showToast("Add a note to mark this shift worked","warn");return;}
     const k=ev?shiftKey(ev):expandedShift;
     const prev=shiftLogs[k]||(ev?shiftLogs[ev.date]:null)||{};
-    const next={...shiftLogs,[k]:{...prev,notes:logDraft.notes,date:ev?ev.date:prev.date,time:ev?ev.time:prev.time,attended:true}};
+    // Commit notes + attended; drop draftNotes now that it's a real saved note.
+    const next={...shiftLogs,[k]:{...prev,notes:logDraft.notes,date:ev?ev.date:prev.date,time:ev?ev.time:prev.time,attended:true,draftNotes:undefined}};
     if(ev&&k!==ev.date&&next[ev.date])delete next[ev.date]; // migrate legacy date-keyed entry onto the per-shift key
     onUpdate({...data,shiftLogs:next});
+    if(onFlush)onFlush(); // push to the cloud now, not after the 2s debounce — survives an immediate refresh
     setExpandedShift(null);
     if(window.showToast)window.showToast("Shift marked worked","success");
   }
@@ -1558,6 +1585,7 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
     const next={...shiftLogs,[k]:{...prev,date:ev.date,time:ev.time,attended:val}};
     if(k!==ev.date&&next[ev.date])delete next[ev.date];
     onUpdate({...data,shiftLogs:next});
+    if(onFlush)onFlush(); // immediate cloud write
   }
   function addTask(){
     if(!taskInput.trim()&&!taskTag)return;
@@ -1677,7 +1705,7 @@ function WorkSection({data,mob,onUpdate,gcalEvents}){
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginTop:10}}>
                         <div>{counted&&<button onClick={function(){setAttendance(ev,false);setExpandedShift(null);}} style={{...wBtn,color:T.danger}}>Didn't work</button>}</div>
                         <div style={{display:"flex",gap:8}}>
-                          <button onClick={function(){setExpandedShift(null);}} style={wBtn}>Cancel</button>
+                          <button onClick={function(){setExpandedShift(null);}} style={wBtn}>Close</button>
                           <button onClick={function(){saveShiftLog(ev);}} style={wBtnP}>Save &amp; mark worked</button>
                         </div>
                       </div>
@@ -1871,6 +1899,7 @@ function App(){
   const _fbReady=useRef(false);
   const _dataLoaded=useRef(false); // only true after we've confirmed Firebase state
   const _saveTimer=useRef(null);
+  const _flushNow=useRef(false); // set to skip the 2s debounce for discrete saves (e.g. shift logs)
   const [docIn,setDocIn]=useState({title:"",tags:"",content:""});
   const [forceMob,setForceMob]=useState(false);
   const [navCollapsed,setNavCollapsed]=useState(function(){try{return localStorage.getItem("nav_collapsed")==="1";}catch(_){return false;}});
@@ -2197,9 +2226,12 @@ function App(){
     }
     setSyncStatus("syncing");
     if(_saveTimer.current)clearTimeout(_saveTimer.current);
+    // Discrete actions (saving a shift diary, marking attended) request an immediate flush so a
+    // quick refresh can't lose them; ordinary typing keeps the 2s debounce.
+    const delay=_flushNow.current?0:2000;_flushNow.current=false;
     _saveTimer.current=setTimeout(function(){
       window.DASH_DOC.set({dashData:stripUndefined(data)}).then(function(){setSyncStatus("synced");}).catch(function(e){console.error("[Firestore] Write failed:",e.message);setSyncStatus("offline");});
-    },2000);
+    },delay);
   },[data]);
   useEffect(function(){
     if(!_fbReady.current||!_dataLoaded.current||!window.DASH_DOC)return;
@@ -2872,6 +2904,7 @@ function App(){
   }
   function updateFinance(fin){setData(function(p){return{...p,finance:fin};});}
   function updateWork(w){setData(function(p){return{...p,work:w};});}
+  function requestImmediateSave(){_flushNow.current=true;} // bypass the 2s debounce on the next data save
   function submitRefl(){
     if(!reflIn.trim()){showToast("Write something before continuing.");return;}
     const na=reflAns.concat([{q:REFL_QS[reflStep-1],a:reflIn}]);
@@ -3361,7 +3394,7 @@ function App(){
           })()}
         </div>}
 
-        {page==="Work"&&<div style={{maxWidth:mob?undefined:900}}><ErrorBoundary name="Work"><WorkSection mob={mob} data={data.work||{}} onUpdate={updateWork} gcalEvents={dedupedEvents}/></ErrorBoundary></div>}
+        {page==="Work"&&<div style={{maxWidth:mob?undefined:900}}><ErrorBoundary name="Work"><WorkSection mob={mob} data={data.work||{}} onUpdate={updateWork} onFlush={requestImmediateSave} gcalEvents={dedupedEvents}/></ErrorBoundary></div>}
 
         {page==="Gym"&&<ErrorBoundary name="Gym"><GymSection mob={mob} gymData={data.gym} onAddEx={function(){setModal("add_exercise");setMForm({});}} onLogW={function(ex){setModal("log_weight");setMForm({exId:ex.id,exName:ex.name});}} onSave={function(wk){setData(function(p){
   const rl=p.gym.rotation?p.gym.rotation.length:1;
