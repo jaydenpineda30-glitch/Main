@@ -112,7 +112,7 @@ var T = {
 // DAYS, TASK_CATS, SUBJECTS, SC, SYLLABUS_ASSESSMENTS, REFL_QS, REFL_LABELS, WX_MAP, WX_DAYS → data.js
 
 // ── Navigation glyphs — consistent stroke-based line icons (replaces emoji) ──
-var NAV_PAGES = ["Dashboard", "Uni", "Work", "Gym", "Personal", "Finance", "Journal", "Boardroom"];
+var NAV_PAGES = ["Dashboard", "Uni", "Work", "Gym", "Personal", "Finance", "Invest", "Journal", "Boardroom"];
 function NavGlyph(props) {
   var n = props.name;
   var s = props.size || 18;
@@ -184,6 +184,13 @@ function NavGlyph(props) {
       r: "9"
     }), /*#__PURE__*/React.createElement("path", {
       d: "M14.5 9.2c-.5-1-1.5-1.5-2.7-1.5-1.6 0-2.8.9-2.8 2.2 0 1.4 1.2 1.9 2.8 2.3 1.6.4 2.8.9 2.8 2.3 0 1.3-1.2 2.2-2.8 2.2-1.3 0-2.3-.6-2.8-1.6M12 6v1.7M12 16.3V18"
+    })),
+    Invest: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+      d: "M3 17l5-5 3 3 7-7"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M15 8h5v5"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M3 21h18"
     })),
     Journal: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
       d: "M5 4h11a2 2 0 0 1 2 2v14l-4-2.2L10 20l-4-2.2V6a2 2 0 0 1 2-2Z"
@@ -611,6 +618,16 @@ var INIT = {
     monthlyRecurringOverrides: {},
     expenses: [],
     hourlyRate: 0
+  },
+  invest: {
+    watchlist: [{
+      symbol: "AAPL"
+    }, {
+      symbol: "MSFT"
+    }, {
+      symbol: "NVDA"
+    }],
+    holdings: []
   },
   work: {
     hourlyRate: 0,
@@ -5782,51 +5799,1198 @@ function FinanceSection(_ref) {
     }
   }))))));
 }
-function WorkSection(_ref2) {
-  var data = _ref2.data,
-    mob = _ref2.mob,
-    onUpdate = _ref2.onUpdate,
-    onFlush = _ref2.onFlush,
-    gcalEvents = _ref2.gcalEvents;
+
+// ══════════════════════════════════════════════════════════════════════════
+// Invest tab — personal "mini-Bloomberg": watchlist, portfolio P&L, price
+// chart, and an AI "explain this" panel. Market data comes from
+// window.MarketService (Finnhub, 15-min delayed). With no Finnhub key set it
+// runs in DEMO MODE with deterministic mock data so the tab always renders.
+// Not financial advice — informational only.
+// ══════════════════════════════════════════════════════════════════════════
+function invFmt(n, dp) {
+  if (n === undefined || n === null || n === "" || isNaN(n)) return "—";
+  dp = dp === undefined ? 2 : dp;
+  return Number(n).toLocaleString("en-US", {
+    minimumFractionDigits: dp,
+    maximumFractionDigits: dp
+  });
+}
+function invPct(n) {
+  if (n === undefined || n === null || isNaN(n)) return "—";
+  return (n >= 0 ? "+" : "") + Number(n).toFixed(2) + "%";
+}
+function invUniq(a) {
+  var seen = {},
+    out = [];
+  a.forEach(function (x) {
+    var k = (x || "").toUpperCase();
+    if (x && !seen[k]) {
+      seen[k] = 1;
+      out.push(k);
+    }
+  });
+  return out;
+}
+// Coerce whatever getCandles returns into a flat array of closing prices.
+function invCloses(c) {
+  if (!c) return [];
+  if (Array.isArray(c)) {
+    if (c.length === 0) return [];
+    if (typeof c[0] === "number") return c.filter(function (x) {
+      return typeof x === "number" && !isNaN(x);
+    });
+    return c.map(function (p) {
+      return p && (p.close !== undefined ? p.close : p.c !== undefined ? p.c : null);
+    }).filter(function (x) {
+      return typeof x === "number" && !isNaN(x);
+    });
+  }
+  if (c.candles) return invCloses(c.candles);
+  if (Array.isArray(c.c)) return c.c.filter(function (x) {
+    return typeof x === "number" && !isNaN(x);
+  });
+  return [];
+}
+// Defensive readers so the UI is decoupled from the provider's exact field names.
+function invQPrice(q) {
+  if (!q) return null;
+  return q.price !== undefined ? q.price : q.c !== undefined ? q.c : null;
+}
+function invQChg(q) {
+  if (!q) return null;
+  return q.change !== undefined ? q.change : q.d !== undefined ? q.d : null;
+}
+function invQPct(q) {
+  if (!q) return null;
+  return q.changePercent !== undefined ? q.changePercent : q.changePct !== undefined ? q.changePct : q.dp !== undefined ? q.dp : null;
+}
+
+// Dependency-free SVG area+line chart of closing prices.
+function InvChart(_ref2) {
+  var closes = _ref2.closes,
+    h = _ref2.h,
+    accent = _ref2.accent;
+  h = h || 190;
+  var W = 1000; // viewBox width; SVG scales to container via width:100%
+  if (!closes || closes.length < 2) return /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: h,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      color: T.text3,
+      fontSize: 12
+    }
+  }, "No chart data available");
+  var n = closes.length;
+  var min = Math.min.apply(null, closes),
+    max = Math.max.apply(null, closes);
+  var pad = (max - min) * 0.10 || Math.abs(max) * 0.02 || 1;
+  min -= pad;
+  max += pad;
+  var span = max - min || 1;
+  var X = function X(i) {
+    return i / (n - 1) * W;
+  };
+  var Y = function Y(v) {
+    return h - (v - min) / span * h;
+  };
+  var pts = closes.map(function (v, i) {
+    return X(i).toFixed(1) + "," + Y(v).toFixed(1);
+  });
+  var line = "M" + pts.join(" L");
+  var area = line + " L" + W.toFixed(1) + "," + h + " L0," + h + " Z";
+  var up = closes[n - 1] >= closes[0];
+  var col = accent || (up ? "#69f0ae" : "#ff6b6b");
+  var gid = "invgrad_" + n + "_" + Math.round(closes[0]);
+  return /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 " + W + " " + h,
+    preserveAspectRatio: "none",
+    style: {
+      width: "100%",
+      height: h,
+      display: "block"
+    }
+  }, /*#__PURE__*/React.createElement("defs", null, /*#__PURE__*/React.createElement("linearGradient", {
+    id: gid,
+    x1: "0",
+    y1: "0",
+    x2: "0",
+    y2: "1"
+  }, /*#__PURE__*/React.createElement("stop", {
+    offset: "0%",
+    stopColor: col,
+    stopOpacity: "0.28"
+  }), /*#__PURE__*/React.createElement("stop", {
+    offset: "100%",
+    stopColor: col,
+    stopOpacity: "0"
+  }))), /*#__PURE__*/React.createElement("path", {
+    d: area,
+    fill: "url(#" + gid + ")"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: line,
+    fill: "none",
+    stroke: col,
+    strokeWidth: "2",
+    strokeLinejoin: "round",
+    vectorEffect: "non-scaling-stroke"
+  }));
+}
+function InvestSection(_ref3) {
+  var data = _ref3.data,
+    onUpdate = _ref3.onUpdate,
+    mob = _ref3.mob;
   mob = mob || false;
-  var _useState55 = useState(null),
+  var MS = window.MarketService || null;
+  var watchlist = Array.isArray(data.watchlist) ? data.watchlist : [];
+  var holdings = Array.isArray(data.holdings) ? data.holdings : [];
+  var _useState55 = useState({}),
     _useState56 = _slicedToArray(_useState55, 2),
-    expandedShift = _useState56[0],
-    setExpandedShift = _useState56[1];
-  var _useState57 = useState({
+    quotes = _useState56[0],
+    setQuotes = _useState56[1];
+  var _useState57 = useState({}),
+    _useState58 = _slicedToArray(_useState57, 2),
+    profiles = _useState58[0],
+    setProfiles = _useState58[1];
+  var _useState59 = useState(false),
+    _useState60 = _slicedToArray(_useState59, 2),
+    loading = _useState60[0],
+    setLoading = _useState60[1];
+  var _useState61 = useState(watchlist[0] ? watchlist[0].symbol : holdings[0] ? holdings[0].symbol : null),
+    _useState62 = _slicedToArray(_useState61, 2),
+    selected = _useState62[0],
+    setSelected = _useState62[1];
+  var _useState63 = useState(null),
+    _useState64 = _slicedToArray(_useState63, 2),
+    candles = _useState64[0],
+    setCandles = _useState64[1];
+  var _useState65 = useState([]),
+    _useState66 = _slicedToArray(_useState65, 2),
+    news = _useState66[0],
+    setNews = _useState66[1];
+  var _useState67 = useState({
+      loading: false,
+      text: "",
+      err: ""
+    }),
+    _useState68 = _slicedToArray(_useState67, 2),
+    ai = _useState68[0],
+    setAi = _useState68[1];
+  var _useState69 = useState(""),
+    _useState70 = _slicedToArray(_useState69, 2),
+    addSym = _useState70[0],
+    setAddSym = _useState70[1];
+  var _useState71 = useState([]),
+    _useState72 = _slicedToArray(_useState71, 2),
+    searchRes = _useState72[0],
+    setSearchRes = _useState72[1];
+  var _useState73 = useState(false),
+    _useState74 = _slicedToArray(_useState73, 2),
+    searching = _useState74[0],
+    setSearching = _useState74[1];
+  var _useState75 = useState({
+      symbol: "",
+      shares: "",
+      cost: ""
+    }),
+    _useState76 = _slicedToArray(_useState75, 2),
+    holdForm = _useState76[0],
+    setHoldForm = _useState76[1];
+  var _useState77 = useState(false),
+    _useState78 = _slicedToArray(_useState77, 2),
+    showKey = _useState78[0],
+    setShowKey = _useState78[1];
+  var _useState79 = useState(""),
+    _useState80 = _slicedToArray(_useState79, 2),
+    keyInput = _useState80[0],
+    setKeyInput = _useState80[1];
+  var _useState81 = useState(MS ? MS.isDemo() : true),
+    _useState82 = _slicedToArray(_useState81, 2),
+    demo = _useState82[0],
+    setDemo = _useState82[1];
+  var _useState83 = useState(null),
+    _useState84 = _slicedToArray(_useState83, 2),
+    refreshedAt = _useState84[0],
+    setRefreshedAt = _useState84[1];
+  var allSymbols = invUniq([].concat(watchlist.map(function (w) {
+    return w.symbol;
+  }), holdings.map(function (h) {
+    return h.symbol;
+  })));
+  var symbolsKey = allSymbols.join(",");
+
+  // ── styles (mirror the Finance tab's glass system) ──
+  var iCard = function iCard(ex) {
+    return _objectSpread({
+      position: "relative",
+      background: cardBg,
+      backdropFilter: "blur(24px) saturate(1.4)",
+      WebkitBackdropFilter: "blur(24px) saturate(1.4)",
+      border: "1px solid rgba(255,255,255,0.10)",
+      borderRadius: 20,
+      padding: "18px 20px",
+      marginBottom: 14,
+      boxShadow: cardShadow
+    }, ex || {});
+  };
+  var iStatLabel = {
+    fontSize: 10,
+    fontWeight: 600,
+    color: "#8f97a6",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em"
+  };
+  var iInp = {
+    width: "100%",
+    padding: "8px 10px",
+    borderRadius: 8,
+    border: "0.5px solid rgba(255,255,255,0.14)",
+    background: "rgba(255,255,255,0.05)",
+    color: T.text,
+    fontSize: 12,
+    boxSizing: "border-box"
+  };
+  var iBtn = _objectSpread({}, btnGlassP);
+  var iGhost = {
+    appearance: "none",
+    padding: "6px 12px",
+    borderRadius: 999,
+    border: "0.5px solid rgba(255,255,255,0.16)",
+    background: "rgba(255,255,255,0.05)",
+    color: T.text2,
+    cursor: "pointer",
+    fontSize: 11,
+    fontWeight: 600,
+    whiteSpace: "nowrap"
+  };
+  function toast(m, t) {
+    if (window.showToast) window.showToast(m, t);
+  }
+
+  // ── load quotes for every symbol in watchlist + holdings ──
+  function loadQuotes() {
+    if (!MS || allSymbols.length === 0) {
+      setRefreshedAt(new Date());
+      return;
+    }
+    setLoading(true);
+    Promise.all(allSymbols.map(function (sym) {
+      return MS.getQuote(sym).then(function (q) {
+        return [sym, q];
+      })["catch"](function () {
+        return [sym, null];
+      });
+    })).then(function (pairs) {
+      setQuotes(function (prev) {
+        var nq = _objectSpread({}, prev);
+        pairs.forEach(function (pr) {
+          if (pr[1]) nq[pr[0]] = pr[1];
+        });
+        return nq;
+      });
+    }).then(function () {
+      setRefreshedAt(new Date());
+    })["catch"](function () {}).then(function () {
+      setLoading(false);
+    });
+  }
+  useEffect(function () {
+    loadQuotes();
+  }, [symbolsKey]);
+
+  // ── load detail (profile, candles, news) for the selected symbol ──
+  useEffect(function () {
+    if (!MS || !selected) return;
+    var alive = true;
+    setCandles(null);
+    setNews([]);
+    MS.getProfile(selected).then(function (p) {
+      if (alive) setProfiles(function (prev) {
+        var np = _objectSpread({}, prev);
+        np[selected] = p;
+        return np;
+      });
+    })["catch"](function () {});
+    var to = Math.floor(Date.now() / 1000);
+    var from = to - 60 * 60 * 24 * 180;
+    MS.getCandles(selected, "D", from, to).then(function (c) {
+      if (alive) setCandles(c);
+    })["catch"](function () {
+      if (alive) setCandles(null);
+    });
+    MS.getNews(selected).then(function (nw) {
+      if (alive) setNews(Array.isArray(nw) ? nw.slice(0, 5) : []);
+    })["catch"](function () {
+      if (alive) setNews([]);
+    });
+    return function () {
+      alive = false;
+    };
+  }, [selected]);
+
+  // ── watchlist mutations ──
+  function addToWatchlist(sym) {
+    sym = (sym || "").trim().toUpperCase();
+    if (!sym) return;
+    if (watchlist.some(function (w) {
+      return w.symbol === sym;
+    })) {
+      toast(sym + " already in watchlist");
+      return;
+    }
+    onUpdate(_objectSpread(_objectSpread({}, data), {}, {
+      watchlist: watchlist.concat([{
+        symbol: sym
+      }])
+    }));
+    setAddSym("");
+    setSearchRes([]);
+    setSelected(sym);
+    toast(sym + " added", "success");
+  }
+  function removeFromWatchlist(sym) {
+    onUpdate(_objectSpread(_objectSpread({}, data), {}, {
+      watchlist: watchlist.filter(function (w) {
+        return w.symbol !== sym;
+      })
+    }));
+    if (selected === sym) setSelected(null);
+  }
+  function runSearch(q) {
+    setAddSym(q);
+    if (!MS || !q || q.trim().length < 1) {
+      setSearchRes([]);
+      return;
+    }
+    setSearching(true);
+    MS.searchSymbols(q.trim()).then(function (r) {
+      setSearchRes((r || []).slice(0, 6));
+    })["catch"](function () {
+      setSearchRes([]);
+    }).then(function () {
+      setSearching(false);
+    });
+  }
+
+  // ── holdings mutations ──
+  function addHolding() {
+    var sym = (holdForm.symbol || "").trim().toUpperCase();
+    var sh = Number(holdForm.shares),
+      cost = Number(holdForm.cost);
+    if (!sym) {
+      toast("Enter a ticker");
+      return;
+    }
+    if (isNaN(sh) || sh <= 0) {
+      toast("Enter share count");
+      return;
+    }
+    if (isNaN(cost) || cost < 0) {
+      toast("Enter avg cost");
+      return;
+    }
+    var id = "h" + Date.now();
+    onUpdate(_objectSpread(_objectSpread({}, data), {}, {
+      holdings: holdings.concat([{
+        id: id,
+        symbol: sym,
+        shares: sh,
+        cost: cost
+      }])
+    }));
+    setHoldForm({
+      symbol: "",
+      shares: "",
+      cost: ""
+    });
+    if (!quotes[sym]) setSelected(sym);
+    toast(sym + " position added", "success");
+  }
+  function removeHolding(id) {
+    onUpdate(_objectSpread(_objectSpread({}, data), {}, {
+      holdings: holdings.filter(function (h) {
+        return h.id !== id;
+      })
+    }));
+  }
+
+  // ── portfolio totals ──
+  var portValue = 0,
+    portCost = 0,
+    priced = 0;
+  holdings.forEach(function (h) {
+    var q = quotes[h.symbol];
+    var px = invQPrice(q);
+    if (px !== null) {
+      portValue += px * h.shares;
+      priced++;
+    }
+    portCost += h.cost * h.shares;
+  });
+  var portGain = portValue - portCost;
+  var portGainPct = portCost > 0 ? portGain / portCost * 100 : 0;
+
+  // ── API key entry ──
+  function saveKey() {
+    var k = (keyInput || "").trim();
+    if (!k) {
+      toast("Paste your Finnhub key");
+      return;
+    }
+    if (MS && MS.setKey) MS.setKey(k);else {
+      try {
+        localStorage.setItem("__finnhub_key__", k);
+      } catch (_) {}
+    }
+    setDemo(MS ? MS.isDemo() : false);
+    setShowKey(false);
+    setKeyInput("");
+    toast("Finnhub key saved — loading live data", "success");
+    setTimeout(loadQuotes, 60);
+  }
+  function clearKey() {
+    if (MS && MS.setKey) MS.setKey("");else {
+      try {
+        localStorage.removeItem("__finnhub_key__");
+      } catch (_) {}
+    }
+    if (MS && MS.clearCache) MS.clearCache();
+    setDemo(true);
+    toast("Reverted to demo mode");
+    setTimeout(loadQuotes, 60);
+  }
+
+  // ── AI "explain this" via Gemini (key reused from the app's Gemini setup) ──
+  function explainSelected() {
+    if (!selected) {
+      return;
+    }
+    var gkey = "";
+    try {
+      gkey = (localStorage.getItem("__gemini_key__") || "").trim();
+    } catch (_) {}
+    if (!gkey) {
+      setAi({
+        loading: false,
+        text: "",
+        err: "No Gemini API key set. Add it in Logs → Settings to enable AI explanations."
+      });
+      return;
+    }
+    var q = quotes[selected] || {};
+    var prof = profiles[selected] || {};
+    var headlines = (news || []).slice(0, 4).map(function (x) {
+      return "- " + (x.headline || x.title || "");
+    }).join("\n");
+    var ctx = "Ticker: " + selected + "\n" + "Company: " + (prof.name || "?") + (prof.industry ? " (" + prof.industry + ")" : "") + "\n" + "Price: " + invFmt(invQPrice(q)) + " (" + invPct(invQPct(q)) + " today)\n" + (prof.marketCap ? "Market cap: " + invFmt(prof.marketCap, 0) + "M USD\n" : "") + (headlines ? "Recent headlines:\n" + headlines + "\n" : "");
+    var prompt = "You are a concise financial explainer for a personal dashboard. In 4-6 short bullet points, explain what this company does, what the recent price move and headlines suggest, and 1-2 things a long-term retail investor might watch. Plain English, no jargon dumps. End with one line: 'Not financial advice.'\n\n" + ctx;
+    setAi({
+      loading: true,
+      text: "",
+      err: ""
+    });
+    fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + encodeURIComponent(gkey), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }]
+      })
+    }).then(function (r) {
+      if (!r.ok) throw new Error("Gemini " + r.status);
+      return r.json();
+    }).then(function (j) {
+      var t = (((j.candidates || [])[0] || {}).content || {}).parts || [];
+      var out = t.map(function (p) {
+        return p.text || "";
+      }).join("").trim();
+      setAi({
+        loading: false,
+        text: out || "(no response)",
+        err: ""
+      });
+    })["catch"](function (e) {
+      setAi({
+        loading: false,
+        text: "",
+        err: "AI error: " + (e.message || e)
+      });
+    });
+  }
+  var selQuote = selected ? quotes[selected] : null;
+  var selProf = selected ? profiles[selected] : null;
+  var selCloses = invCloses(candles);
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 10,
+      marginBottom: 6,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("h2", {
+    style: {
+      fontSize: 20,
+      fontWeight: 700,
+      color: T.text,
+      margin: 0,
+      letterSpacing: "-0.02em"
+    }
+  }, "Invest"), /*#__PURE__*/React.createElement("span", {
+    title: demo ? "No Finnhub key — showing demo data" : "Live data via Finnhub (15-min delayed)",
+    style: {
+      fontSize: 9.5,
+      fontWeight: 700,
+      textTransform: "uppercase",
+      letterSpacing: "0.06em",
+      padding: "3px 8px",
+      borderRadius: 999,
+      border: "0.5px solid " + (demo ? "rgba(255,209,102,0.4)" : "rgba(105,240,174,0.4)"),
+      background: demo ? "rgba(255,209,102,0.12)" : "rgba(105,240,174,0.12)",
+      color: demo ? T.warn : T.success
+    }
+  }, demo ? "Demo data" : "Live · delayed")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: iGhost,
+    onClick: loadQuotes,
+    disabled: loading
+  }, loading ? "Refreshing…" : "↻ Refresh"), /*#__PURE__*/React.createElement("button", {
+    style: iGhost,
+    onClick: function onClick() {
+      setShowKey(!showKey);
+    }
+  }, demo ? "Add live key" : "API key"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: T.text3,
+      marginBottom: 14,
+      lineHeight: 1.5
+    }
+  }, "Personal decision-support, not financial advice. Prices may be delayed 15+ minutes.", refreshedAt && " · Updated " + refreshedAt.toLocaleTimeString("en-AU", {
+    hour: "2-digit",
+    minute: "2-digit"
+  })), showKey && /*#__PURE__*/React.createElement("div", {
+    style: iCard()
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: T.text,
+      marginBottom: 6
+    }
+  }, "Finnhub API key"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: T.text3,
+      marginBottom: 10,
+      lineHeight: 1.5
+    }
+  }, "Free key from ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: T.accent
+    }
+  }, "finnhub.io/register"), " (60 calls/min). Stored only in this browser. Without it, the tab shows realistic demo data. Note: intraday price charts need a paid Finnhub plan; quotes, fundamentals & news are free."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    style: _objectSpread(_objectSpread({}, iInp), {}, {
+      flex: 1,
+      minWidth: 200
+    }),
+    type: "password",
+    placeholder: "Paste Finnhub key\u2026",
+    value: keyInput,
+    onChange: function onChange(e) {
+      setKeyInput(e.target.value);
+    },
+    onKeyDown: function onKeyDown(e) {
+      if (e.key === "Enter") saveKey();
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    style: iBtn,
+    onClick: saveKey
+  }, "Save"), !demo && /*#__PURE__*/React.createElement("button", {
+    style: iGhost,
+    onClick: clearKey
+  }, "Use demo"))), /*#__PURE__*/React.createElement("div", {
+    style: iCard()
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: "#cdd5e2"
+    }
+  }, "Portfolio"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: T.text3
+    }
+  }, holdings.length, " position", holdings.length === 1 ? "" : "s", holdings.length > priced ? " · " + (holdings.length - priced) + " unpriced" : "")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: mob ? "1fr 1fr" : "1fr 1fr 1fr",
+      gap: 12,
+      marginBottom: holdings.length ? 16 : 0
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: iStatLabel
+  }, "Value"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 700,
+      color: T.text,
+      letterSpacing: "-0.02em"
+    }
+  }, "$", invFmt(portValue))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: iStatLabel
+  }, "Cost basis"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 700,
+      color: T.text2,
+      letterSpacing: "-0.02em"
+    }
+  }, "$", invFmt(portCost))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: iStatLabel
+  }, "Gain / loss"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 700,
+      letterSpacing: "-0.02em",
+      color: portGain >= 0 ? T.success : T.danger
+    }
+  }, portGain >= 0 ? "+" : "-", "$", invFmt(Math.abs(portGain)), " ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600
+    }
+  }, "(", invPct(portGainPct), ")")))), holdings.map(function (h) {
+    var q = quotes[h.symbol];
+    var px = invQPrice(q);
+    var val = px !== null ? px * h.shares : null;
+    var g = px !== null ? (px - h.cost) * h.shares : null;
+    var gp = h.cost > 0 && px !== null ? (px - h.cost) / h.cost * 100 : null;
+    return /*#__PURE__*/React.createElement("div", {
+      key: h.id,
+      onClick: function onClick() {
+        setSelected(h.symbol);
+      },
+      className: "glow-item",
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "10px 12px",
+        borderRadius: 12,
+        marginTop: 8,
+        cursor: "pointer",
+        background: selected === h.symbol ? "rgba(91,140,255,0.10)" : "rgba(255,255,255,0.03)",
+        border: "0.5px solid rgba(255,255,255,0.07)"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        minWidth: 64
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        fontWeight: 700,
+        color: T.text
+      }
+    }, h.symbol), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3
+      }
+    }, invFmt(h.shares, h.shares % 1 ? 4 : 0), " @ $", invFmt(h.cost))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        textAlign: "right"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        fontWeight: 600,
+        color: T.text
+      }
+    }, px !== null ? "$" + invFmt(val) : "—"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        fontWeight: 600,
+        color: g === null ? T.text3 : g >= 0 ? T.success : T.danger
+      }
+    }, g === null ? "—" : (g >= 0 ? "+" : "-") + "$" + invFmt(Math.abs(g)) + " " + (gp !== null ? invPct(gp) : ""))), /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick(e) {
+        e.stopPropagation();
+        removeHolding(h.id);
+      },
+      style: {
+        background: "none",
+        border: "none",
+        color: T.text3,
+        cursor: "pointer",
+        fontSize: 16,
+        lineHeight: 1,
+        padding: "0 4px"
+      }
+    }, "\xD7"));
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      marginTop: holdings.length ? 12 : 4,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    style: _objectSpread(_objectSpread({}, iInp), {}, {
+      flex: mob ? "1 1 100%" : "1 1 90px",
+      textTransform: "uppercase"
+    }),
+    placeholder: "Ticker",
+    value: holdForm.symbol,
+    onChange: function onChange(e) {
+      setHoldForm(_objectSpread(_objectSpread({}, holdForm), {}, {
+        symbol: e.target.value
+      }));
+    }
+  }), /*#__PURE__*/React.createElement("input", {
+    style: _objectSpread(_objectSpread({}, iInp), {}, {
+      flex: "1 1 80px"
+    }),
+    type: "number",
+    step: "any",
+    placeholder: "Shares",
+    value: holdForm.shares,
+    onChange: function onChange(e) {
+      setHoldForm(_objectSpread(_objectSpread({}, holdForm), {}, {
+        shares: e.target.value
+      }));
+    }
+  }), /*#__PURE__*/React.createElement("input", {
+    style: _objectSpread(_objectSpread({}, iInp), {}, {
+      flex: "1 1 90px"
+    }),
+    type: "number",
+    step: "any",
+    placeholder: "Avg cost",
+    value: holdForm.cost,
+    onChange: function onChange(e) {
+      setHoldForm(_objectSpread(_objectSpread({}, holdForm), {}, {
+        cost: e.target.value
+      }));
+    },
+    onKeyDown: function onKeyDown(e) {
+      if (e.key === "Enter") addHolding();
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    style: iBtn,
+    onClick: addHolding
+  }, "Add"))), /*#__PURE__*/React.createElement("div", {
+    style: iCard()
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: "#cdd5e2",
+      marginBottom: 12
+    }
+  }, "Watchlist"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative",
+      marginBottom: watchlist.length ? 14 : 2
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    style: _objectSpread(_objectSpread({}, iInp), {}, {
+      flex: 1,
+      textTransform: "uppercase"
+    }),
+    placeholder: "Add ticker (e.g. AAPL) or search\u2026",
+    value: addSym,
+    onChange: function onChange(e) {
+      runSearch(e.target.value);
+    },
+    onKeyDown: function onKeyDown(e) {
+      if (e.key === "Enter") {
+        addToWatchlist(addSym);
+      }
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    style: iBtn,
+    onClick: function onClick() {
+      addToWatchlist(addSym);
+    }
+  }, "Add")), searchRes.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      top: "100%",
+      left: 0,
+      right: 0,
+      zIndex: 20,
+      marginTop: 4,
+      background: "rgba(18,22,42,0.98)",
+      border: "0.5px solid rgba(255,255,255,0.14)",
+      borderRadius: 12,
+      overflow: "hidden",
+      boxShadow: cardShadow
+    }
+  }, searchRes.map(function (r) {
+    return /*#__PURE__*/React.createElement("div", {
+      key: r.symbol,
+      onClick: function onClick() {
+        addToWatchlist(r.symbol);
+      },
+      style: {
+        padding: "9px 12px",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        borderBottom: "0.5px solid rgba(255,255,255,0.05)"
+      },
+      onMouseOver: function onMouseOver(e) {
+        e.currentTarget.style.background = "rgba(91,140,255,0.10)";
+      },
+      onMouseOut: function onMouseOut(e) {
+        e.currentTarget.style.background = "transparent";
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 12,
+        fontWeight: 700,
+        color: T.text,
+        minWidth: 54
+      }
+    }, r.symbol), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: T.text3,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }
+    }, r.description || r.name || ""));
+  })), searching && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: T.text3,
+      marginTop: 4
+    }
+  }, "Searching\u2026")), watchlist.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: T.text3,
+      padding: "6px 2px"
+    }
+  }, "No tickers yet. Add one above to start tracking."), watchlist.map(function (w) {
+    var q = quotes[w.symbol];
+    var px = invQPrice(q);
+    var pct = invQPct(q);
+    return /*#__PURE__*/React.createElement("div", {
+      key: w.symbol,
+      onClick: function onClick() {
+        setSelected(w.symbol);
+      },
+      className: "glow-item",
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "11px 12px",
+        borderRadius: 12,
+        marginBottom: 7,
+        cursor: "pointer",
+        background: selected === w.symbol ? "rgba(91,140,255,0.10)" : "rgba(255,255,255,0.03)",
+        border: "0.5px solid rgba(255,255,255,0.07)"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        minWidth: 60
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        fontWeight: 700,
+        color: T.text
+      }
+    }, w.symbol), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        maxWidth: mob ? 110 : 200,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }
+    }, profiles[w.symbol] && profiles[w.symbol].name || "")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        textAlign: "right"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        fontWeight: 600,
+        color: T.text
+      }
+    }, px !== null ? "$" + invFmt(px) : loading ? "…" : "—"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        fontWeight: 600,
+        color: pct === null ? T.text3 : pct >= 0 ? T.success : T.danger
+      }
+    }, invPct(pct))), /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick(e) {
+        e.stopPropagation();
+        removeFromWatchlist(w.symbol);
+      },
+      style: {
+        background: "none",
+        border: "none",
+        color: T.text3,
+        cursor: "pointer",
+        fontSize: 16,
+        lineHeight: 1,
+        padding: "0 4px"
+      }
+    }, "\xD7"));
+  })), selected && /*#__PURE__*/React.createElement("div", {
+    style: iCard()
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: 10,
+      marginBottom: 12,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 9
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 18,
+      fontWeight: 700,
+      color: T.text
+    }
+  }, selected), selProf && selProf.name && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: T.text3
+    }
+  }, selProf.name)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "baseline",
+      gap: 10,
+      marginTop: 3
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 24,
+      fontWeight: 700,
+      color: T.text,
+      letterSpacing: "-0.02em"
+    }
+  }, invQPrice(selQuote) !== null ? "$" + invFmt(invQPrice(selQuote)) : "—"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: invQPct(selQuote) === null ? T.text3 : invQPct(selQuote) >= 0 ? T.success : T.danger
+    }
+  }, invQChg(selQuote) !== null ? (invQChg(selQuote) >= 0 ? "+" : "") + invFmt(invQChg(selQuote)) : "", " ", invPct(invQPct(selQuote))))), /*#__PURE__*/React.createElement("button", {
+    style: _objectSpread(_objectSpread({}, iBtn), {}, {
+      display: "flex",
+      alignItems: "center",
+      gap: 6
+    }),
+    onClick: explainSelected,
+    disabled: ai.loading
+  }, /*#__PURE__*/React.createElement(UIcon, {
+    name: ai.loading ? "clock" : "sparkle",
+    size: 13
+  }), ai.loading ? "Thinking…" : "Explain with AI")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      margin: "4px -4px 0"
+    }
+  }, /*#__PURE__*/React.createElement(InvChart, {
+    closes: selCloses,
+    h: mob ? 150 : 200
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: T.text3,
+      textAlign: "right",
+      marginTop: 2
+    }
+  }, selCloses.length > 1 ? "~" + selCloses.length + " sessions" + (demo ? " (demo)" : "") : demo ? "" : "Intraday charts require a paid Finnhub plan"), (ai.text || ai.err) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 14,
+      padding: "14px 16px",
+      borderRadius: 14,
+      background: "rgba(91,140,255,0.06)",
+      border: "0.5px solid rgba(91,140,255,0.20)"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      fontWeight: 700,
+      textTransform: "uppercase",
+      letterSpacing: "0.06em",
+      color: T.accent,
+      marginBottom: 8,
+      display: "flex",
+      alignItems: "center",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(UIcon, {
+    name: "sparkle",
+    size: 12
+  }), "AI summary"), ai.err ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: T.warn
+    }
+  }, ai.err) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: T.text2,
+      lineHeight: 1.6,
+      whiteSpace: "pre-wrap"
+    }
+  }, ai.text)), news.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 600,
+      color: "#cdd5e2",
+      marginBottom: 8
+    }
+  }, "Recent news"), news.map(function (a, i) {
+    return /*#__PURE__*/React.createElement("a", {
+      key: i,
+      href: a.url || "#",
+      target: "_blank",
+      rel: "noopener noreferrer",
+      style: {
+        display: "block",
+        padding: "9px 0",
+        borderTop: i ? "0.5px solid rgba(255,255,255,0.06)" : "none",
+        textDecoration: "none"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text,
+        lineHeight: 1.4
+      }
+    }, a.headline || a.title || "(untitled)"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        marginTop: 2
+      }
+    }, a.source || ""));
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: T.text3,
+      textAlign: "center",
+      padding: "6px 0 20px",
+      lineHeight: 1.5
+    }
+  }, "Data ", demo ? "is simulated (demo mode)" : "via Finnhub, delayed ≥15 min", ". For personal, informational use only \u2014 not investment advice."));
+}
+function WorkSection(_ref4) {
+  var data = _ref4.data,
+    mob = _ref4.mob,
+    onUpdate = _ref4.onUpdate,
+    onFlush = _ref4.onFlush,
+    gcalEvents = _ref4.gcalEvents;
+  mob = mob || false;
+  var _useState85 = useState(null),
+    _useState86 = _slicedToArray(_useState85, 2),
+    expandedShift = _useState86[0],
+    setExpandedShift = _useState86[1];
+  var _useState87 = useState({
       notes: ""
     }),
-    _useState58 = _slicedToArray(_useState57, 2),
-    logDraft = _useState58[0],
-    setLogDraft = _useState58[1];
+    _useState88 = _slicedToArray(_useState87, 2),
+    logDraft = _useState88[0],
+    setLogDraft = _useState88[1];
   // Live refs so the draft-autosave (which fires on close/unmount) reads current
   // values instead of stale closure values captured when the shift was opened.
   var _draftRef = useRef(logDraft);
   _draftRef.current = logDraft;
-  var _useState59 = useState(""),
-    _useState60 = _slicedToArray(_useState59, 2),
-    goalInput = _useState60[0],
-    setGoalInput = _useState60[1];
-  var _useState61 = useState(false),
-    _useState62 = _slicedToArray(_useState61, 2),
-    showSettings = _useState62[0],
-    setShowSettings = _useState62[1];
-  var _useState63 = useState(0),
-    _useState64 = _slicedToArray(_useState63, 2),
-    cycleOffset = _useState64[0],
-    setCycleOffset = _useState64[1];
-  var _useState65 = useState(""),
-    _useState66 = _slicedToArray(_useState65, 2),
-    taskInput = _useState66[0],
-    setTaskInput = _useState66[1];
-  var _useState67 = useState(null),
-    _useState68 = _slicedToArray(_useState67, 2),
-    taskTag = _useState68[0],
-    setTaskTag = _useState68[1];
-  var _useState69 = useState(todayStr()),
-    _useState70 = _slicedToArray(_useState69, 2),
-    taskShiftDate = _useState70[0],
-    setTaskShiftDate = _useState70[1];
+  var _useState89 = useState(""),
+    _useState90 = _slicedToArray(_useState89, 2),
+    goalInput = _useState90[0],
+    setGoalInput = _useState90[1];
+  var _useState91 = useState(false),
+    _useState92 = _slicedToArray(_useState91, 2),
+    showSettings = _useState92[0],
+    setShowSettings = _useState92[1];
+  var _useState93 = useState(0),
+    _useState94 = _slicedToArray(_useState93, 2),
+    cycleOffset = _useState94[0],
+    setCycleOffset = _useState94[1];
+  var _useState95 = useState(""),
+    _useState96 = _slicedToArray(_useState95, 2),
+    taskInput = _useState96[0],
+    setTaskInput = _useState96[1];
+  var _useState97 = useState(null),
+    _useState98 = _slicedToArray(_useState97, 2),
+    taskTag = _useState98[0],
+    setTaskTag = _useState98[1];
+  var _useState99 = useState(todayStr()),
+    _useState100 = _slicedToArray(_useState99, 2),
+    taskShiftDate = _useState100[0],
+    setTaskShiftDate = _useState100[1];
   useEffect(function () {
     var first = (gcalEvents || []).filter(isGoTabEvent).sort(function (a, b) {
       return b.date.localeCompare(a.date);
@@ -7087,11 +8251,11 @@ function WorkSection(_ref2) {
   }))));
 }
 function App() {
-  var _useState71 = useState("Dashboard"),
-    _useState72 = _slicedToArray(_useState71, 2),
-    page = _useState72[0],
-    setPage = _useState72[1];
-  var _useState73 = useState(function () {
+  var _useState101 = useState("Dashboard"),
+    _useState102 = _slicedToArray(_useState101, 2),
+    page = _useState102[0],
+    setPage = _useState102[1];
+  var _useState103 = useState(function () {
       try {
         var s = localStorage.getItem("dash_v1");
         if (!s) return mergeWithDefaults(_objectSpread(_objectSpread({}, INIT), {}, {
@@ -7112,26 +8276,26 @@ function App() {
         }));
       }
     }),
-    _useState74 = _slicedToArray(_useState73, 2),
-    data = _useState74[0],
-    setData = _useState74[1];
-  var _useState75 = useState(0),
-    _useState76 = _slicedToArray(_useState75, 2),
-    wkOff = _useState76[0],
-    setWkOff = _useState76[1];
-  var _useState77 = useState(todayStr()),
-    _useState78 = _slicedToArray(_useState77, 2),
-    activeDay = _useState78[0],
-    setActiveDay = _useState78[1];
-  var _useState79 = useState([]),
-    _useState80 = _slicedToArray(_useState79, 2),
-    checkinBlocks = _useState80[0],
-    setCheckinBlocks = _useState80[1];
-  var _useState81 = useState(false),
-    _useState82 = _slicedToArray(_useState81, 2),
-    checkinOpen = _useState82[0],
-    setCheckinOpen = _useState82[1];
-  var _useState83 = useState([{
+    _useState104 = _slicedToArray(_useState103, 2),
+    data = _useState104[0],
+    setData = _useState104[1];
+  var _useState105 = useState(0),
+    _useState106 = _slicedToArray(_useState105, 2),
+    wkOff = _useState106[0],
+    setWkOff = _useState106[1];
+  var _useState107 = useState(todayStr()),
+    _useState108 = _slicedToArray(_useState107, 2),
+    activeDay = _useState108[0],
+    setActiveDay = _useState108[1];
+  var _useState109 = useState([]),
+    _useState110 = _slicedToArray(_useState109, 2),
+    checkinBlocks = _useState110[0],
+    setCheckinBlocks = _useState110[1];
+  var _useState111 = useState(false),
+    _useState112 = _slicedToArray(_useState111, 2),
+    checkinOpen = _useState112[0],
+    setCheckinOpen = _useState112[1];
+  var _useState113 = useState([{
       id: 1,
       exercise: "",
       sets: "",
@@ -7150,9 +8314,9 @@ function App() {
       reps: "",
       weight: ""
     }]),
-    _useState84 = _slicedToArray(_useState83, 2),
-    nxtRows = _useState84[0],
-    setNxtRows = _useState84[1];
+    _useState114 = _slicedToArray(_useState113, 2),
+    nxtRows = _useState114[0],
+    setNxtRows = _useState114[1];
   // Pre-fill nxtRows — check for a saved draft first, then fall back to rotation template
   useEffect(function () {
     var gr = data.gym.rotation || [];
@@ -7205,221 +8369,221 @@ function App() {
       }));
     } catch (_) {}
   }, [nxtRows]);
-  var _useState85 = useState(""),
-    _useState86 = _slicedToArray(_useState85, 2),
-    bwIn = _useState86[0],
-    setBwIn = _useState86[1];
-  var _useState87 = useState(todayStr()),
-    _useState88 = _slicedToArray(_useState87, 2),
-    bwDate = _useState88[0],
-    setBwDate = _useState88[1];
-  var _useState89 = useState(false),
-    _useState90 = _slicedToArray(_useState89, 2),
-    bwEditing = _useState90[0],
-    setBwEditing = _useState90[1];
-  var _useState91 = useState(false),
-    _useState92 = _slicedToArray(_useState91, 2),
-    showCapture = _useState92[0],
-    setShowCapture = _useState92[1];
-  var _useState93 = useState(""),
-    _useState94 = _slicedToArray(_useState93, 2),
-    captureText = _useState94[0],
-    setCaptureText = _useState94[1];
-  var _useState95 = useState(false),
-    _useState96 = _slicedToArray(_useState95, 2),
-    captureLoading = _useState96[0],
-    setCaptureLoading = _useState96[1];
-  var _useState97 = useState(null),
-    _useState98 = _slicedToArray(_useState97, 2),
-    captureResult = _useState98[0],
-    setCaptureResult = _useState98[1];
-  var _useState99 = useState(false),
-    _useState100 = _slicedToArray(_useState99, 2),
-    showBoardroom = _useState100[0],
-    setShowBoardroom = _useState100[1];
-  var _useState101 = useState([]),
-    _useState102 = _slicedToArray(_useState101, 2),
-    brMessages = _useState102[0],
-    setBrMessages = _useState102[1];
-  var _useState103 = useState(""),
-    _useState104 = _slicedToArray(_useState103, 2),
-    brInput = _useState104[0],
-    setBrInput = _useState104[1];
-  var _useState105 = useState(false),
-    _useState106 = _slicedToArray(_useState105, 2),
-    brLoading = _useState106[0],
-    setBrLoading = _useState106[1];
-  var _useState107 = useState(null),
-    _useState108 = _slicedToArray(_useState107, 2),
-    brLastSpeaker = _useState108[0],
-    setBrLastSpeaker = _useState108[1]; // kept for Firestore compat only
-  var _useState109 = useState([]),
-    _useState110 = _slicedToArray(_useState109, 2),
-    brGoalProposals = _useState110[0],
-    setBrGoalProposals = _useState110[1];
-  var _useState111 = useState([]),
-    _useState112 = _slicedToArray(_useState111, 2),
-    brTaskProposals = _useState112[0],
-    setBrTaskProposals = _useState112[1]; // commitments from the last session, addable as real tasks
-  var _useState113 = useState(false),
-    _useState114 = _slicedToArray(_useState113, 2),
-    brClosing = _useState114[0],
-    setBrClosing = _useState114[1];
-  var _useState115 = useState(null),
+  var _useState115 = useState(""),
     _useState116 = _slicedToArray(_useState115, 2),
-    brIntentMode = _useState116[0],
-    setBrIntentMode = _useState116[1]; // 'howto' | 'direction' — for header badge / loading copy
-  var _useState117 = useState(null),
+    bwIn = _useState116[0],
+    setBwIn = _useState116[1];
+  var _useState117 = useState(todayStr()),
     _useState118 = _slicedToArray(_useState117, 2),
-    brPendingIntent = _useState118[0],
-    setBrPendingIntent = _useState118[1]; // {text, reconfirmed} awaiting a one-tap mode choice
+    bwDate = _useState118[0],
+    setBwDate = _useState118[1];
   var _useState119 = useState(false),
     _useState120 = _slicedToArray(_useState119, 2),
-    brShowProjCtx = _useState120[0],
-    setBrShowProjCtx = _useState120[1]; // project-context panel open/closed
-  var brMigrationRef = React.useRef(false);
-  var _useState121 = useState([]),
+    bwEditing = _useState120[0],
+    setBwEditing = _useState120[1];
+  var _useState121 = useState(false),
     _useState122 = _slicedToArray(_useState121, 2),
-    capturesData = _useState122[0],
-    setCapturesData = _useState122[1];
-  var _useState123 = useState(false),
+    showCapture = _useState122[0],
+    setShowCapture = _useState122[1];
+  var _useState123 = useState(""),
     _useState124 = _slicedToArray(_useState123, 2),
-    capturesLoading = _useState124[0],
-    setCapturesLoading = _useState124[1];
-  var _useState125 = useState("all"),
+    captureText = _useState124[0],
+    setCaptureText = _useState124[1];
+  var _useState125 = useState(false),
     _useState126 = _slicedToArray(_useState125, 2),
-    capturesFilter = _useState126[0],
-    setCapturesFilter = _useState126[1];
-  var _useState127 = useState("captures"),
+    captureLoading = _useState126[0],
+    setCaptureLoading = _useState126[1];
+  var _useState127 = useState(null),
     _useState128 = _slicedToArray(_useState127, 2),
-    journalTab = _useState128[0],
-    setJournalTab = _useState128[1];
-  var _useState129 = useState(""),
+    captureResult = _useState128[0],
+    setCaptureResult = _useState128[1];
+  var _useState129 = useState(false),
     _useState130 = _slicedToArray(_useState129, 2),
-    capturesSearch = _useState130[0],
-    setCapturesSearch = _useState130[1];
-  var _useState131 = useState(null),
+    showBoardroom = _useState130[0],
+    setShowBoardroom = _useState130[1];
+  var _useState131 = useState([]),
     _useState132 = _slicedToArray(_useState131, 2),
-    expandedCapture = _useState132[0],
-    setExpandedCapture = _useState132[1];
-  var _useState133 = useState(null),
+    brMessages = _useState132[0],
+    setBrMessages = _useState132[1];
+  var _useState133 = useState(""),
     _useState134 = _slicedToArray(_useState133, 2),
-    expandedRefl = _useState134[0],
-    setExpandedRefl = _useState134[1];
-  var _useState135 = useState(null),
+    brInput = _useState134[0],
+    setBrInput = _useState134[1];
+  var _useState135 = useState(false),
     _useState136 = _slicedToArray(_useState135, 2),
-    editCaptureData = _useState136[0],
-    setEditCaptureData = _useState136[1];
-  var _useState137 = useState(""),
+    brLoading = _useState136[0],
+    setBrLoading = _useState136[1];
+  var _useState137 = useState(null),
     _useState138 = _slicedToArray(_useState137, 2),
-    editCaptureTagStr = _useState138[0],
-    setEditCaptureTagStr = _useState138[1];
-  var _useState139 = useState(null),
+    brLastSpeaker = _useState138[0],
+    setBrLastSpeaker = _useState138[1]; // kept for Firestore compat only
+  var _useState139 = useState([]),
     _useState140 = _slicedToArray(_useState139, 2),
-    appVersion = _useState140[0],
-    setAppVersion = _useState140[1];
-  var _useState141 = useState(null),
+    brGoalProposals = _useState140[0],
+    setBrGoalProposals = _useState140[1];
+  var _useState141 = useState([]),
     _useState142 = _slicedToArray(_useState141, 2),
-    editTaskId = _useState142[0],
-    setEditTaskId = _useState142[1];
-  var _useState143 = useState({}),
+    brTaskProposals = _useState142[0],
+    setBrTaskProposals = _useState142[1]; // commitments from the last session, addable as real tasks
+  var _useState143 = useState(false),
     _useState144 = _slicedToArray(_useState143, 2),
-    editTaskForm = _useState144[0],
-    setEditTaskForm = _useState144[1];
-  var _useState145 = useState(false),
+    brClosing = _useState144[0],
+    setBrClosing = _useState144[1];
+  var _useState145 = useState(null),
     _useState146 = _slicedToArray(_useState145, 2),
-    gymDraftBanner = _useState146[0],
-    setGymDraftBanner = _useState146[1];
+    brIntentMode = _useState146[0],
+    setBrIntentMode = _useState146[1]; // 'howto' | 'direction' — for header badge / loading copy
   var _useState147 = useState(null),
     _useState148 = _slicedToArray(_useState147, 2),
-    scheduleTaskId = _useState148[0],
-    setScheduleTaskId = _useState148[1];
-  var _useState149 = useState(null),
+    brPendingIntent = _useState148[0],
+    setBrPendingIntent = _useState148[1]; // {text, reconfirmed} awaiting a one-tap mode choice
+  var _useState149 = useState(false),
     _useState150 = _slicedToArray(_useState149, 2),
-    scheduleForDay = _useState150[0],
-    setScheduleForDay = _useState150[1];
-  var _useState151 = useState("09:00"),
+    brShowProjCtx = _useState150[0],
+    setBrShowProjCtx = _useState150[1]; // project-context panel open/closed
+  var brMigrationRef = React.useRef(false);
+  var _useState151 = useState([]),
     _useState152 = _slicedToArray(_useState151, 2),
-    scheduleTime = _useState152[0],
-    setScheduleTime = _useState152[1];
-  var _useState153 = useState(60),
+    capturesData = _useState152[0],
+    setCapturesData = _useState152[1];
+  var _useState153 = useState(false),
     _useState154 = _slicedToArray(_useState153, 2),
-    scheduleDuration = _useState154[0],
-    setScheduleDuration = _useState154[1];
-  var _useState155 = useState(false),
+    capturesLoading = _useState154[0],
+    setCapturesLoading = _useState154[1];
+  var _useState155 = useState("all"),
     _useState156 = _slicedToArray(_useState155, 2),
-    showTimePicker = _useState156[0],
-    setShowTimePicker = _useState156[1];
-  var _useState157 = useState(false),
+    capturesFilter = _useState156[0],
+    setCapturesFilter = _useState156[1];
+  var _useState157 = useState("captures"),
     _useState158 = _slicedToArray(_useState157, 2),
-    showArch = _useState158[0],
-    setShowArch = _useState158[1];
-  var _useState159 = useState(0),
+    journalTab = _useState158[0],
+    setJournalTab = _useState158[1];
+  var _useState159 = useState(""),
     _useState160 = _slicedToArray(_useState159, 2),
-    reflStep = _useState160[0],
-    setReflStep = _useState160[1];
-  var _useState161 = useState([]),
+    capturesSearch = _useState160[0],
+    setCapturesSearch = _useState160[1];
+  var _useState161 = useState(null),
     _useState162 = _slicedToArray(_useState161, 2),
-    reflAns = _useState162[0],
-    setReflAns = _useState162[1];
-  var _useState163 = useState(""),
+    expandedCapture = _useState162[0],
+    setExpandedCapture = _useState162[1];
+  var _useState163 = useState(null),
     _useState164 = _slicedToArray(_useState163, 2),
-    reflIn = _useState164[0],
-    setReflIn = _useState164[1];
+    expandedRefl = _useState164[0],
+    setExpandedRefl = _useState164[1];
   var _useState165 = useState(null),
     _useState166 = _slicedToArray(_useState165, 2),
-    reflAnalysis = _useState166[0],
-    setReflAnalysis = _useState166[1];
-  var _useState167 = useState(null),
+    editCaptureData = _useState166[0],
+    setEditCaptureData = _useState166[1];
+  var _useState167 = useState(""),
     _useState168 = _slicedToArray(_useState167, 2),
-    modal = _useState168[0],
-    setModal = _useState168[1];
-  var _useState169 = useState({}),
+    editCaptureTagStr = _useState168[0],
+    setEditCaptureTagStr = _useState168[1];
+  var _useState169 = useState(null),
     _useState170 = _slicedToArray(_useState169, 2),
-    mForm = _useState170[0],
-    setMForm = _useState170[1];
-  var _useState171 = useState("loading"),
+    appVersion = _useState170[0],
+    setAppVersion = _useState170[1];
+  var _useState171 = useState(null),
     _useState172 = _slicedToArray(_useState171, 2),
-    syncStatus = _useState172[0],
-    setSyncStatus = _useState172[1];
-  var _useState173 = useState("idle"),
+    editTaskId = _useState172[0],
+    setEditTaskId = _useState172[1];
+  var _useState173 = useState({}),
     _useState174 = _slicedToArray(_useState173, 2),
-    obsExportStatus = _useState174[0],
-    setObsExportStatus = _useState174[1]; // idle | running | done | error
-  var _useState175 = useState(null),
+    editTaskForm = _useState174[0],
+    setEditTaskForm = _useState174[1];
+  var _useState175 = useState(false),
     _useState176 = _slicedToArray(_useState175, 2),
-    authUser = _useState176[0],
-    setAuthUser = _useState176[1];
-  var _useState177 = useState(true),
+    gymDraftBanner = _useState176[0],
+    setGymDraftBanner = _useState176[1];
+  var _useState177 = useState(null),
     _useState178 = _slicedToArray(_useState177, 2),
-    authLoading = _useState178[0],
-    setAuthLoading = _useState178[1];
+    scheduleTaskId = _useState178[0],
+    setScheduleTaskId = _useState178[1];
+  var _useState179 = useState(null),
+    _useState180 = _slicedToArray(_useState179, 2),
+    scheduleForDay = _useState180[0],
+    setScheduleForDay = _useState180[1];
+  var _useState181 = useState("09:00"),
+    _useState182 = _slicedToArray(_useState181, 2),
+    scheduleTime = _useState182[0],
+    setScheduleTime = _useState182[1];
+  var _useState183 = useState(60),
+    _useState184 = _slicedToArray(_useState183, 2),
+    scheduleDuration = _useState184[0],
+    setScheduleDuration = _useState184[1];
+  var _useState185 = useState(false),
+    _useState186 = _slicedToArray(_useState185, 2),
+    showTimePicker = _useState186[0],
+    setShowTimePicker = _useState186[1];
+  var _useState187 = useState(false),
+    _useState188 = _slicedToArray(_useState187, 2),
+    showArch = _useState188[0],
+    setShowArch = _useState188[1];
+  var _useState189 = useState(0),
+    _useState190 = _slicedToArray(_useState189, 2),
+    reflStep = _useState190[0],
+    setReflStep = _useState190[1];
+  var _useState191 = useState([]),
+    _useState192 = _slicedToArray(_useState191, 2),
+    reflAns = _useState192[0],
+    setReflAns = _useState192[1];
+  var _useState193 = useState(""),
+    _useState194 = _slicedToArray(_useState193, 2),
+    reflIn = _useState194[0],
+    setReflIn = _useState194[1];
+  var _useState195 = useState(null),
+    _useState196 = _slicedToArray(_useState195, 2),
+    reflAnalysis = _useState196[0],
+    setReflAnalysis = _useState196[1];
+  var _useState197 = useState(null),
+    _useState198 = _slicedToArray(_useState197, 2),
+    modal = _useState198[0],
+    setModal = _useState198[1];
+  var _useState199 = useState({}),
+    _useState200 = _slicedToArray(_useState199, 2),
+    mForm = _useState200[0],
+    setMForm = _useState200[1];
+  var _useState201 = useState("loading"),
+    _useState202 = _slicedToArray(_useState201, 2),
+    syncStatus = _useState202[0],
+    setSyncStatus = _useState202[1];
+  var _useState203 = useState("idle"),
+    _useState204 = _slicedToArray(_useState203, 2),
+    obsExportStatus = _useState204[0],
+    setObsExportStatus = _useState204[1]; // idle | running | done | error
+  var _useState205 = useState(null),
+    _useState206 = _slicedToArray(_useState205, 2),
+    authUser = _useState206[0],
+    setAuthUser = _useState206[1];
+  var _useState207 = useState(true),
+    _useState208 = _slicedToArray(_useState207, 2),
+    authLoading = _useState208[0],
+    setAuthLoading = _useState208[1];
   var _fbReady = useRef(false);
   var _dataLoaded = useRef(false); // only true after we've confirmed Firebase state
   var _saveTimer = useRef(null);
   var _flushNow = useRef(false); // set to skip the 2s debounce for discrete saves (e.g. shift logs)
-  var _useState179 = useState({
+  var _useState209 = useState({
       title: "",
       tags: "",
       content: ""
     }),
-    _useState180 = _slicedToArray(_useState179, 2),
-    docIn = _useState180[0],
-    setDocIn = _useState180[1];
-  var _useState181 = useState(false),
-    _useState182 = _slicedToArray(_useState181, 2),
-    forceMob = _useState182[0],
-    setForceMob = _useState182[1];
-  var _useState183 = useState(function () {
+    _useState210 = _slicedToArray(_useState209, 2),
+    docIn = _useState210[0],
+    setDocIn = _useState210[1];
+  var _useState211 = useState(false),
+    _useState212 = _slicedToArray(_useState211, 2),
+    forceMob = _useState212[0],
+    setForceMob = _useState212[1];
+  var _useState213 = useState(function () {
       try {
         return localStorage.getItem("nav_collapsed") === "1";
       } catch (_) {
         return false;
       }
     }),
-    _useState184 = _slicedToArray(_useState183, 2),
-    navCollapsed = _useState184[0],
-    setNavCollapsed = _useState184[1];
+    _useState214 = _slicedToArray(_useState213, 2),
+    navCollapsed = _useState214[0],
+    setNavCollapsed = _useState214[1];
   function toggleNav() {
     setNavCollapsed(function (c) {
       var nv = !c;
@@ -7431,32 +8595,32 @@ function App() {
   }
   var rawMob = useIsMob();
   var mob = forceMob || rawMob;
-  var _useState185 = useState(false),
-    _useState186 = _slicedToArray(_useState185, 2),
-    checkinLoading = _useState186[0],
-    setCheckinLoading = _useState186[1];
-  var _useState187 = useState(false),
-    _useState188 = _slicedToArray(_useState187, 2),
-    reflAnalysisLoading = _useState188[0],
-    setReflAnalysisLoading = _useState188[1];
-  var _useState189 = useState(false),
-    _useState190 = _slicedToArray(_useState189, 2),
-    showMonitor = _useState190[0],
-    setShowMonitor = _useState190[1];
-  var _useState191 = useState(null),
-    _useState192 = _slicedToArray(_useState191, 2),
-    toast = _useState192[0],
-    setToast = _useState192[1]; // {msg,type:'error'|'success'|'warn'}
-  var _useState193 = useState([]),
-    _useState194 = _slicedToArray(_useState193, 2),
-    errLog = _useState194[0],
-    setErrLog = _useState194[1];
-  var _useState195 = useState(false),
-    _useState196 = _slicedToArray(_useState195, 2),
-    showErrPanel = _useState196[0],
-    setShowErrPanel = _useState196[1];
+  var _useState215 = useState(false),
+    _useState216 = _slicedToArray(_useState215, 2),
+    checkinLoading = _useState216[0],
+    setCheckinLoading = _useState216[1];
+  var _useState217 = useState(false),
+    _useState218 = _slicedToArray(_useState217, 2),
+    reflAnalysisLoading = _useState218[0],
+    setReflAnalysisLoading = _useState218[1];
+  var _useState219 = useState(false),
+    _useState220 = _slicedToArray(_useState219, 2),
+    showMonitor = _useState220[0],
+    setShowMonitor = _useState220[1];
+  var _useState221 = useState(null),
+    _useState222 = _slicedToArray(_useState221, 2),
+    toast = _useState222[0],
+    setToast = _useState222[1]; // {msg,type:'error'|'success'|'warn'}
+  var _useState223 = useState([]),
+    _useState224 = _slicedToArray(_useState223, 2),
+    errLog = _useState224[0],
+    setErrLog = _useState224[1];
+  var _useState225 = useState(false),
+    _useState226 = _slicedToArray(_useState225, 2),
+    showErrPanel = _useState226[0],
+    setShowErrPanel = _useState226[1];
   // Google Calendar sync state
-  var _useState197 = useState(function () {
+  var _useState227 = useState(function () {
       try {
         var c = localStorage.getItem('__gcal_events__');
         return c ? JSON.parse(c) : [];
@@ -7464,18 +8628,18 @@ function App() {
         return [];
       }
     }),
-    _useState198 = _slicedToArray(_useState197, 2),
-    gcalEvents = _useState198[0],
-    setGcalEvents = _useState198[1];
-  var _useState199 = useState(false),
-    _useState200 = _slicedToArray(_useState199, 2),
-    gcalConnected = _useState200[0],
-    setGcalConnected = _useState200[1];
-  var _useState201 = useState([]),
-    _useState202 = _slicedToArray(_useState201, 2),
-    gcalCalendars = _useState202[0],
-    setGcalCalendars = _useState202[1];
-  var _useState203 = useState(function () {
+    _useState228 = _slicedToArray(_useState227, 2),
+    gcalEvents = _useState228[0],
+    setGcalEvents = _useState228[1];
+  var _useState229 = useState(false),
+    _useState230 = _slicedToArray(_useState229, 2),
+    gcalConnected = _useState230[0],
+    setGcalConnected = _useState230[1];
+  var _useState231 = useState([]),
+    _useState232 = _slicedToArray(_useState231, 2),
+    gcalCalendars = _useState232[0],
+    setGcalCalendars = _useState232[1];
+  var _useState233 = useState(function () {
       try {
         var s = localStorage.getItem('__gcal_selected__');
         return s ? JSON.parse(s) : [];
@@ -7483,72 +8647,72 @@ function App() {
         return [];
       }
     }),
-    _useState204 = _slicedToArray(_useState203, 2),
-    gcalSelectedIds = _useState204[0],
-    setGcalSelectedIds = _useState204[1];
-  var _useState205 = useState(false),
-    _useState206 = _slicedToArray(_useState205, 2),
-    gcalReady = _useState206[0],
-    setGcalReady = _useState206[1];
-  var _useState207 = useState(false),
-    _useState208 = _slicedToArray(_useState207, 2),
-    showCalPicker = _useState208[0],
-    setShowCalPicker = _useState208[1];
+    _useState234 = _slicedToArray(_useState233, 2),
+    gcalSelectedIds = _useState234[0],
+    setGcalSelectedIds = _useState234[1];
+  var _useState235 = useState(false),
+    _useState236 = _slicedToArray(_useState235, 2),
+    gcalReady = _useState236[0],
+    setGcalReady = _useState236[1];
+  var _useState237 = useState(false),
+    _useState238 = _slicedToArray(_useState237, 2),
+    showCalPicker = _useState238[0],
+    setShowCalPicker = _useState238[1];
   // Syllabus / assessment hub state
-  var _useState209 = useState(false),
-    _useState210 = _slicedToArray(_useState209, 2),
-    showSyllabusImport = _useState210[0],
-    setShowSyllabusImport = _useState210[1];
-  var _useState211 = useState(""),
-    _useState212 = _slicedToArray(_useState211, 2),
-    syllabusText = _useState212[0],
-    setSyllabusText = _useState212[1];
-  var _useState213 = useState("2026-04-20"),
-    _useState214 = _slicedToArray(_useState213, 2),
-    syllabusStart = _useState214[0],
-    setSyllabusStart = _useState214[1];
-  var _useState215 = useState(function () {
+  var _useState239 = useState(false),
+    _useState240 = _slicedToArray(_useState239, 2),
+    showSyllabusImport = _useState240[0],
+    setShowSyllabusImport = _useState240[1];
+  var _useState241 = useState(""),
+    _useState242 = _slicedToArray(_useState241, 2),
+    syllabusText = _useState242[0],
+    setSyllabusText = _useState242[1];
+  var _useState243 = useState("2026-04-20"),
+    _useState244 = _slicedToArray(_useState243, 2),
+    syllabusStart = _useState244[0],
+    setSyllabusStart = _useState244[1];
+  var _useState245 = useState(function () {
       try {
         return localStorage.getItem('__gemini_key__') || "";
       } catch (_) {
         return "";
       }
     }),
-    _useState216 = _slicedToArray(_useState215, 2),
-    geminiKey = _useState216[0],
-    setGeminiKey = _useState216[1];
-  var _useState217 = useState(function () {
+    _useState246 = _slicedToArray(_useState245, 2),
+    geminiKey = _useState246[0],
+    setGeminiKey = _useState246[1];
+  var _useState247 = useState(function () {
       try {
         return localStorage.getItem('__groq_key__') || "";
       } catch (_) {
         return "";
       }
     }),
-    _useState218 = _slicedToArray(_useState217, 2),
-    groqKey = _useState218[0],
-    setGroqKey = _useState218[1];
-  var _useState219 = useState(false),
-    _useState220 = _slicedToArray(_useState219, 2),
-    geminiLoading = _useState220[0],
-    setGeminiLoading = _useState220[1];
-  var _useState221 = useState(null),
-    _useState222 = _slicedToArray(_useState221, 2),
-    geminiPreview = _useState222[0],
-    setGeminiPreview = _useState222[1];
-  var _useState223 = useState(false),
-    _useState224 = _slicedToArray(_useState223, 2),
-    showAddAssess = _useState224[0],
-    setShowAddAssess = _useState224[1];
-  var _useState225 = useState({
+    _useState248 = _slicedToArray(_useState247, 2),
+    groqKey = _useState248[0],
+    setGroqKey = _useState248[1];
+  var _useState249 = useState(false),
+    _useState250 = _slicedToArray(_useState249, 2),
+    geminiLoading = _useState250[0],
+    setGeminiLoading = _useState250[1];
+  var _useState251 = useState(null),
+    _useState252 = _slicedToArray(_useState251, 2),
+    geminiPreview = _useState252[0],
+    setGeminiPreview = _useState252[1];
+  var _useState253 = useState(false),
+    _useState254 = _slicedToArray(_useState253, 2),
+    showAddAssess = _useState254[0],
+    setShowAddAssess = _useState254[1];
+  var _useState255 = useState({
       subject: "WIA&B",
       name: "",
       type: "SUBMISSION",
       date: todayStr()
     }),
-    _useState226 = _slicedToArray(_useState225, 2),
-    addAssessForm = _useState226[0],
-    setAddAssessForm = _useState226[1];
-  var _useState227 = useState(function () {
+    _useState256 = _slicedToArray(_useState255, 2),
+    addAssessForm = _useState256[0],
+    setAddAssessForm = _useState256[1];
+  var _useState257 = useState(function () {
       try {
         var x = localStorage.getItem('__gcal_excluded__');
         return x ? JSON.parse(x) : [];
@@ -7556,9 +8720,9 @@ function App() {
         return [];
       }
     }),
-    _useState228 = _slicedToArray(_useState227, 2),
-    gcalExcludedIds = _useState228[0],
-    setGcalExcludedIds = _useState228[1];
+    _useState258 = _slicedToArray(_useState257, 2),
+    gcalExcludedIds = _useState258[0],
+    setGcalExcludedIds = _useState258[1];
 
   // Call this anywhere in App to show a brief auto-dismissing notification.
   // Child components can call window.showToast() which is wired up below.
@@ -9550,6 +10714,13 @@ function App() {
     setData(function (p) {
       return _objectSpread(_objectSpread({}, p), {}, {
         finance: fin
+      });
+    });
+  }
+  function updateInvest(inv) {
+    setData(function (p) {
+      return _objectSpread(_objectSpread({}, p), {}, {
+        invest: inv
       });
     });
   }
@@ -13033,6 +14204,16 @@ function App() {
     onUpdate: updateFinance,
     gcalEvents: visibleGcalEvents,
     work: data.work || {}
+  }))), page === "Invest" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: mob ? undefined : 900
+    }
+  }, /*#__PURE__*/React.createElement(ErrorBoundary, {
+    name: "Invest"
+  }, /*#__PURE__*/React.createElement(InvestSection, {
+    mob: mob,
+    data: data.invest || {},
+    onUpdate: updateInvest
   }))), page === "Journal" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",

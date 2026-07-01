@@ -31,7 +31,7 @@ const T={bg:"#0a0a0a",bg2:"rgba(225,234,255,0.07)",bg3:"rgba(225,234,255,0.04)",
 // DAYS, TASK_CATS, SUBJECTS, SC, SYLLABUS_ASSESSMENTS, REFL_QS, REFL_LABELS, WX_MAP, WX_DAYS → data.js
 
 // ── Navigation glyphs — consistent stroke-based line icons (replaces emoji) ──
-const NAV_PAGES=["Dashboard","Uni","Work","Gym","Personal","Finance","Journal","Boardroom"];
+const NAV_PAGES=["Dashboard","Uni","Work","Gym","Personal","Finance","Invest","Journal","Boardroom"];
 function NavGlyph(props){
   const n=props.name;const s=props.size||18;
   const a={width:s,height:s,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:props.sw||1.7,strokeLinecap:"round",strokeLinejoin:"round"};
@@ -42,6 +42,7 @@ function NavGlyph(props){
     Gym:<g><path d="M6.5 6.5v11M17.5 6.5v11M4 9v6M20 9v6M6.5 12h11"/></g>,
     Personal:<g><circle cx="12" cy="8" r="4"/><path d="M4 20c0-3.5 3.6-6 8-6s8 2.5 8 6"/></g>,
     Finance:<g><circle cx="12" cy="12" r="9"/><path d="M14.5 9.2c-.5-1-1.5-1.5-2.7-1.5-1.6 0-2.8.9-2.8 2.2 0 1.4 1.2 1.9 2.8 2.3 1.6.4 2.8.9 2.8 2.3 0 1.3-1.2 2.2-2.8 2.2-1.3 0-2.3-.6-2.8-1.6M12 6v1.7M12 16.3V18"/></g>,
+    Invest:<g><path d="M3 17l5-5 3 3 7-7"/><path d="M15 8h5v5"/><path d="M3 21h18"/></g>,
     Journal:<g><path d="M5 4h11a2 2 0 0 1 2 2v14l-4-2.2L10 20l-4-2.2V6a2 2 0 0 1 2-2Z"/><path d="M9 8h6M9 11.5h6"/></g>,
     Boardroom:<g><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5.5-5.5 2 2-5.5 5.5-2Z"/></g>
   };
@@ -154,6 +155,10 @@ const INIT={
     monthlyRecurringOverrides:{},
     expenses:[],
     hourlyRate:0
+  },
+  invest:{
+    watchlist:[{symbol:"AAPL"},{symbol:"MSFT"},{symbol:"NVDA"}],
+    holdings:[]
   },
   work:{
     hourlyRate:0,
@@ -1451,6 +1456,339 @@ function FinanceSection({data,onUpdate,mob,gcalEvents,work}){
             </div>
           </div>
         }
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Invest tab — personal "mini-Bloomberg": watchlist, portfolio P&L, price
+// chart, and an AI "explain this" panel. Market data comes from
+// window.MarketService (Finnhub, 15-min delayed). With no Finnhub key set it
+// runs in DEMO MODE with deterministic mock data so the tab always renders.
+// Not financial advice — informational only.
+// ══════════════════════════════════════════════════════════════════════════
+function invFmt(n,dp){if(n===undefined||n===null||n===""||isNaN(n))return "—";dp=dp===undefined?2:dp;return Number(n).toLocaleString("en-US",{minimumFractionDigits:dp,maximumFractionDigits:dp});}
+function invPct(n){if(n===undefined||n===null||isNaN(n))return "—";return (n>=0?"+":"")+Number(n).toFixed(2)+"%";}
+function invUniq(a){var seen={},out=[];a.forEach(function(x){var k=(x||"").toUpperCase();if(x&&!seen[k]){seen[k]=1;out.push(k);}});return out;}
+// Coerce whatever getCandles returns into a flat array of closing prices.
+function invCloses(c){
+  if(!c)return[];
+  if(Array.isArray(c)){
+    if(c.length===0)return[];
+    if(typeof c[0]==="number")return c.filter(function(x){return typeof x==="number"&&!isNaN(x);});
+    return c.map(function(p){return p&&(p.close!==undefined?p.close:(p.c!==undefined?p.c:null));}).filter(function(x){return typeof x==="number"&&!isNaN(x);});
+  }
+  if(c.candles)return invCloses(c.candles);
+  if(Array.isArray(c.c))return c.c.filter(function(x){return typeof x==="number"&&!isNaN(x);});
+  return[];
+}
+// Defensive readers so the UI is decoupled from the provider's exact field names.
+function invQPrice(q){if(!q)return null;return q.price!==undefined?q.price:(q.c!==undefined?q.c:null);}
+function invQChg(q){if(!q)return null;return q.change!==undefined?q.change:(q.d!==undefined?q.d:null);}
+function invQPct(q){if(!q)return null;return q.changePercent!==undefined?q.changePercent:(q.changePct!==undefined?q.changePct:(q.dp!==undefined?q.dp:null));}
+
+// Dependency-free SVG area+line chart of closing prices.
+function InvChart({closes,h,accent}){
+  h=h||190;
+  var W=1000; // viewBox width; SVG scales to container via width:100%
+  if(!closes||closes.length<2)return <div style={{height:h,display:"flex",alignItems:"center",justifyContent:"center",color:T.text3,fontSize:12}}>No chart data available</div>;
+  var n=closes.length;
+  var min=Math.min.apply(null,closes),max=Math.max.apply(null,closes);
+  var pad=(max-min)*0.10||Math.abs(max)*0.02||1;min-=pad;max+=pad;
+  var span=(max-min)||1;
+  var X=function(i){return (i/(n-1))*W;};
+  var Y=function(v){return h-((v-min)/span)*h;};
+  var pts=closes.map(function(v,i){return X(i).toFixed(1)+","+Y(v).toFixed(1);});
+  var line="M"+pts.join(" L");
+  var area=line+" L"+W.toFixed(1)+","+h+" L0,"+h+" Z";
+  var up=closes[n-1]>=closes[0];
+  var col=accent||(up?"#69f0ae":"#ff6b6b");
+  var gid="invgrad_"+n+"_"+Math.round(closes[0]);
+  return (
+    <svg viewBox={"0 0 "+W+" "+h} preserveAspectRatio="none" style={{width:"100%",height:h,display:"block"}}>
+      <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor={col} stopOpacity="0.28"/>
+        <stop offset="100%" stopColor={col} stopOpacity="0"/>
+      </linearGradient></defs>
+      <path d={area} fill={"url(#"+gid+")"}/>
+      <path d={line} fill="none" stroke={col} strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
+    </svg>
+  );
+}
+
+function InvestSection({data,onUpdate,mob}){
+  mob=mob||false;
+  const MS=window.MarketService||null;
+  const watchlist=Array.isArray(data.watchlist)?data.watchlist:[];
+  const holdings=Array.isArray(data.holdings)?data.holdings:[];
+  const [quotes,setQuotes]=useState({});
+  const [profiles,setProfiles]=useState({});
+  const [loading,setLoading]=useState(false);
+  const [selected,setSelected]=useState(watchlist[0]?watchlist[0].symbol:(holdings[0]?holdings[0].symbol:null));
+  const [candles,setCandles]=useState(null);
+  const [news,setNews]=useState([]);
+  const [ai,setAi]=useState({loading:false,text:"",err:""});
+  const [addSym,setAddSym]=useState("");
+  const [searchRes,setSearchRes]=useState([]);
+  const [searching,setSearching]=useState(false);
+  const [holdForm,setHoldForm]=useState({symbol:"",shares:"",cost:""});
+  const [showKey,setShowKey]=useState(false);
+  const [keyInput,setKeyInput]=useState("");
+  const [demo,setDemo]=useState(MS?MS.isDemo():true);
+  const [refreshedAt,setRefreshedAt]=useState(null);
+
+  const allSymbols=invUniq([].concat(watchlist.map(function(w){return w.symbol;}),holdings.map(function(h){return h.symbol;})));
+  const symbolsKey=allSymbols.join(",");
+
+  // ── styles (mirror the Finance tab's glass system) ──
+  const iCard=function(ex){return{position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:14,boxShadow:cardShadow,...(ex||{})};};
+  const iStatLabel={fontSize:10,fontWeight:600,color:"#8f97a6",textTransform:"uppercase",letterSpacing:"0.05em"};
+  const iInp={width:"100%",padding:"8px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"};
+  const iBtn={...btnGlassP};
+  const iGhost={appearance:"none",padding:"6px 12px",borderRadius:999,border:"0.5px solid rgba(255,255,255,0.16)",background:"rgba(255,255,255,0.05)",color:T.text2,cursor:"pointer",fontSize:11,fontWeight:600,whiteSpace:"nowrap"};
+
+  function toast(m,t){if(window.showToast)window.showToast(m,t);}
+
+  // ── load quotes for every symbol in watchlist + holdings ──
+  function loadQuotes(){
+    if(!MS||allSymbols.length===0){setRefreshedAt(new Date());return;}
+    setLoading(true);
+    Promise.all(allSymbols.map(function(sym){return MS.getQuote(sym).then(function(q){return[sym,q];}).catch(function(){return[sym,null];});}))
+      .then(function(pairs){setQuotes(function(prev){var nq={...prev};pairs.forEach(function(pr){if(pr[1])nq[pr[0]]=pr[1];});return nq;});})
+      .then(function(){setRefreshedAt(new Date());})
+      .catch(function(){})
+      .then(function(){setLoading(false);});
+  }
+  useEffect(function(){loadQuotes();},[symbolsKey]);
+
+  // ── load detail (profile, candles, news) for the selected symbol ──
+  useEffect(function(){
+    if(!MS||!selected)return;
+    var alive=true;
+    setCandles(null);setNews([]);
+    MS.getProfile(selected).then(function(p){if(alive)setProfiles(function(prev){var np={...prev};np[selected]=p;return np;});}).catch(function(){});
+    var to=Math.floor(Date.now()/1000);var from=to-60*60*24*180;
+    MS.getCandles(selected,"D",from,to).then(function(c){if(alive)setCandles(c);}).catch(function(){if(alive)setCandles(null);});
+    MS.getNews(selected).then(function(nw){if(alive)setNews(Array.isArray(nw)?nw.slice(0,5):[]);}).catch(function(){if(alive)setNews([]);});
+    return function(){alive=false;};
+  },[selected]);
+
+  // ── watchlist mutations ──
+  function addToWatchlist(sym){
+    sym=(sym||"").trim().toUpperCase();if(!sym)return;
+    if(watchlist.some(function(w){return w.symbol===sym;})){toast(sym+" already in watchlist");return;}
+    onUpdate({...data,watchlist:watchlist.concat([{symbol:sym}])});
+    setAddSym("");setSearchRes([]);setSelected(sym);toast(sym+" added","success");
+  }
+  function removeFromWatchlist(sym){
+    onUpdate({...data,watchlist:watchlist.filter(function(w){return w.symbol!==sym;})});
+    if(selected===sym)setSelected(null);
+  }
+  function runSearch(q){
+    setAddSym(q);
+    if(!MS||!q||q.trim().length<1){setSearchRes([]);return;}
+    setSearching(true);
+    MS.searchSymbols(q.trim()).then(function(r){setSearchRes((r||[]).slice(0,6));}).catch(function(){setSearchRes([]);}).then(function(){setSearching(false);});
+  }
+
+  // ── holdings mutations ──
+  function addHolding(){
+    var sym=(holdForm.symbol||"").trim().toUpperCase();
+    var sh=Number(holdForm.shares),cost=Number(holdForm.cost);
+    if(!sym){toast("Enter a ticker");return;}
+    if(isNaN(sh)||sh<=0){toast("Enter share count");return;}
+    if(isNaN(cost)||cost<0){toast("Enter avg cost");return;}
+    var id="h"+Date.now();
+    onUpdate({...data,holdings:holdings.concat([{id:id,symbol:sym,shares:sh,cost:cost}])});
+    setHoldForm({symbol:"",shares:"",cost:""});
+    if(!quotes[sym])setSelected(sym);
+    toast(sym+" position added","success");
+  }
+  function removeHolding(id){onUpdate({...data,holdings:holdings.filter(function(h){return h.id!==id;})});}
+
+  // ── portfolio totals ──
+  var portValue=0,portCost=0,priced=0;
+  holdings.forEach(function(h){
+    var q=quotes[h.symbol];var px=invQPrice(q);
+    if(px!==null){portValue+=px*h.shares;priced++;}
+    portCost+=h.cost*h.shares;
+  });
+  var portGain=portValue-portCost;
+  var portGainPct=portCost>0?(portGain/portCost)*100:0;
+
+  // ── API key entry ──
+  function saveKey(){
+    var k=(keyInput||"").trim();
+    if(!k){toast("Paste your Finnhub key");return;}
+    if(MS&&MS.setKey)MS.setKey(k);else{try{localStorage.setItem("__finnhub_key__",k);}catch(_){}}
+    setDemo(MS?MS.isDemo():false);setShowKey(false);setKeyInput("");
+    toast("Finnhub key saved — loading live data","success");
+    setTimeout(loadQuotes,60);
+  }
+  function clearKey(){
+    if(MS&&MS.setKey)MS.setKey("");else{try{localStorage.removeItem("__finnhub_key__");}catch(_){}}
+    if(MS&&MS.clearCache)MS.clearCache();
+    setDemo(true);toast("Reverted to demo mode");setTimeout(loadQuotes,60);
+  }
+
+  // ── AI "explain this" via Gemini (key reused from the app's Gemini setup) ──
+  function explainSelected(){
+    if(!selected){return;}
+    var gkey="";try{gkey=(localStorage.getItem("__gemini_key__")||"").trim();}catch(_){}
+    if(!gkey){setAi({loading:false,text:"",err:"No Gemini API key set. Add it in Logs → Settings to enable AI explanations."});return;}
+    var q=quotes[selected]||{};var prof=profiles[selected]||{};
+    var headlines=(news||[]).slice(0,4).map(function(x){return "- "+(x.headline||x.title||"");}).join("\n");
+    var ctx="Ticker: "+selected+"\n"+
+      "Company: "+(prof.name||"?")+(prof.industry?(" ("+prof.industry+")"):"")+"\n"+
+      "Price: "+invFmt(invQPrice(q))+" ("+invPct(invQPct(q))+" today)\n"+
+      (prof.marketCap?("Market cap: "+invFmt(prof.marketCap,0)+"M USD\n"):"")+
+      (headlines?("Recent headlines:\n"+headlines+"\n"):"");
+    var prompt="You are a concise financial explainer for a personal dashboard. In 4-6 short bullet points, explain what this company does, what the recent price move and headlines suggest, and 1-2 things a long-term retail investor might watch. Plain English, no jargon dumps. End with one line: 'Not financial advice.'\n\n"+ctx;
+    setAi({loading:true,text:"",err:""});
+    fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+encodeURIComponent(gkey),{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})
+    }).then(function(r){if(!r.ok)throw new Error("Gemini "+r.status);return r.json();})
+      .then(function(j){var t=(((j.candidates||[])[0]||{}).content||{}).parts||[];var out=t.map(function(p){return p.text||"";}).join("").trim();setAi({loading:false,text:out||"(no response)",err:""});})
+      .catch(function(e){setAi({loading:false,text:"",err:"AI error: "+(e.message||e)});});
+  }
+
+  var selQuote=selected?quotes[selected]:null;
+  var selProf=selected?profiles[selected]:null;
+  var selCloses=invCloses(candles);
+
+  return (
+    <div>
+      {/* Header + mode badge */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:6,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <h2 style={{fontSize:20,fontWeight:700,color:T.text,margin:0,letterSpacing:"-0.02em"}}>Invest</h2>
+          <span title={demo?"No Finnhub key — showing demo data":"Live data via Finnhub (15-min delayed)"} style={{fontSize:9.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",padding:"3px 8px",borderRadius:999,border:"0.5px solid "+(demo?"rgba(255,209,102,0.4)":"rgba(105,240,174,0.4)"),background:demo?"rgba(255,209,102,0.12)":"rgba(105,240,174,0.12)",color:demo?T.warn:T.success}}>{demo?"Demo data":"Live · delayed"}</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <button style={iGhost} onClick={loadQuotes} disabled={loading}>{loading?"Refreshing…":"↻ Refresh"}</button>
+          <button style={iGhost} onClick={function(){setShowKey(!showKey);}}>{demo?"Add live key":"API key"}</button>
+        </div>
+      </div>
+      <div style={{fontSize:11,color:T.text3,marginBottom:14,lineHeight:1.5}}>
+        Personal decision-support, not financial advice. Prices may be delayed 15+ minutes.{refreshedAt&&" · Updated "+refreshedAt.toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit"})}
+      </div>
+
+      {/* API key entry */}
+      {showKey&&<div style={iCard()}>
+        <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:6}}>Finnhub API key</div>
+        <div style={{fontSize:11,color:T.text3,marginBottom:10,lineHeight:1.5}}>Free key from <span style={{color:T.accent}}>finnhub.io/register</span> (60 calls/min). Stored only in this browser. Without it, the tab shows realistic demo data. Note: intraday price charts need a paid Finnhub plan; quotes, fundamentals & news are free.</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <input style={{...iInp,flex:1,minWidth:200}} type="password" placeholder="Paste Finnhub key…" value={keyInput} onChange={function(e){setKeyInput(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")saveKey();}}/>
+          <button style={iBtn} onClick={saveKey}>Save</button>
+          {!demo&&<button style={iGhost} onClick={clearKey}>Use demo</button>}
+        </div>
+      </div>}
+
+      {/* Portfolio summary */}
+      <div style={iCard()}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:600,color:"#cdd5e2"}}>Portfolio</div>
+          <div style={{fontSize:10,color:T.text3}}>{holdings.length} position{holdings.length===1?"":"s"}{holdings.length>priced?" · "+(holdings.length-priced)+" unpriced":""}</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"1fr 1fr 1fr",gap:12,marginBottom:holdings.length?16:0}}>
+          <div><div style={iStatLabel}>Value</div><div style={{fontSize:22,fontWeight:700,color:T.text,letterSpacing:"-0.02em"}}>${invFmt(portValue)}</div></div>
+          <div><div style={iStatLabel}>Cost basis</div><div style={{fontSize:22,fontWeight:700,color:T.text2,letterSpacing:"-0.02em"}}>${invFmt(portCost)}</div></div>
+          <div><div style={iStatLabel}>Gain / loss</div><div style={{fontSize:22,fontWeight:700,letterSpacing:"-0.02em",color:portGain>=0?T.success:T.danger}}>{portGain>=0?"+":"-"}${invFmt(Math.abs(portGain))} <span style={{fontSize:13,fontWeight:600}}>({invPct(portGainPct)})</span></div></div>
+        </div>
+        {holdings.map(function(h){
+          var q=quotes[h.symbol];var px=invQPrice(q);
+          var val=px!==null?px*h.shares:null;var g=px!==null?(px-h.cost)*h.shares:null;
+          var gp=h.cost>0&&px!==null?((px-h.cost)/h.cost)*100:null;
+          return (
+            <div key={h.id} onClick={function(){setSelected(h.symbol);}} className="glow-item" style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:12,marginTop:8,cursor:"pointer",background:selected===h.symbol?"rgba(91,140,255,0.10)":"rgba(255,255,255,0.03)",border:"0.5px solid rgba(255,255,255,0.07)"}}>
+              <div style={{minWidth:64}}><div style={{fontSize:13,fontWeight:700,color:T.text}}>{h.symbol}</div><div style={{fontSize:10,color:T.text3}}>{invFmt(h.shares,h.shares%1?4:0)} @ ${invFmt(h.cost)}</div></div>
+              <div style={{flex:1}}/>
+              <div style={{textAlign:"right"}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>{px!==null?"$"+invFmt(val):"—"}</div><div style={{fontSize:11,fontWeight:600,color:g===null?T.text3:(g>=0?T.success:T.danger)}}>{g===null?"—":((g>=0?"+":"-")+"$"+invFmt(Math.abs(g))+" "+(gp!==null?invPct(gp):""))}</div></div>
+              <button onClick={function(e){e.stopPropagation();removeHolding(h.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,lineHeight:1,padding:"0 4px"}}>×</button>
+            </div>
+          );
+        })}
+        <div style={{display:"flex",gap:6,marginTop:holdings.length?12:4,flexWrap:"wrap"}}>
+          <input style={{...iInp,flex:mob?"1 1 100%":"1 1 90px",textTransform:"uppercase"}} placeholder="Ticker" value={holdForm.symbol} onChange={function(e){setHoldForm({...holdForm,symbol:e.target.value});}}/>
+          <input style={{...iInp,flex:"1 1 80px"}} type="number" step="any" placeholder="Shares" value={holdForm.shares} onChange={function(e){setHoldForm({...holdForm,shares:e.target.value});}}/>
+          <input style={{...iInp,flex:"1 1 90px"}} type="number" step="any" placeholder="Avg cost" value={holdForm.cost} onChange={function(e){setHoldForm({...holdForm,cost:e.target.value});}} onKeyDown={function(e){if(e.key==="Enter")addHolding();}}/>
+          <button style={iBtn} onClick={addHolding}>Add</button>
+        </div>
+      </div>
+
+      {/* Watchlist */}
+      <div style={iCard()}>
+        <div style={{fontSize:13,fontWeight:600,color:"#cdd5e2",marginBottom:12}}>Watchlist</div>
+        <div style={{position:"relative",marginBottom:watchlist.length?14:2}}>
+          <div style={{display:"flex",gap:6}}>
+            <input style={{...iInp,flex:1,textTransform:"uppercase"}} placeholder="Add ticker (e.g. AAPL) or search…" value={addSym} onChange={function(e){runSearch(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter"){addToWatchlist(addSym);}}}/>
+            <button style={iBtn} onClick={function(){addToWatchlist(addSym);}}>Add</button>
+          </div>
+          {searchRes.length>0&&<div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:20,marginTop:4,background:"rgba(18,22,42,0.98)",border:"0.5px solid rgba(255,255,255,0.14)",borderRadius:12,overflow:"hidden",boxShadow:cardShadow}}>
+            {searchRes.map(function(r){return (
+              <div key={r.symbol} onClick={function(){addToWatchlist(r.symbol);}} style={{padding:"9px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,borderBottom:"0.5px solid rgba(255,255,255,0.05)"}} onMouseOver={function(e){e.currentTarget.style.background="rgba(91,140,255,0.10)";}} onMouseOut={function(e){e.currentTarget.style.background="transparent";}}>
+                <span style={{fontSize:12,fontWeight:700,color:T.text,minWidth:54}}>{r.symbol}</span>
+                <span style={{fontSize:11,color:T.text3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.description||r.name||""}</span>
+              </div>
+            );})}
+          </div>}
+          {searching&&<div style={{fontSize:10,color:T.text3,marginTop:4}}>Searching…</div>}
+        </div>
+        {watchlist.length===0&&<div style={{fontSize:12,color:T.text3,padding:"6px 2px"}}>No tickers yet. Add one above to start tracking.</div>}
+        {watchlist.map(function(w){
+          var q=quotes[w.symbol];var px=invQPrice(q);var pct=invQPct(q);
+          return (
+            <div key={w.symbol} onClick={function(){setSelected(w.symbol);}} className="glow-item" style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px",borderRadius:12,marginBottom:7,cursor:"pointer",background:selected===w.symbol?"rgba(91,140,255,0.10)":"rgba(255,255,255,0.03)",border:"0.5px solid rgba(255,255,255,0.07)"}}>
+              <div style={{minWidth:60}}><div style={{fontSize:14,fontWeight:700,color:T.text}}>{w.symbol}</div><div style={{fontSize:10,color:T.text3,maxWidth:mob?110:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(profiles[w.symbol]&&profiles[w.symbol].name)||""}</div></div>
+              <div style={{flex:1}}/>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:14,fontWeight:600,color:T.text}}>{px!==null?"$"+invFmt(px):(loading?"…":"—")}</div>
+                <div style={{fontSize:11,fontWeight:600,color:pct===null?T.text3:(pct>=0?T.success:T.danger)}}>{invPct(pct)}</div>
+              </div>
+              <button onClick={function(e){e.stopPropagation();removeFromWatchlist(w.symbol);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,lineHeight:1,padding:"0 4px"}}>×</button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Detail: chart + AI for selected symbol */}
+      {selected&&<div style={iCard()}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+          <div>
+            <div style={{display:"flex",alignItems:"center",gap:9}}>
+              <span style={{fontSize:18,fontWeight:700,color:T.text}}>{selected}</span>
+              {selProf&&selProf.name&&<span style={{fontSize:12,color:T.text3}}>{selProf.name}</span>}
+            </div>
+            <div style={{display:"flex",alignItems:"baseline",gap:10,marginTop:3}}>
+              <span style={{fontSize:24,fontWeight:700,color:T.text,letterSpacing:"-0.02em"}}>{invQPrice(selQuote)!==null?"$"+invFmt(invQPrice(selQuote)):"—"}</span>
+              <span style={{fontSize:13,fontWeight:600,color:invQPct(selQuote)===null?T.text3:(invQPct(selQuote)>=0?T.success:T.danger)}}>{invQChg(selQuote)!==null?((invQChg(selQuote)>=0?"+":"")+invFmt(invQChg(selQuote))):""} {invPct(invQPct(selQuote))}</span>
+            </div>
+          </div>
+          <button style={{...iBtn,display:"flex",alignItems:"center",gap:6}} onClick={explainSelected} disabled={ai.loading}><UIcon name={ai.loading?"clock":"sparkle"} size={13}/>{ai.loading?"Thinking…":"Explain with AI"}</button>
+        </div>
+        <div style={{margin:"4px -4px 0"}}><InvChart closes={selCloses} h={mob?150:200}/></div>
+        <div style={{fontSize:10,color:T.text3,textAlign:"right",marginTop:2}}>{selCloses.length>1?"~"+selCloses.length+" sessions"+(demo?" (demo)":""):(demo?"":"Intraday charts require a paid Finnhub plan")}</div>
+
+        {(ai.text||ai.err)&&<div style={{marginTop:14,padding:"14px 16px",borderRadius:14,background:"rgba(91,140,255,0.06)",border:"0.5px solid rgba(91,140,255,0.20)"}}>
+          <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:T.accent,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><UIcon name="sparkle" size={12}/>AI summary</div>
+          {ai.err?<div style={{fontSize:12,color:T.warn}}>{ai.err}</div>:<div style={{fontSize:12.5,color:T.text2,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{ai.text}</div>}
+        </div>}
+
+        {news.length>0&&<div style={{marginTop:16}}>
+          <div style={{fontSize:11,fontWeight:600,color:"#cdd5e2",marginBottom:8}}>Recent news</div>
+          {news.map(function(a,i){return (
+            <a key={i} href={a.url||"#"} target="_blank" rel="noopener noreferrer" style={{display:"block",padding:"9px 0",borderTop:i?"0.5px solid rgba(255,255,255,0.06)":"none",textDecoration:"none"}}>
+              <div style={{fontSize:12,color:T.text,lineHeight:1.4}}>{a.headline||a.title||"(untitled)"}</div>
+              <div style={{fontSize:10,color:T.text3,marginTop:2}}>{a.source||""}</div>
+            </a>
+          );})}
+        </div>}
+      </div>}
+
+      <div style={{fontSize:10,color:T.text3,textAlign:"center",padding:"6px 0 20px",lineHeight:1.5}}>
+        Data {demo?"is simulated (demo mode)":"via Finnhub, delayed ≥15 min"}. For personal, informational use only — not investment advice.
       </div>
     </div>
   );
@@ -2903,6 +3241,7 @@ function App(){
    }catch(err){captureError(err,"saveModal");}
   }
   function updateFinance(fin){setData(function(p){return{...p,finance:fin};});}
+  function updateInvest(inv){setData(function(p){return{...p,invest:inv};});}
   function updateWork(w){setData(function(p){return{...p,work:w};});}
   function requestImmediateSave(){_flushNow.current=true;} // bypass the 2s debounce on the next data save
   function submitRefl(){
@@ -3428,6 +3767,7 @@ function App(){
         </div>}
 
         {page==="Finance"&&<div style={{maxWidth:mob?undefined:900}}><ErrorBoundary name="Finance"><FinanceSection mob={mob} data={data.finance||{}} onUpdate={updateFinance} gcalEvents={visibleGcalEvents} work={data.work||{}}/></ErrorBoundary></div>}
+        {page==="Invest"&&<div style={{maxWidth:mob?undefined:900}}><ErrorBoundary name="Invest"><InvestSection mob={mob} data={data.invest||{}} onUpdate={updateInvest}/></ErrorBoundary></div>}
 
         {page==="Journal"&&<div style={{display:"flex",gap:6,marginBottom:14}}>
           {[{key:"captures",label:"Captures",icon:"bolt"},{key:"reflection",label:"Reflection",icon:"target"}].map(function(t){const active=journalTab===t.key;return(<button key={t.key} onClick={function(){setJournalTab(t.key);}} style={{padding:"6px 14px",borderRadius:99,fontSize:12,cursor:"pointer",border:active?"1px solid "+T.accent:"0.5px solid "+T.border,background:active?T.accentBg:"transparent",color:active?T.accent:T.text2,fontWeight:active?600:400,display:"flex",alignItems:"center",gap:6}}><span style={{display:"flex"}}><UIcon name={t.icon} size={13}/></span>{t.label}</button>);})}
