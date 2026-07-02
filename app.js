@@ -38,7 +38,8 @@ function _getPrototypeOf(o) { _getPrototypeOf = Object.setPrototypeOf ? Object.g
 var _React = React,
   useState = _React.useState,
   useEffect = _React.useEffect,
-  useRef = _React.useRef;
+  useRef = _React.useRef,
+  useMemo = _React.useMemo;
 // Usage tracking helper — safe wrapper around window.UsageTracker.track. No-op if module not loaded.
 function trk(name) {
   try {
@@ -813,6 +814,26 @@ function shiftPay(timeStr) {
     totalEquiv: +(norm / 60 + pen / 60 * 1.5).toFixed(2)
   };
 }
+function getPayPeriodRange(payCycleDay, offset) {
+  // Pay-cycle MONTH: from payCycleDay of one month through the day before the next month's payCycleDay.
+  // Clamp the anchor to each month's length so cycles tile with no gap/overlap (handles payCycleDay 29–31, Feb).
+  var today = new Date();
+  var yr = today.getFullYear();
+  var mo = today.getMonth();
+  if (today.getDate() < payCycleDay) mo -= 1; // before this month's pay day → cycle began last month
+  function dim(y, m) {
+    return new Date(y, m + 1, 0).getDate();
+  }
+  function anchor(y, m) {
+    return new Date(y, m, Math.min(payCycleDay, dim(y, m)));
+  }
+  var start = anchor(yr, mo + offset);
+  var end = new Date(anchor(yr, mo + offset + 1).getTime() - 864e5); // day before next anchor
+  return {
+    start: dStr(start),
+    end: dStr(end)
+  };
+}
 function taskUrg(t) {
   if (t.done) return "done";
   var od = t.due ? daysBetween(t.due) * -1 : 0;
@@ -1012,6 +1033,125 @@ function dedupeEvents(evs) {
   }
   return Array.from(seen.values());
 }
+// ── Jarvis prioritizer brain ──────────────────────────────────────────────
+// Deterministic rules scan dashData + calendar events and emit candidate "signals".
+// Signals are DERIVED state: recomputed live, held in React state only, never written
+// to dashData (writing them would churn the Firestore sync + backups for no reason).
+// LLM phrasing (jarvis-service.js) is optional sugar on top — `template` must always
+// be a complete, render-ready sentence.
+//
+// Signal shape:
+// {
+//   id: "finance.billsCoverage",        // stable per rule instance (dedupe + phrasing key)
+//   domain: "finance",                  // finance|work|tasks|uni|gym|invest
+//   score: 0..100,                      // deterministic priority (ordering)
+//   severity: "info"|"watch"|"alert",   // maps to accent colour
+//   facts: {...},                       // small flat object — the ONLY thing ever sent to an LLM
+//   template: "...",                    // render-ready fallback sentence
+//   cta: {label,page},                  // optional nav target (any NAV_PAGES entry)
+//   fingerprint: "...",                 // material-change hash (amounts rounded) → LLM cache key
+//   computedAt: "YYYY-MM-DD"
+// }
+// New domains: write a source function (ctx = {data, gcalEvents, today}) and push it
+// into SIGNAL_SOURCES — the pipe, ranking, UI and phrasing all pick it up automatically.
+var SIGNAL_SOURCES = [];
+function computeSignals(data, gcalEvents) {
+  var ctx = {
+    data: data,
+    gcalEvents: gcalEvents || [],
+    today: todayStr()
+  };
+  var out = [];
+  SIGNAL_SOURCES.forEach(function (src) {
+    try {
+      out = out.concat(src(ctx) || []);
+    } catch (e) {
+      console.warn("[Jarvis] signal source failed:", e && e.message);
+    } // one bad rule never kills the strip
+  });
+
+  return out.sort(function (a, b) {
+    return b.score - a.score;
+  });
+}
+
+// Finance + shifts: are this cycle's recurring bills covered by projected shift income?
+// Simplification: bills are the CALENDAR month's recurring total while income follows the
+// pay cycle anchored on payCycleDay — a 2–3 day skew. Refine later via templates' dueDay.
+function financeShiftsSource(ctx) {
+  var d = ctx.data || {},
+    evs = ctx.gcalEvents || [];
+  var work = d.work || {},
+    fin = d.finance || {};
+  var rate = Number(work.hourlyRate || 0);
+  var payCycleDay = Number(work.payCycleDay || 1);
+  var templates = fin.recurringTemplates || [];
+  if (!rate || !templates.length) return []; // not configured → stay silent
+  if (!evs.length) return []; // calendar not connected on this device → stay silent
+
+  // Bills: current month's recurring total, honouring per-month overrides (mirrors FinanceSection)
+  var month = ctx.today.slice(0, 7);
+  var mo = (fin.monthlyRecurringOverrides || {})[month] || {};
+  var billsTotal = templates.filter(function (t) {
+    var ov = mo[t.id];
+    return !(ov && ov.excluded);
+  }).reduce(function (a, t) {
+    var ov = mo[t.id];
+    return a + Number(ov && ov.amount !== undefined && ov.amount !== null ? ov.amount : t.amount || 0);
+  }, 0);
+  if (!(billsTotal > 0)) return [];
+
+  // Income this pay cycle: same math as the Work tab (getPayPeriodRange + shiftPay)
+  var pr = getPayPeriodRange(payCycleDay, 0);
+  var scheduled = evs.filter(isGoTabEvent).filter(function (ev) {
+    return classifyWorkEvent(ev) !== "ignore";
+  }).filter(function (ev) {
+    return ev.date >= pr.start && ev.date <= pr.end;
+  });
+  var shiftLogs = work.shiftLogs || {},
+    since = work.progressiveSince || "";
+  var earned = scheduled.filter(function (ev) {
+    return isWorkEventCounted(ev, shiftLogs, since);
+  }).reduce(function (a, ev) {
+    var p = shiftPay(ev.time);
+    return a + (p ? p.totalEquiv * rate : 0);
+  }, 0);
+  var projected = scheduled.reduce(function (a, ev) {
+    var p = shiftPay(ev.time);
+    return a + (p ? p.totalEquiv * rate : 0);
+  }, 0);
+  var buffer = projected - billsTotal; // gross — phrased "before tax"
+
+  var severity = buffer < 0 ? "alert" : buffer < billsTotal * 0.3 ? "watch" : "info";
+  var score = buffer < 0 ? 90 : buffer < billsTotal * 0.3 ? 60 : 30;
+  var facts = {
+    billsTotal: Math.round(billsTotal),
+    projectedPay: Math.round(projected),
+    earnedSoFar: Math.round(earned),
+    buffer: Math.round(buffer),
+    shiftsScheduled: scheduled.length,
+    periodStart: pr.start,
+    periodEnd: pr.end
+  };
+  return [{
+    id: "finance.billsCoverage",
+    domain: "finance",
+    score: score,
+    severity: severity,
+    facts: facts,
+    template: buffer >= 0 ? "Bills this cycle ($" + facts.billsTotal + ") are covered — $" + facts.projectedPay + " projected from " + facts.shiftsScheduled + " shift" + (facts.shiftsScheduled !== 1 ? "s" : "") + ", buffer $" + facts.buffer + " before tax." : "Projected shift income $" + facts.projectedPay + " is $" + Math.abs(facts.buffer) + " short of this cycle's bills ($" + facts.billsTotal + ").",
+    cta: {
+      label: "Work",
+      page: "Work"
+    },
+    // Amounts rounded to $10 so a re-render or $2 tweak doesn't re-fire the LLM,
+    // but adding a shift or a bill does.
+    fingerprint: [Math.round(billsTotal / 10), Math.round(projected / 10), scheduled.length, pr.start].join("|"),
+    computedAt: ctx.today
+  }];
+}
+SIGNAL_SOURCES.push(financeShiftsSource);
+
 // ── Rule-based check-in (fallback) ────────────────────────────────────────
 function generateCheckinFallback(data) {
   var blocks = [];
@@ -1277,6 +1417,79 @@ function useIsMob() {
 // WX_MAP, WX_DAYS → data.js
 var WX_STALE = 30 * 60 * 1000;
 var WX_URL = "https://api.open-meteo.com/v1/forecast?latitude=-37.8136&longitude=144.9631&current=temperature_2m,apparent_temperature,weather_code,precipitation_probability,relative_humidity_2m,wind_speed_10m&hourly=temperature_2m,weather_code,precipitation_probability&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max&timezone=Australia/Melbourne&forecast_days=8";
+
+// ── Jarvis briefing strip ─────────────────────────────────────────────────
+// Ambient surface above the Dashboard bento. cards = [{signal, text}] sorted by
+// score; renders nothing when there's nothing worth saying.
+var JARVIS_SEV = {
+  info: T.accent,
+  watch: T.warn,
+  alert: T.danger
+};
+function JarvisBriefing(props) {
+  var cards = props.cards || [],
+    mob = props.mob || false,
+    onOpen = props.onOpen;
+  var shown = cards.slice(0, mob ? 2 : 3);
+  if (!shown.length) return null;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 12,
+      flexWrap: "wrap",
+      marginBottom: 18
+    }
+  }, shown.map(function (c, i) {
+    var s = c.signal;
+    var accent = JARVIS_SEV[s.severity] || T.accent;
+    return /*#__PURE__*/React.createElement("div", {
+      key: s.id,
+      className: "card-rim brief-card",
+      style: {
+        "--i": i,
+        flex: "1 1 260px",
+        minWidth: 0,
+        background: cardBg,
+        boxShadow: cardShadowSoft,
+        borderRadius: 14,
+        borderLeft: "3px solid " + accent,
+        padding: "12px 16px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        color: accent
+      }
+    }, s.domain), s.cta && /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        onOpen && onOpen(s.cta.page);
+      },
+      style: _objectSpread(_objectSpread({}, btnGlass), {}, {
+        padding: "3px 10px",
+        fontSize: 10
+      })
+    }, s.cta.label)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        lineHeight: 1.45,
+        color: T.text
+      }
+    }, c.text || s.template));
+  }));
+}
 function wxOpenDB() {
   return new Promise(function (res, rej) {
     var r = indexedDB.open("dash_weather", 1);
@@ -8403,24 +8616,7 @@ function WorkSection(_ref3) {
   var hrRate = Number(data.hourlyRate || 0);
   var payCycleDay = Number(data.payCycleDay || 1);
   function getPeriodRange(offset) {
-    // Pay-cycle MONTH: from payCycleDay of one month through the day before the next month's payCycleDay.
-    // Clamp the anchor to each month's length so cycles tile with no gap/overlap (handles payCycleDay 29–31, Feb).
-    var today = new Date();
-    var yr = today.getFullYear();
-    var mo = today.getMonth();
-    if (today.getDate() < payCycleDay) mo -= 1; // before this month's pay day → cycle began last month
-    function dim(y, m) {
-      return new Date(y, m + 1, 0).getDate();
-    }
-    function anchor(y, m) {
-      return new Date(y, m, Math.min(payCycleDay, dim(y, m)));
-    }
-    var start = anchor(yr, mo + offset);
-    var end = new Date(anchor(yr, mo + offset + 1).getTime() - 864e5); // day before next anchor
-    return {
-      start: dStr(start),
-      end: dStr(end)
-    };
+    return getPayPeriodRange(payCycleDay, offset);
   }
   var _getPeriodRange = getPeriodRange(cycleOffset),
     periodStart = _getPeriodRange.start,
@@ -10530,6 +10726,41 @@ function App() {
   var gymRotIdx = (data.gym.rotIdx || 0) % gymRotLen;
   var nextRot = gymRot.length > 0 ? gymRot[gymRotIdx] : null;
   var dedupedEvents = dedupeEvents(gcalEvents);
+  // Jarvis brain: recompute signals on any material change. Uses raw deduped events
+  // (not visibleGcalEvents) so calendar-picker filtering can't hide shifts from pay math.
+  var jarvisSignals = useMemo(function () {
+    return computeSignals(data, dedupeEvents(gcalEvents));
+  }, [data, gcalEvents]);
+  var jarvisFingerprint = jarvisSignals.map(function (s) {
+    return s.id + ":" + s.fingerprint;
+  }).join("|");
+  // LLM phrasing: templates render immediately; phrased text swaps in when (if) it resolves.
+  // Cached once/day per fingerprint in localStorage — never blocks, never spins.
+  var _useState289 = useState(null),
+    _useState290 = _slicedToArray(_useState289, 2),
+    jarvisCards = _useState290[0],
+    setJarvisCards = _useState290[1];
+  useEffect(function () {
+    if (!jarvisSignals.length || !window.JarvisService) {
+      setJarvisCards(null);
+      return;
+    }
+    var cached = JarvisService.getCached(jarvisFingerprint);
+    if (cached) {
+      setJarvisCards(cached);
+      return;
+    }
+    setJarvisCards(null);
+    var alive = true;
+    JarvisService.phrase(jarvisSignals).then(function (cards) {
+      if (!alive || !cards) return; // null → templated fallback stands
+      JarvisService.setCached(jarvisFingerprint, cards);
+      setJarvisCards(cards);
+    });
+    return function () {
+      alive = false;
+    };
+  }, [jarvisFingerprint]);
   var visibleGcalEvents = dedupedEvents.filter(function (ev) {
     if (gcalExcludedIds.indexOf(ev.calId) !== -1) return false;
     if (gcalSelectedIds.length === 0) return true;
@@ -13438,7 +13669,19 @@ function App() {
     day: "numeric",
     month: "long",
     year: "numeric"
-  }))), /*#__PURE__*/React.createElement("div", {
+  }))), /*#__PURE__*/React.createElement(JarvisBriefing, {
+    mob: mob,
+    onOpen: setPage,
+    cards: jarvisSignals.map(function (s) {
+      var ph = (jarvisCards || []).find(function (c) {
+        return c.id === s.id;
+      });
+      return {
+        signal: s,
+        text: ph && ph.text || s.template
+      };
+    })
+  }), /*#__PURE__*/React.createElement("div", {
     style: {
       columnCount: mob ? 1 : 3,
       columnGap: 18

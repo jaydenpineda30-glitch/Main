@@ -127,3 +127,7 @@ button:active:not([disabled]){transform:scale(0.97);}
 .br-tl-wrap{position:relative;display:flex;flex-direction:column;gap:14px;}
 .br-tl-wrap::before{content:'';position:absolute;left:15px;top:15px;bottom:15px;width:2px;background:rgba(91,140,255,0.18);z-index:0;}
 .br-tl-item{position:relative;display:flex;gap:12px;align-items:flex-start;}
+
+/* ── Jarvis briefing entrance ── */
+@keyframes brief-in{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+.brief-card{animation:brief-in 480ms var(--ease-out) both;animation-delay:calc(var(--i,0)*70ms);}
