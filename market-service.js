@@ -128,12 +128,48 @@
   }
   function cacheSet(url, value, ttl) { cache.set(url, { expires: Date.now() + ttl, value: value }); }
 
+  // ---- Rate-limit throttle: per-provider token bucket + silent 429 retry ----
+  // Requests queue and drain at a safe rate so free-tier caps are never tripped.
+  // Twelve Data free = 8/min → we run 7/min with a burst of 8; Finnhub 60/min → 55.
+  function makeBucket(capacity, perMin) {
+    var tokens = capacity, last = Date.now(), q = [];
+    var ratePerMs = perMin / 60000;
+    function refill() { var now = Date.now(); tokens = Math.min(capacity, tokens + (now - last) * ratePerMs); last = now; }
+    function pump() {
+      refill();
+      while (q.length && tokens >= 1) { tokens -= 1; (q.shift())(); }
+      if (q.length) { var waitMs = Math.max(60, (1 - tokens) / ratePerMs); setTimeout(pump, waitMs); }
+    }
+    return function (job) { return new Promise(function (res, rej) { q.push(function () { Promise.resolve().then(job).then(res, rej); }); pump(); }); };
+  }
+  var BUCKETS = {
+    'twelvedata.com': makeBucket(8, 7),
+    'finnhub.io': makeBucket(30, 55),
+    'frankfurter.dev': makeBucket(10, 60)
+  };
+  function bucketFor(url) { for (var host in BUCKETS) { if (url.indexOf(host) !== -1) return BUCKETS[host]; } return null; }
+  // Fetch through the provider's bucket; on a 429 that slips through, wait and
+  // retry once so the rate limit is transparent to the UI.
+  function fetch429(url, opts, tries) {
+    return fetch(url, opts).then(function (r) {
+      if (r.status === 429 && tries > 0) {
+        return new Promise(function (res) { setTimeout(res, 7000); }).then(function () { return fetch429(url, opts, tries - 1); });
+      }
+      return r;
+    });
+  }
+  function throttledFetch(url, opts) {
+    var b = bucketFor(url);
+    var job = function () { return fetch429(url, opts, 1); };
+    return b ? b(job) : job();
+  }
+
   function fetchJson(url, ttl) {
     var cached = cacheGet(url);
     if (cached !== undefined) return Promise.resolve(cached);
     if (inflight.has(url)) return inflight.get(url);
 
-    var p = fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } })
+    var p = throttledFetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } })
       .then(function (res) {
         if (res.status === 429) {
           throw new Error('Finnhub rate limit reached (HTTP 429). Free tier allows 60 calls/minute — slow down or add a paid key.');
@@ -413,7 +449,7 @@
     var cached = cacheGet(url);
     if (cached !== undefined) return Promise.resolve(cached);
     if (inflight.has(url)) return inflight.get(url);
-    var p = fetch(url, { headers: { 'Accept': 'application/json' } })
+    var p = throttledFetch(url, { headers: { 'Accept': 'application/json' } })
       .then(function (r) { if (!r.ok) throw new Error('Twelve Data HTTP ' + r.status); return r.json(); })
       .then(function (j) {
         if (!j || j.status === 'error' || j.code) throw new Error('Twelve Data: ' + ((j && j.message) || 'no data'));
@@ -445,7 +481,7 @@
     var cached = cacheGet(url);
     if (cached !== undefined) return Promise.resolve(cached);
     if (inflight.has(url)) return inflight.get(url);
-    var p = fetch(url, { headers: { 'Accept': 'application/json' } })
+    var p = throttledFetch(url, { headers: { 'Accept': 'application/json' } })
       .then(function (r) { if (!r.ok) throw new Error('Twelve Data HTTP ' + r.status); return r.json(); })
       .then(function (j) {
         if (!j || j.status === 'error' || !Array.isArray(j.values)) {
@@ -533,7 +569,7 @@
       var cached = cacheGet(url);
       if (cached !== undefined) return Promise.resolve(cached);
       if (inflight.has(url)) return inflight.get(url);
-      var p = fetch(url, { headers: { 'Accept': 'application/json' } })
+      var p = throttledFetch(url, { headers: { 'Accept': 'application/json' } })
         .then(function (r) { if (!r.ok) throw new Error('FX HTTP ' + r.status); return r.json(); })
         .then(function (j) { var rate = j && j.rates && j.rates[to]; if (!rate) throw new Error('FX: no rate'); cacheSet(url, rate, TTL.profile); return rate; })
         .catch(function () { return demoFxRate(from, to); })
