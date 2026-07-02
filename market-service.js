@@ -370,7 +370,13 @@
       symbol = String(symbol || '').trim().toUpperCase();
       if (!symbol) return Promise.reject(new Error('getQuote: symbol is required.'));
       if (isDemo()) return Promise.resolve(demoQuote(symbol));
-      return fetchJson(buildUrl('/quote', { symbol: symbol }), TTL.quote).then(function (raw) {
+      var ps = parseSym(symbol);
+      // Non-US (e.g. ASX) → Twelve Data quote; Finnhub free is US-only.
+      if (ps.td) {
+        if (!hasTdKey()) return Promise.reject(new Error('Non-US quote needs a Twelve Data key.'));
+        return getQuoteTwelveData(ps.api, ps.exchange).then(function (q) { q.symbol = symbol; return q; });
+      }
+      return fetchJson(buildUrl('/quote', { symbol: ps.api }), TTL.quote).then(function (raw) {
         return normalizeQuote(symbol, raw);
       });
     } catch (e) { return Promise.reject(e instanceof Error ? e : new Error(String(e))); }
@@ -387,9 +393,46 @@
     } catch (e) { return Promise.reject(e instanceof Error ? e : new Error(String(e))); }
   }
 
+  // Parse a symbol into { api, exchange, td }. Non-US exchanges (e.g. ASX) are
+  // written "CBA.AX" or "CBA:ASX" and routed to Twelve Data for BOTH quote and
+  // candles, since Finnhub's free tier is US-only.
+  var EXCH_SUFFIX = { AX: 'ASX', AS: 'AMS', L: 'LSE', TO: 'TSX', NZ: 'NZX', HK: 'HKEX' };
+  function parseSym(sym) {
+    sym = String(sym || '').trim().toUpperCase();
+    var m = sym.match(/^(.+):([A-Z]+)$/);
+    if (m) return { api: m[1], exchange: m[2], td: true };
+    m = sym.match(/^(.+)\.([A-Z]{1,3})$/);
+    if (m && EXCH_SUFFIX[m[2]]) return { api: m[1], exchange: EXCH_SUFFIX[m[2]], td: true };
+    return { api: sym, exchange: null, td: false };
+  }
+
+  // Twelve Data real-time-ish quote (free). Used for non-US (e.g. ASX) symbols.
+  function getQuoteTwelveData(apiSym, exchange) {
+    var url = 'https://api.twelvedata.com/quote?symbol=' + encodeURIComponent(apiSym) +
+      (exchange ? ('&exchange=' + encodeURIComponent(exchange)) : '') + '&apikey=' + encodeURIComponent(getTdKey());
+    var cached = cacheGet(url);
+    if (cached !== undefined) return Promise.resolve(cached);
+    if (inflight.has(url)) return inflight.get(url);
+    var p = fetch(url, { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { if (!r.ok) throw new Error('Twelve Data HTTP ' + r.status); return r.json(); })
+      .then(function (j) {
+        if (!j || j.status === 'error' || j.code) throw new Error('Twelve Data: ' + ((j && j.message) || 'no data'));
+        var res = {
+          symbol: apiSym, price: num(j.close), change: num(j.change), changePercent: num(j.percent_change),
+          high: num(j.high), low: num(j.low), open: num(j.open), previousClose: num(j.previous_close),
+          timestamp: Date.now(), delayed: true, demo: false, currency: j.currency || null, name: j.name || null
+        };
+        cacheSet(url, res, TTL.quote);
+        return res;
+      })
+      .finally(function () { inflight.delete(url); });
+    inflight.set(url, p);
+    return p;
+  }
+
   // Twelve Data EOD history (free tier, CORS-friendly). Returns the normalized
   // candle shape or throws. Newest-first from the API, reversed to ascending.
-  function getCandlesTwelveData(symbol, from, to) {
+  function getCandlesTwelveData(symbol, exchange, from, to) {
     var days = 180;
     if (isFinite(from) && isFinite(to) && to > from) {
       var span = Math.round((to - from) / 86400);
@@ -397,6 +440,7 @@
     }
     var out = Math.min(Math.max(days, 30), 5000);
     var url = 'https://api.twelvedata.com/time_series?symbol=' + encodeURIComponent(symbol) +
+      (exchange ? ('&exchange=' + encodeURIComponent(exchange)) : '') +
       '&interval=1day&outputsize=' + out + '&apikey=' + encodeURIComponent(getTdKey());
     var cached = cacheGet(url);
     if (cached !== undefined) return Promise.resolve(cached);
@@ -425,10 +469,12 @@
       symbol = String(symbol || '').trim().toUpperCase();
       if (!symbol) return Promise.reject(new Error('getCandles: symbol is required.'));
       resolution = resolution || 'D';
-      // Prefer Twelve Data (free EOD) when a key is set — Finnhub candles are premium.
-      if (hasTdKey()) return getCandlesTwelveData(symbol, from, to);
-      // No Twelve Data key: demo unless a (paid) Finnhub key happens to serve candles.
       if (isDemo()) return Promise.resolve(demoCandles(symbol, resolution, from, to));
+      var ps = parseSym(symbol);
+      // Prefer Twelve Data (free EOD) when a key is set — Finnhub candles are premium.
+      if (hasTdKey()) return getCandlesTwelveData(ps.api, ps.exchange, from, to);
+      // Non-US symbols require Twelve Data; without its key we can't chart them.
+      if (ps.td) return Promise.resolve(null);
 
       var nowSec = Math.floor(Date.now() / 1000);
       var fromSec = isFinite(from) && from > 0 ? Math.floor(from) : nowSec - 90 * 86400;

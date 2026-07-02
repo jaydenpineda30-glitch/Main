@@ -1488,6 +1488,9 @@ function invCloses(c){
 }
 // Defensive readers so the UI is decoupled from the provider's exact field names.
 function invQPrice(q){if(!q)return null;return q.price!==undefined?q.price:(q.c!==undefined?q.c:null);}
+// A usable price for P&L math: null when missing, NaN, or <=0 (e.g. an ASX ticker
+// the free data source couldn't resolve). Keeps a dead holding from skewing totals.
+function invValidPx(q){var px=invQPrice(q);return (px===null||isNaN(px)||px<=0)?null:px;}
 function invQChg(q){if(!q)return null;return q.change!==undefined?q.change:(q.d!==undefined?q.d:null);}
 function invQPct(q){if(!q)return null;return q.changePercent!==undefined?q.changePercent:(q.changePct!==undefined?q.changePct:(q.dp!==undefined?q.dp:null));}
 function invNorm(closes){if(!closes||closes.length<2)return[];var base=closes[0]||1;return closes.map(function(v){return ((v/base)-1)*100;});}
@@ -1576,6 +1579,7 @@ function InvestSection({data,onUpdate,mob}){
   const holdings=Array.isArray(data.holdings)?data.holdings:[];   // each entry = a buy lot
   const sales=Array.isArray(data.sales)?data.sales:[];
   const notes=data.notes||{};
+  const manualPx=data.manualPx||{};   // symbol -> price in the holding's native ccy (for assets the free APIs can't reach, e.g. ASX)
   const baseCcy=data.baseCurrency||"AUD";
 
   const [quotes,setQuotes]=useState({});
@@ -1606,6 +1610,7 @@ function InvestSection({data,onUpdate,mob}){
   const [allocMode,setAllocMode]=useState("position");
   const [bench,setBench]=useState("SPY");
   const [noteDraft,setNoteDraft]=useState(null);
+  const [mDraft,setMDraft]=useState({});
   const [refreshedAt,setRefreshedAt]=useState(null);
 
   const allSymbols=invUniq([].concat(watchlist.map(function(w){return w.symbol;}),holdings.map(function(h){return h.symbol;})));
@@ -1621,6 +1626,9 @@ function InvestSection({data,onUpdate,mob}){
   const segBtn=function(on){return{appearance:"none",border:"none",cursor:"pointer",padding:"4px 10px",borderRadius:999,fontSize:11,fontWeight:600,background:on?"rgba(91,140,255,0.22)":"transparent",color:on?T.text:T.text2};};
   function toast(m,t){if(window.showToast)window.showToast(m,t);}
   function fx(ccy){return fxRates[ccy||"USD"]!==undefined?fxRates[ccy||"USD"]:(ccy===baseCcy?1:1);}
+  // Effective price for a symbol: live quote if valid, else the user's manual price.
+  function effPx(sym){var lp=invValidPx(quotes[sym]);if(lp!==null)return lp;var m=Number(manualPx[sym]);return (m>0)?m:null;}
+  function isManual(sym){return invValidPx(quotes[sym])===null&&Number(manualPx[sym])>0;}
 
   // ── positions: aggregate lots by symbol (average-cost basis) ──
   function buildPositions(){
@@ -1647,9 +1655,10 @@ function InvestSection({data,onUpdate,mob}){
   // portfolio totals (base ccy)
   var portValue=0,portCost=0,todayChange=0,priced=0;
   openPositions.forEach(function(p){
-    var q=quotes[p.symbol];var px=invQPrice(q);var r=fx(p.ccy);
-    if(px!==null){portValue+=px*p.netShares*r;priced++;var ch=invQChg(q);if(ch!==null)todayChange+=ch*p.netShares*r;}
-    portCost+=p.avgCost*p.netShares*r;
+    var q=quotes[p.symbol];var px=effPx(p.symbol);var r=fx(p.ccy);
+    // Only priced positions (live OR manual) count toward value AND cost, so an
+    // unpriced holding can't drag the totals or % down.
+    if(px!==null){portValue+=px*p.netShares*r;portCost+=p.avgCost*p.netShares*r;priced++;var ch=invQChg(q);if(ch!==null)todayChange+=ch*p.netShares*r;}
   });
   var unrealized=portValue-portCost;
   var unrealizedPct=portCost>0?(unrealized/portCost)*100:0;
@@ -1720,6 +1729,7 @@ function InvestSection({data,onUpdate,mob}){
   }
   function setBase(c){onUpdate({...data,baseCurrency:c});}
   function saveNote(sym,text){var n={...notes};if(text&&text.trim())n[sym]=text.trim();else delete n[sym];onUpdate({...data,notes:n});setNoteDraft(null);toast("Thesis saved","success");}
+  function setManual(sym,val){var m={...manualPx};var n=Number(val);if(n>0)m[sym]=n;else delete m[sym];onUpdate({...data,manualPx:m});toast(n>0?"Manual price set":"Manual price cleared","success");}
 
   // ── keys ──
   function saveKeys(){
@@ -1784,7 +1794,7 @@ function InvestSection({data,onUpdate,mob}){
   // allocation slices
   function allocSlices(){
     var agg={};
-    openPositions.forEach(function(p){var q=quotes[p.symbol];var px=invQPrice(q);if(px===null)return;var val=px*p.netShares*fx(p.ccy);var key=allocMode==="sector"?((profiles[p.symbol]&&profiles[p.symbol].industry)||"Other"):p.symbol;agg[key]=(agg[key]||0)+val;});
+    openPositions.forEach(function(p){var px=effPx(p.symbol);if(px===null)return;var val=px*p.netShares*fx(p.ccy);var key=allocMode==="sector"?((profiles[p.symbol]&&profiles[p.symbol].industry)||"Other"):p.symbol;agg[key]=(agg[key]||0)+val;});
     var PAL=["#5b8cff","#69f0ae","#ffd166","#ff9a3c","#c58cff","#4dd0e1","#ff6b6b","#9ccc65","#f06292","#7986cb"];
     return Object.keys(agg).map(function(k,i){return{label:k,value:agg[k],color:PAL[i%PAL.length]};}).sort(function(a,b){return b.value-a.value;});
   }
@@ -1865,7 +1875,7 @@ function InvestSection({data,onUpdate,mob}){
         </div>
         {openPositions.length===0&&<div style={{fontSize:12,color:T.text3,padding:"4px 2px 10px"}}>No holdings yet. Add a lot below — enter each buy separately to track cost basis.</div>}
         {openPositions.map(function(p){
-          var q=quotes[p.symbol];var px=invQPrice(q);var r=fx(p.ccy);
+          var q=quotes[p.symbol];var px=effPx(p.symbol);var r=fx(p.ccy);var man=isManual(p.symbol);
           var val=px!==null?px*p.netShares*r:null;var g=px!==null?(px-p.avgCost)*p.netShares*r:null;var gp=p.avgCost>0&&px!==null?((px-p.avgCost)/p.avgCost)*100:null;
           var open=expanded===p.symbol;var spark=candleMap[p.symbol]||[];
           return (
@@ -1874,13 +1884,20 @@ function InvestSection({data,onUpdate,mob}){
                 <div style={{minWidth:64}}><div style={{fontSize:13,fontWeight:700,color:T.text}}>{p.symbol}</div><div style={{fontSize:10,color:T.text3}}>{invFmt(p.netShares,p.netShares%1?4:0)} @ {invMoney(p.avgCost,p.ccy==="USD"?"USD":p.ccy)} {p.ccy}</div></div>
                 {!mob&&<InvSpark closes={spark.slice(-40)}/>}
                 <div style={{flex:1}}/>
-                <div style={{textAlign:"right"}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>{val!==null?invMoney(val,baseCcy):"—"}</div><div style={{fontSize:11,fontWeight:600,color:g===null?T.text3:(g>=0?T.success:T.danger)}}>{g===null?"—":((g>=0?"▲ ":"▼ ")+invMoney(Math.abs(g),baseCcy)+" "+(gp!==null?invPct(gp):""))}</div></div>
+                <div style={{textAlign:"right"}}><div style={{fontSize:13,fontWeight:600,color:val!==null?T.text:T.text3}}>{val!==null?invMoney(val,baseCcy):"unpriced"}{man&&<span style={{fontSize:9,fontWeight:600,color:T.text3,marginLeft:5}}>· manual</span>}</div><div style={{fontSize:11,fontWeight:600,color:g===null?T.text3:(g>=0?T.success:T.danger)}}>{g===null?(loading?"…":"tap to set price"):((g>=0?"▲ ":"▼ ")+invMoney(Math.abs(g),baseCcy)+" "+(gp!==null?invPct(gp):""))}</div></div>
                 <span style={{color:T.text3,fontSize:12,transform:open?"rotate(90deg)":"none",transition:"transform .2s"}}>›</span>
               </div>
               {open&&<div style={{padding:"0 12px 12px",borderTop:"0.5px solid rgba(255,255,255,0.06)"}}>
                 <div style={{fontSize:10,color:T.text3,margin:"10px 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Lots</div>
                 {p.lots.map(function(l){return <div key={l.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:11,color:T.text2,padding:"4px 0"}}><span style={{flex:1}}>{invFmt(l.shares,l.shares%1?4:0)} @ {invMoney(l.cost,l.ccy)} {l.ccy} · {l.date}</span><button onClick={function(e){e.stopPropagation();removeLot(l.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:14}}>×</button></div>;})}
                 {p.sold>0&&<div style={{fontSize:10,color:T.text3,marginTop:4}}>{invFmt(p.sold,0)} shares sold (realized tracked above)</div>}
+                <div style={{fontSize:10,color:T.text3,margin:"12px 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Manual price {man?"(in use)":(invValidPx(quotes[p.symbol])!==null?"(override)":"")}</div>
+                <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                  <input style={{...iInp,flex:"0 1 120px"}} type="number" step="any" placeholder={"Price ("+p.ccy+")"} value={mDraft[p.symbol]!==undefined?mDraft[p.symbol]:(manualPx[p.symbol]||"")} onChange={function(e){var d={...mDraft};d[p.symbol]=e.target.value;setMDraft(d);}} onKeyDown={function(e){if(e.key==="Enter")setManual(p.symbol,e.target.value);}}/>
+                  <button style={iGhost} onClick={function(){setManual(p.symbol,mDraft[p.symbol]!==undefined?mDraft[p.symbol]:(manualPx[p.symbol]||""));}}>Set</button>
+                  {Number(manualPx[p.symbol])>0&&<button style={iGhost} onClick={function(){var d={...mDraft};d[p.symbol]="";setMDraft(d);setManual(p.symbol,"");}}>Clear</button>}
+                </div>
+                <div style={{fontSize:10,color:T.text3,marginTop:5}}>For ASX / unlisted / crypto the free APIs can't fetch. Flows into value, P&L & allocation.</div>
                 {sellFor===p.symbol?
                   <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
                     <input style={{...iInp,flex:"1 1 80px"}} type="number" step="any" placeholder="Shares" value={sellForm.shares} onChange={function(e){setSellForm({...sellForm,shares:e.target.value});}}/>
@@ -1902,6 +1919,7 @@ function InvestSection({data,onUpdate,mob}){
           <input style={{...iInp,flex:"1 1 110px"}} type="date" value={lotForm.date} onChange={function(e){setLotForm({...lotForm,date:e.target.value});}}/>
           <button style={iBtn} onClick={addLot}>Add lot</button>
         </div>
+        <div style={{fontSize:10,color:T.text3,marginTop:8}}>Non-US? Add the exchange suffix — e.g. <b>CBA.AX</b> for ASX (also .L London, .TO Toronto, .HK Hong Kong). Needs a Twelve Data key.</div>
       </div>
 
       {/* Watchlist */}
