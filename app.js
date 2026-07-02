@@ -5801,10 +5801,11 @@ function FinanceSection(_ref) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// Invest tab — personal "mini-Bloomberg": watchlist, portfolio P&L, price
-// chart, and an AI "explain this" panel. Market data comes from
-// window.MarketService (Finnhub, 15-min delayed). With no Finnhub key set it
-// runs in DEMO MODE with deterministic mock data so the tab always renders.
+// Invest tab — personal "mini-Bloomberg": watchlist, cost-basis lots, portfolio
+// P&L in a base currency (AUD), allocation, valuation, analyst ratings,
+// benchmark overlay, and AI portfolio review. Market data via
+// window.MarketService (Finnhub quotes/metrics + Twelve Data EOD charts + ECB
+// FX), with a deterministic DEMO MODE so the tab always renders with no keys.
 // Not financial advice — informational only.
 // ══════════════════════════════════════════════════════════════════════════
 function invFmt(n, dp) {
@@ -5830,6 +5831,19 @@ function invUniq(a) {
     }
   });
   return out;
+}
+function invMoney(n, base) {
+  if (n === undefined || n === null || isNaN(n)) return "—";
+  return (base === "AUD" ? "A$" : "$") + invFmt(n);
+}
+function invCompact(n, base) {
+  if (n === undefined || n === null || isNaN(n)) return "—";
+  var p = base === "AUD" ? "A$" : "$";
+  var a = Math.abs(n);
+  if (a >= 1e9) return p + (n / 1e9).toFixed(2) + "B";
+  if (a >= 1e6) return p + (n / 1e6).toFixed(2) + "M";
+  if (a >= 1e3) return p + (n / 1e3).toFixed(1) + "k";
+  return p + invFmt(n);
 }
 // Coerce whatever getCandles returns into a flat array of closing prices.
 function invCloses(c) {
@@ -5864,15 +5878,44 @@ function invQPct(q) {
   if (!q) return null;
   return q.changePercent !== undefined ? q.changePercent : q.changePct !== undefined ? q.changePct : q.dp !== undefined ? q.dp : null;
 }
+function invNorm(closes) {
+  if (!closes || closes.length < 2) return [];
+  var base = closes[0] || 1;
+  return closes.map(function (v) {
+    return (v / base - 1) * 100;
+  });
+}
+var INV_PALETTE = ["#5b8cff", "#69f0ae", "#ffd166", "#ff9a3c", "#c58cff", "#4dd0e1", "#ff6b6b", "#9ccc65", "#f06292", "#7986cb"];
 
-// Dependency-free SVG area+line chart of closing prices.
-function InvChart(_ref2) {
-  var closes = _ref2.closes,
-    h = _ref2.h,
-    accent = _ref2.accent;
-  h = h || 190;
-  var W = 1000; // viewBox width; SVG scales to container via width:100%
-  if (!closes || closes.length < 2) return /*#__PURE__*/React.createElement("div", {
+// Dependency-free SVG chart. Pass `closes` for a single price line (with area
+// fill), or `series:[{closes,color,label}]` for a normalized %-return overlay.
+function InvChart(props) {
+  var h = props.h || 190;
+  var W = 1000;
+  var mob = props.mob;
+  var lines;
+  if (props.series && props.series.length) {
+    lines = props.series.map(function (s) {
+      return {
+        vals: invNorm(s.closes),
+        color: s.color,
+        label: s.label,
+        pct: true
+      };
+    }).filter(function (l) {
+      return l.vals.length > 1;
+    });
+  } else if (props.closes && props.closes.length > 1) {
+    var up = props.closes[props.closes.length - 1] >= props.closes[0];
+    lines = [{
+      vals: props.closes,
+      color: props.accent || (up ? "#69f0ae" : "#ff6b6b"),
+      area: true
+    }];
+  } else {
+    lines = [];
+  }
+  if (!lines.length) return /*#__PURE__*/React.createElement("div", {
     style: {
       height: h,
       display: "flex",
@@ -5882,28 +5925,27 @@ function InvChart(_ref2) {
       fontSize: 12
     }
   }, "No chart data available");
-  var n = closes.length;
-  var min = Math.min.apply(null, closes),
-    max = Math.max.apply(null, closes);
+  var allV = [];
+  lines.forEach(function (l) {
+    allV = allV.concat(l.vals);
+  });
+  var min = Math.min.apply(null, allV),
+    max = Math.max.apply(null, allV);
   var pad = (max - min) * 0.10 || Math.abs(max) * 0.02 || 1;
   min -= pad;
   max += pad;
   var span = max - min || 1;
-  var X = function X(i) {
-    return i / (n - 1) * W;
-  };
-  var Y = function Y(v) {
+  function Y(v) {
     return h - (v - min) / span * h;
-  };
-  var pts = closes.map(function (v, i) {
-    return X(i).toFixed(1) + "," + Y(v).toFixed(1);
-  });
-  var line = "M" + pts.join(" L");
-  var area = line + " L" + W.toFixed(1) + "," + h + " L0," + h + " Z";
-  var up = closes[n - 1] >= closes[0];
-  var col = accent || (up ? "#69f0ae" : "#ff6b6b");
-  var gid = "invgrad_" + n + "_" + Math.round(closes[0]);
-  return /*#__PURE__*/React.createElement("svg", {
+  }
+  function pathFor(vals) {
+    var nn = vals.length;
+    return vals.map(function (v, i) {
+      return (i / (nn - 1 || 1) * W).toFixed(1) + "," + Y(v).toFixed(1);
+    });
+  }
+  var zeroY = props.series && min < 0 && max > 0 ? Y(0) : null;
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("svg", {
     viewBox: "0 0 " + W + " " + h,
     preserveAspectRatio: "none",
     style: {
@@ -5911,40 +5953,243 @@ function InvChart(_ref2) {
       height: h,
       display: "block"
     }
-  }, /*#__PURE__*/React.createElement("defs", null, /*#__PURE__*/React.createElement("linearGradient", {
-    id: gid,
+  }, /*#__PURE__*/React.createElement("defs", null, lines.map(function (l, i) {
+    return l.area ? /*#__PURE__*/React.createElement("linearGradient", {
+      key: i,
+      id: "invg" + i + "_" + Math.round(l.vals[0] || 0),
+      x1: "0",
+      y1: "0",
+      x2: "0",
+      y2: "1"
+    }, /*#__PURE__*/React.createElement("stop", {
+      offset: "0%",
+      stopColor: l.color,
+      stopOpacity: "0.28"
+    }), /*#__PURE__*/React.createElement("stop", {
+      offset: "100%",
+      stopColor: l.color,
+      stopOpacity: "0"
+    })) : null;
+  })), zeroY !== null && /*#__PURE__*/React.createElement("line", {
     x1: "0",
-    y1: "0",
-    x2: "0",
-    y2: "1"
-  }, /*#__PURE__*/React.createElement("stop", {
-    offset: "0%",
-    stopColor: col,
-    stopOpacity: "0.28"
-  }), /*#__PURE__*/React.createElement("stop", {
-    offset: "100%",
-    stopColor: col,
-    stopOpacity: "0"
-  }))), /*#__PURE__*/React.createElement("path", {
-    d: area,
-    fill: "url(#" + gid + ")"
-  }), /*#__PURE__*/React.createElement("path", {
-    d: line,
+    y1: zeroY,
+    x2: W,
+    y2: zeroY,
+    stroke: "rgba(255,255,255,0.14)",
+    strokeWidth: "1",
+    strokeDasharray: "4 5",
+    vectorEffect: "non-scaling-stroke"
+  }), lines.map(function (l, i) {
+    var pts = pathFor(l.vals);
+    var line = "M" + pts.join(" L");
+    return /*#__PURE__*/React.createElement("g", {
+      key: i
+    }, l.area && /*#__PURE__*/React.createElement("path", {
+      d: line + " L" + W.toFixed(1) + "," + h + " L0," + h + " Z",
+      fill: "url(#invg" + i + "_" + Math.round(l.vals[0] || 0) + ")"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: line,
+      fill: "none",
+      stroke: l.color,
+      strokeWidth: l.pct ? 1.8 : 2,
+      strokeLinejoin: "round",
+      strokeOpacity: l.label === "benchmark" ? 0.65 : 1,
+      strokeDasharray: l.label === "benchmark" ? "5 4" : undefined,
+      vectorEffect: "non-scaling-stroke"
+    }));
+  })), props.series && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 14,
+      marginTop: 6,
+      flexWrap: "wrap"
+    }
+  }, props.series.map(function (s, i) {
+    return /*#__PURE__*/React.createElement("span", {
+      key: i,
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        display: "flex",
+        alignItems: "center",
+        gap: 5
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 10,
+        height: 2,
+        background: s.color,
+        display: "inline-block",
+        borderRadius: 2
+      }
+    }), s.name, " ", invNorm(s.closes).length > 1 ? invPct(invNorm(s.closes).slice(-1)[0]) : "");
+  })));
+}
+
+// Compact inline sparkline for table rows.
+function InvSpark(props) {
+  var closes = props.closes || [];
+  var w = props.w || 88,
+    h = props.h || 26;
+  if (closes.length < 2) return /*#__PURE__*/React.createElement("svg", {
+    width: w,
+    height: h
+  });
+  var min = Math.min.apply(null, closes),
+    max = Math.max.apply(null, closes);
+  var span = max - min || 1;
+  var up = closes[closes.length - 1] >= closes[0];
+  var col = up ? "#69f0ae" : "#ff6b6b";
+  var pts = closes.map(function (v, i) {
+    return (i / (closes.length - 1) * w).toFixed(1) + "," + (h - (v - min) / span * (h - 3) - 1.5).toFixed(1);
+  });
+  return /*#__PURE__*/React.createElement("svg", {
+    width: w,
+    height: h,
+    style: {
+      display: "block"
+    }
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M" + pts.join(" L"),
     fill: "none",
     stroke: col,
-    strokeWidth: "2",
+    strokeWidth: "1.5",
     strokeLinejoin: "round",
-    vectorEffect: "non-scaling-stroke"
+    strokeLinecap: "round"
   }));
 }
-function InvestSection(_ref3) {
-  var data = _ref3.data,
-    onUpdate = _ref3.onUpdate,
-    mob = _ref3.mob;
+
+// SVG donut from slices [{label,value,color}].
+function InvDonut(props) {
+  var slices = (props.slices || []).filter(function (s) {
+    return s.value > 0;
+  });
+  var size = props.size || 150;
+  var total = slices.reduce(function (a, s) {
+    return a + s.value;
+  }, 0);
+  var r = size / 2 - 14,
+    cx = size / 2,
+    cy = size / 2,
+    C = 2 * Math.PI * r;
+  var off = 0;
+  if (!total) return /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: size,
+      height: size,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      color: T.text3,
+      fontSize: 11
+    }
+  }, "No data");
+  return /*#__PURE__*/React.createElement("svg", {
+    width: size,
+    height: size,
+    viewBox: "0 0 " + size + " " + size
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: cx,
+    cy: cy,
+    r: r,
+    fill: "none",
+    stroke: "rgba(255,255,255,0.06)",
+    strokeWidth: "14"
+  }), slices.map(function (s, i) {
+    var frac = s.value / total;
+    var dash = frac * C;
+    var el = /*#__PURE__*/React.createElement("circle", {
+      key: i,
+      cx: cx,
+      cy: cy,
+      r: r,
+      fill: "none",
+      stroke: s.color,
+      strokeWidth: "14",
+      strokeDasharray: dash.toFixed(2) + " " + (C - dash).toFixed(2),
+      strokeDashoffset: (-off).toFixed(2),
+      transform: "rotate(-90 " + cx + " " + cy + ")",
+      strokeLinecap: "butt"
+    });
+    off += dash;
+    return el;
+  }));
+}
+
+// Analyst recommendation stacked bar.
+function InvRatingBar(props) {
+  var r = props.rec || {};
+  var segs = [["strongBuy", "#2e9e5b"], ["buy", "#69f0ae"], ["hold", "#ffd166"], ["sell", "#ff9a3c"], ["strongSell", "#ff6b6b"]];
+  var total = segs.reduce(function (a, s) {
+    return a + (Number(r[s[0]]) || 0);
+  }, 0);
+  if (!total) return /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: T.text3
+    }
+  }, "No analyst data");
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      height: 10,
+      borderRadius: 6,
+      overflow: "hidden",
+      background: "rgba(255,255,255,0.05)"
+    }
+  }, segs.map(function (s, i) {
+    var v = Number(r[s[0]]) || 0;
+    if (!v) return null;
+    return /*#__PURE__*/React.createElement("div", {
+      key: i,
+      title: s[0] + ": " + v,
+      style: {
+        width: v / total * 100 + "%",
+        background: s[1]
+      }
+    });
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 12,
+      marginTop: 6,
+      flexWrap: "wrap",
+      fontSize: 10,
+      color: T.text3
+    }
+  }, segs.map(function (s, i) {
+    var v = Number(r[s[0]]) || 0;
+    if (!v) return null;
+    return /*#__PURE__*/React.createElement("span", {
+      key: i,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 4
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 8,
+        height: 8,
+        borderRadius: 2,
+        background: s[1]
+      }
+    }), s[0].replace(/([A-Z])/g, " $1").replace(/^./, function (c) {
+      return c.toUpperCase();
+    }), " ", v);
+  })));
+}
+function InvestSection(_ref2) {
+  var data = _ref2.data,
+    onUpdate = _ref2.onUpdate,
+    mob = _ref2.mob;
   mob = mob || false;
   var MS = window.MarketService || null;
   var watchlist = Array.isArray(data.watchlist) ? data.watchlist : [];
-  var holdings = Array.isArray(data.holdings) ? data.holdings : [];
+  var holdings = Array.isArray(data.holdings) ? data.holdings : []; // each entry = a buy lot
+  var sales = Array.isArray(data.sales) ? data.sales : [];
+  var notes = data.notes || {};
+  var baseCcy = data.baseCurrency || "AUD";
   var _useState55 = useState({}),
     _useState56 = _slicedToArray(_useState55, 2),
     quotes = _useState56[0],
@@ -5953,66 +6198,128 @@ function InvestSection(_ref3) {
     _useState58 = _slicedToArray(_useState57, 2),
     profiles = _useState58[0],
     setProfiles = _useState58[1];
-  var _useState59 = useState(false),
+  var _useState59 = useState({}),
     _useState60 = _slicedToArray(_useState59, 2),
-    loading = _useState60[0],
-    setLoading = _useState60[1];
-  var _useState61 = useState(watchlist[0] ? watchlist[0].symbol : holdings[0] ? holdings[0].symbol : null),
+    candleMap = _useState60[0],
+    setCandleMap = _useState60[1]; // symbol -> closes[]
+  var _useState61 = useState({}),
     _useState62 = _slicedToArray(_useState61, 2),
-    selected = _useState62[0],
-    setSelected = _useState62[1];
-  var _useState63 = useState(null),
+    fxRates = _useState62[0],
+    setFxRates = _useState62[1]; // ccy -> rate to base
+  var _useState63 = useState({}),
     _useState64 = _slicedToArray(_useState63, 2),
-    candles = _useState64[0],
-    setCandles = _useState64[1];
-  var _useState65 = useState([]),
+    metrics = _useState64[0],
+    setMetrics = _useState64[1];
+  var _useState65 = useState({}),
     _useState66 = _slicedToArray(_useState65, 2),
-    news = _useState66[0],
-    setNews = _useState66[1];
-  var _useState67 = useState({
-      loading: false,
-      text: "",
-      err: ""
-    }),
+    rec = _useState66[0],
+    setRec = _useState66[1];
+  var _useState67 = useState({}),
     _useState68 = _slicedToArray(_useState67, 2),
-    ai = _useState68[0],
-    setAi = _useState68[1];
-  var _useState69 = useState(""),
+    ptarget = _useState68[0],
+    setPtarget = _useState68[1];
+  var _useState69 = useState({}),
     _useState70 = _slicedToArray(_useState69, 2),
-    addSym = _useState70[0],
-    setAddSym = _useState70[1];
-  var _useState71 = useState([]),
+    earnings = _useState70[0],
+    setEarnings = _useState70[1];
+  var _useState71 = useState(null),
     _useState72 = _slicedToArray(_useState71, 2),
-    searchRes = _useState72[0],
-    setSearchRes = _useState72[1];
+    benchCloses = _useState72[0],
+    setBenchCloses = _useState72[1];
   var _useState73 = useState(false),
     _useState74 = _slicedToArray(_useState73, 2),
-    searching = _useState74[0],
-    setSearching = _useState74[1];
-  var _useState75 = useState({
+    loading = _useState74[0],
+    setLoading = _useState74[1];
+  var _useState75 = useState(watchlist[0] ? watchlist[0].symbol : holdings[0] ? holdings[0].symbol : null),
+    _useState76 = _slicedToArray(_useState75, 2),
+    selected = _useState76[0],
+    setSelected = _useState76[1];
+  var _useState77 = useState([]),
+    _useState78 = _slicedToArray(_useState77, 2),
+    news = _useState78[0],
+    setNews = _useState78[1];
+  var _useState79 = useState({
+      loading: false,
+      text: "",
+      err: "",
+      title: ""
+    }),
+    _useState80 = _slicedToArray(_useState79, 2),
+    ai = _useState80[0],
+    setAi = _useState80[1];
+  var _useState81 = useState(""),
+    _useState82 = _slicedToArray(_useState81, 2),
+    addSym = _useState82[0],
+    setAddSym = _useState82[1];
+  var _useState83 = useState([]),
+    _useState84 = _slicedToArray(_useState83, 2),
+    searchRes = _useState84[0],
+    setSearchRes = _useState84[1];
+  var _useState85 = useState(false),
+    _useState86 = _slicedToArray(_useState85, 2),
+    searching = _useState86[0],
+    setSearching = _useState86[1];
+  var _useState87 = useState({
       symbol: "",
       shares: "",
-      cost: ""
+      cost: "",
+      ccy: "USD",
+      date: ""
     }),
-    _useState76 = _slicedToArray(_useState75, 2),
-    holdForm = _useState76[0],
-    setHoldForm = _useState76[1];
-  var _useState77 = useState(false),
-    _useState78 = _slicedToArray(_useState77, 2),
-    showKey = _useState78[0],
-    setShowKey = _useState78[1];
-  var _useState79 = useState(""),
-    _useState80 = _slicedToArray(_useState79, 2),
-    keyInput = _useState80[0],
-    setKeyInput = _useState80[1];
-  var _useState81 = useState(MS ? MS.isDemo() : true),
-    _useState82 = _slicedToArray(_useState81, 2),
-    demo = _useState82[0],
-    setDemo = _useState82[1];
-  var _useState83 = useState(null),
-    _useState84 = _slicedToArray(_useState83, 2),
-    refreshedAt = _useState84[0],
-    setRefreshedAt = _useState84[1];
+    _useState88 = _slicedToArray(_useState87, 2),
+    lotForm = _useState88[0],
+    setLotForm = _useState88[1];
+  var _useState89 = useState(null),
+    _useState90 = _slicedToArray(_useState89, 2),
+    sellFor = _useState90[0],
+    setSellFor = _useState90[1];
+  var _useState91 = useState({
+      shares: "",
+      price: ""
+    }),
+    _useState92 = _slicedToArray(_useState91, 2),
+    sellForm = _useState92[0],
+    setSellForm = _useState92[1];
+  var _useState93 = useState(null),
+    _useState94 = _slicedToArray(_useState93, 2),
+    expanded = _useState94[0],
+    setExpanded = _useState94[1];
+  var _useState95 = useState(false),
+    _useState96 = _slicedToArray(_useState95, 2),
+    showKey = _useState96[0],
+    setShowKey = _useState96[1];
+  var _useState97 = useState(""),
+    _useState98 = _slicedToArray(_useState97, 2),
+    finnKey = _useState98[0],
+    setFinnKey = _useState98[1];
+  var _useState99 = useState(""),
+    _useState100 = _slicedToArray(_useState99, 2),
+    tdKey = _useState100[0],
+    setTdKey = _useState100[1];
+  var _useState101 = useState(MS ? MS.isDemo() : true),
+    _useState102 = _slicedToArray(_useState101, 2),
+    demo = _useState102[0],
+    setDemo = _useState102[1];
+  var _useState103 = useState(90),
+    _useState104 = _slicedToArray(_useState103, 2),
+    range = _useState104[0],
+    setRange = _useState104[1];
+  var _useState105 = useState("position"),
+    _useState106 = _slicedToArray(_useState105, 2),
+    allocMode = _useState106[0],
+    setAllocMode = _useState106[1];
+  var _useState107 = useState("SPY"),
+    _useState108 = _slicedToArray(_useState107, 2),
+    bench = _useState108[0],
+    setBench = _useState108[1];
+  var _useState109 = useState(null),
+    _useState110 = _slicedToArray(_useState109, 2),
+    noteDraft = _useState110[0],
+    setNoteDraft = _useState110[1];
+  var _useState111 = useState(null),
+    _useState112 = _slicedToArray(_useState111, 2),
+    refreshedAt = _useState112[0],
+    setRefreshedAt = _useState112[1];
   var allSymbols = invUniq([].concat(watchlist.map(function (w) {
     return w.symbol;
   }), holdings.map(function (h) {
@@ -6020,7 +6327,7 @@ function InvestSection(_ref3) {
   })));
   var symbolsKey = allSymbols.join(",");
 
-  // ── styles (mirror the Finance tab's glass system) ──
+  // ── styles ──
   var iCard = function iCard(ex) {
     return _objectSpread({
       position: "relative",
@@ -6064,11 +6371,108 @@ function InvestSection(_ref3) {
     fontWeight: 600,
     whiteSpace: "nowrap"
   };
+  var segWrap = {
+    display: "inline-flex",
+    gap: 2,
+    padding: 2,
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.05)",
+    border: "0.5px solid rgba(255,255,255,0.10)"
+  };
+  var segBtn = function segBtn(on) {
+    return {
+      appearance: "none",
+      border: "none",
+      cursor: "pointer",
+      padding: "4px 10px",
+      borderRadius: 999,
+      fontSize: 11,
+      fontWeight: 600,
+      background: on ? "rgba(91,140,255,0.22)" : "transparent",
+      color: on ? T.text : T.text2
+    };
+  };
   function toast(m, t) {
     if (window.showToast) window.showToast(m, t);
   }
+  function fx(ccy) {
+    return fxRates[ccy || "USD"] !== undefined ? fxRates[ccy || "USD"] : ccy === baseCcy ? 1 : 1;
+  }
 
-  // ── load quotes for every symbol in watchlist + holdings ──
+  // ── positions: aggregate lots by symbol (average-cost basis) ──
+  function buildPositions() {
+    var map = {};
+    holdings.forEach(function (l) {
+      var s = l.symbol;
+      if (!map[s]) map[s] = {
+        symbol: s,
+        ccy: l.ccy || "USD",
+        buyShares: 0,
+        buyCost: 0,
+        lots: []
+      };
+      map[s].buyShares += Number(l.shares) || 0;
+      map[s].buyCost += (Number(l.shares) || 0) * (Number(l.cost) || 0);
+      map[s].lots.push(l);
+      if (l.ccy) map[s].ccy = l.ccy;
+    });
+    var soldMap = {};
+    sales.forEach(function (s) {
+      soldMap[s.symbol] = (soldMap[s.symbol] || 0) + (Number(s.shares) || 0);
+    });
+    return Object.keys(map).map(function (s) {
+      var p = map[s];
+      var avg = p.buyShares > 0 ? p.buyCost / p.buyShares : 0;
+      var sold = soldMap[s] || 0;
+      var net = p.buyShares - sold;
+      return {
+        symbol: s,
+        ccy: p.ccy,
+        lots: p.lots,
+        avgCost: avg,
+        netShares: net,
+        buyShares: p.buyShares,
+        sold: sold
+      };
+    });
+  }
+  var positions = buildPositions();
+  var openPositions = positions.filter(function (p) {
+    return p.netShares > 0.0001;
+  });
+
+  // realized P&L (average-cost, in base ccy)
+  var realized = 0;
+  sales.forEach(function (s) {
+    var pos = positions.filter(function (p) {
+      return p.symbol === s.symbol;
+    })[0];
+    var avg = pos ? pos.avgCost : 0;
+    realized += ((Number(s.price) || 0) - avg) * (Number(s.shares) || 0) * fx(s.ccy || pos && pos.ccy || "USD");
+  });
+
+  // portfolio totals (base ccy)
+  var portValue = 0,
+    portCost = 0,
+    todayChange = 0,
+    priced = 0;
+  openPositions.forEach(function (p) {
+    var q = quotes[p.symbol];
+    var px = invQPrice(q);
+    var r = fx(p.ccy);
+    if (px !== null) {
+      portValue += px * p.netShares * r;
+      priced++;
+      var ch = invQChg(q);
+      if (ch !== null) todayChange += ch * p.netShares * r;
+    }
+    portCost += p.avgCost * p.netShares * r;
+  });
+  var unrealized = portValue - portCost;
+  var unrealizedPct = portCost > 0 ? unrealized / portCost * 100 : 0;
+  var todayPct = portValue - todayChange > 0 ? todayChange / (portValue - todayChange) * 100 : 0;
+
+  // ── data loading ──
   function loadQuotes() {
     if (!MS || allSymbols.length === 0) {
       setRefreshedAt(new Date());
@@ -6094,42 +6498,122 @@ function InvestSection(_ref3) {
     })["catch"](function () {}).then(function () {
       setLoading(false);
     });
+    // sparkline/portfolio-series candles + profiles (best effort, cached)
+    allSymbols.forEach(function (sym) {
+      if (candleMap[sym] === undefined) {
+        MS.getCandles(sym, "D", Math.floor(Date.now() / 1000) - 86400 * 400, Math.floor(Date.now() / 1000)).then(function (c) {
+          var cl = invCloses(c);
+          setCandleMap(function (prev) {
+            var n = _objectSpread({}, prev);
+            n[sym] = cl;
+            return n;
+          });
+        })["catch"](function () {
+          setCandleMap(function (prev) {
+            var n = _objectSpread({}, prev);
+            n[sym] = [];
+            return n;
+          });
+        });
+      }
+      if (profiles[sym] === undefined) {
+        MS.getProfile(sym).then(function (p) {
+          setProfiles(function (prev) {
+            var n = _objectSpread({}, prev);
+            n[sym] = p;
+            return n;
+          });
+        })["catch"](function () {});
+      }
+    });
   }
   useEffect(function () {
     loadQuotes();
   }, [symbolsKey]);
 
-  // ── load detail (profile, candles, news) for the selected symbol ──
+  // FX: fetch rate for each distinct currency -> base
+  useEffect(function () {
+    if (!MS) return;
+    var ccys = invUniq(holdings.map(function (h) {
+      return h.ccy || "USD";
+    }).concat(["USD"]));
+    ccys.forEach(function (c) {
+      MS.getFxRate(c, baseCcy).then(function (rate) {
+        setFxRates(function (prev) {
+          var n = _objectSpread({}, prev);
+          n[c] = rate;
+          return n;
+        });
+      })["catch"](function () {});
+    });
+  }, [symbolsKey, baseCcy]);
+
+  // detail: profile/candles/news/metrics/ratings/target/earnings + benchmark
   useEffect(function () {
     if (!MS || !selected) return;
     var alive = true;
-    setCandles(null);
     setNews([]);
+    setBenchCloses(null);
     MS.getProfile(selected).then(function (p) {
       if (alive) setProfiles(function (prev) {
-        var np = _objectSpread({}, prev);
-        np[selected] = p;
-        return np;
+        var n = _objectSpread({}, prev);
+        n[selected] = p;
+        return n;
       });
     })["catch"](function () {});
-    var to = Math.floor(Date.now() / 1000);
-    var from = to - 60 * 60 * 24 * 180;
-    MS.getCandles(selected, "D", from, to).then(function (c) {
-      if (alive) setCandles(c);
-    })["catch"](function () {
-      if (alive) setCandles(null);
-    });
     MS.getNews(selected).then(function (nw) {
       if (alive) setNews(Array.isArray(nw) ? nw.slice(0, 5) : []);
     })["catch"](function () {
       if (alive) setNews([]);
     });
+    MS.getMetrics(selected).then(function (m) {
+      if (alive) setMetrics(function (prev) {
+        var n = _objectSpread({}, prev);
+        n[selected] = m;
+        return n;
+      });
+    })["catch"](function () {});
+    MS.getRecommendation(selected).then(function (r) {
+      if (alive) setRec(function (prev) {
+        var n = _objectSpread({}, prev);
+        n[selected] = r;
+        return n;
+      });
+    })["catch"](function () {});
+    MS.getPriceTarget(selected).then(function (t) {
+      if (alive) setPtarget(function (prev) {
+        var n = _objectSpread({}, prev);
+        n[selected] = t;
+        return n;
+      });
+    })["catch"](function () {});
+    MS.getEarnings(selected).then(function (e) {
+      if (alive) setEarnings(function (prev) {
+        var n = _objectSpread({}, prev);
+        n[selected] = e;
+        return n;
+      });
+    })["catch"](function () {});
     return function () {
       alive = false;
     };
   }, [selected]);
 
-  // ── watchlist mutations ──
+  // benchmark candles for the overlay
+  useEffect(function () {
+    if (!MS || !selected || !bench) return;
+    var alive = true;
+    MS.getCandles(bench, "D", Math.floor(Date.now() / 1000) - 86400 * 400, Math.floor(Date.now() / 1000)).then(function (c) {
+      if (alive) setBenchCloses(invCloses(c));
+    })["catch"](function () {
+      if (alive) setBenchCloses(null);
+    });
+    return function () {
+      alive = false;
+    };
+  }, [selected, bench]);
+
+  // ── mutations ──
   function addToWatchlist(sym) {
     sym = (sym || "").trim().toUpperCase();
     if (!sym) return;
@@ -6172,12 +6656,10 @@ function InvestSection(_ref3) {
       setSearching(false);
     });
   }
-
-  // ── holdings mutations ──
-  function addHolding() {
-    var sym = (holdForm.symbol || "").trim().toUpperCase();
-    var sh = Number(holdForm.shares),
-      cost = Number(holdForm.cost);
+  function addLot() {
+    var sym = (lotForm.symbol || "").trim().toUpperCase();
+    var sh = Number(lotForm.shares),
+      cost = Number(lotForm.cost);
     if (!sym) {
       toast("Enter a ticker");
       return;
@@ -6187,85 +6669,127 @@ function InvestSection(_ref3) {
       return;
     }
     if (isNaN(cost) || cost < 0) {
-      toast("Enter avg cost");
+      toast("Enter cost/share");
       return;
     }
-    var id = "h" + Date.now();
+    var lot = {
+      id: "l" + Date.now(),
+      symbol: sym,
+      shares: sh,
+      cost: cost,
+      ccy: lotForm.ccy || "USD",
+      date: lotForm.date || todayStr()
+    };
     onUpdate(_objectSpread(_objectSpread({}, data), {}, {
-      holdings: holdings.concat([{
-        id: id,
-        symbol: sym,
-        shares: sh,
-        cost: cost
-      }])
+      holdings: holdings.concat([lot])
     }));
-    setHoldForm({
+    setLotForm({
       symbol: "",
       shares: "",
-      cost: ""
+      cost: "",
+      ccy: lotForm.ccy || "USD",
+      date: ""
     });
     if (!quotes[sym]) setSelected(sym);
-    toast(sym + " position added", "success");
+    toast(sym + " lot added", "success");
   }
-  function removeHolding(id) {
+  function removeLot(id) {
     onUpdate(_objectSpread(_objectSpread({}, data), {}, {
-      holdings: holdings.filter(function (h) {
-        return h.id !== id;
+      holdings: holdings.filter(function (l) {
+        return l.id !== id;
       })
     }));
   }
-
-  // ── portfolio totals ──
-  var portValue = 0,
-    portCost = 0,
-    priced = 0;
-  holdings.forEach(function (h) {
-    var q = quotes[h.symbol];
-    var px = invQPrice(q);
-    if (px !== null) {
-      portValue += px * h.shares;
-      priced++;
-    }
-    portCost += h.cost * h.shares;
-  });
-  var portGain = portValue - portCost;
-  var portGainPct = portCost > 0 ? portGain / portCost * 100 : 0;
-
-  // ── API key entry ──
-  function saveKey() {
-    var k = (keyInput || "").trim();
-    if (!k) {
-      toast("Paste your Finnhub key");
+  function recordSale(symbol) {
+    var sh = Number(sellForm.shares),
+      px = Number(sellForm.price);
+    if (isNaN(sh) || sh <= 0) {
+      toast("Enter shares sold");
       return;
     }
-    if (MS && MS.setKey) MS.setKey(k);else {
-      try {
-        localStorage.setItem("__finnhub_key__", k);
-      } catch (_) {}
+    if (isNaN(px) || px < 0) {
+      toast("Enter sale price");
+      return;
+    }
+    var pos = positions.filter(function (p) {
+      return p.symbol === symbol;
+    })[0];
+    var sale = {
+      id: "s" + Date.now(),
+      symbol: symbol,
+      shares: sh,
+      price: px,
+      ccy: pos && pos.ccy || "USD",
+      date: todayStr()
+    };
+    onUpdate(_objectSpread(_objectSpread({}, data), {}, {
+      sales: sales.concat([sale])
+    }));
+    setSellFor(null);
+    setSellForm({
+      shares: "",
+      price: ""
+    });
+    toast("Sale recorded", "success");
+  }
+  function setBase(c) {
+    onUpdate(_objectSpread(_objectSpread({}, data), {}, {
+      baseCurrency: c
+    }));
+  }
+  function saveNote(sym, text) {
+    var n = _objectSpread({}, notes);
+    if (text && text.trim()) n[sym] = text.trim();else delete n[sym];
+    onUpdate(_objectSpread(_objectSpread({}, data), {}, {
+      notes: n
+    }));
+    setNoteDraft(null);
+    toast("Thesis saved", "success");
+  }
+
+  // ── keys ──
+  function saveKeys() {
+    var f = (finnKey || "").trim(),
+      t = (tdKey || "").trim();
+    if (f) {
+      if (MS && MS.setKey) MS.setKey(f);else {
+        try {
+          localStorage.setItem("__finnhub_key__", f);
+        } catch (_) {}
+      }
+    }
+    if (t) {
+      if (MS && MS.setTdKey) MS.setTdKey(t);else {
+        try {
+          localStorage.setItem("__twelvedata_key__", t);
+        } catch (_) {}
+      }
     }
     setDemo(MS ? MS.isDemo() : false);
     setShowKey(false);
-    setKeyInput("");
-    toast("Finnhub key saved — loading live data", "success");
-    setTimeout(loadQuotes, 60);
-  }
-  function clearKey() {
-    if (MS && MS.setKey) MS.setKey("");else {
-      try {
-        localStorage.removeItem("__finnhub_key__");
-      } catch (_) {}
-    }
+    setFinnKey("");
+    setTdKey("");
     if (MS && MS.clearCache) MS.clearCache();
+    setCandleMap({});
+    setQuotes({});
+    toast("Keys saved — loading live data", "success");
+    setTimeout(loadQuotes, 80);
+  }
+  function clearKeys() {
+    if (MS) {
+      if (MS.setKey) MS.setKey("");
+      if (MS.setTdKey) MS.setTdKey("");
+      if (MS.clearCache) MS.clearCache();
+    }
     setDemo(true);
+    setCandleMap({});
+    setQuotes({});
     toast("Reverted to demo mode");
-    setTimeout(loadQuotes, 60);
+    setTimeout(loadQuotes, 80);
   }
 
-  // ── AI "explain this" via Gemini (key reused from the app's Gemini setup) ──
-  function explainSelected() {
-    if (!selected) {
-      return;
-    }
+  // ── AI (reuses the app's Gemini key) ──
+  function askGemini(title, prompt) {
     var gkey = "";
     try {
       gkey = (localStorage.getItem("__gemini_key__") || "").trim();
@@ -6274,21 +6798,16 @@ function InvestSection(_ref3) {
       setAi({
         loading: false,
         text: "",
-        err: "No Gemini API key set. Add it in Logs → Settings to enable AI explanations."
+        err: "No Gemini API key set. Add it in Logs → Settings to enable AI.",
+        title: title
       });
       return;
     }
-    var q = quotes[selected] || {};
-    var prof = profiles[selected] || {};
-    var headlines = (news || []).slice(0, 4).map(function (x) {
-      return "- " + (x.headline || x.title || "");
-    }).join("\n");
-    var ctx = "Ticker: " + selected + "\n" + "Company: " + (prof.name || "?") + (prof.industry ? " (" + prof.industry + ")" : "") + "\n" + "Price: " + invFmt(invQPrice(q)) + " (" + invPct(invQPct(q)) + " today)\n" + (prof.marketCap ? "Market cap: " + invFmt(prof.marketCap, 0) + "M USD\n" : "") + (headlines ? "Recent headlines:\n" + headlines + "\n" : "");
-    var prompt = "You are a concise financial explainer for a personal dashboard. In 4-6 short bullet points, explain what this company does, what the recent price move and headlines suggest, and 1-2 things a long-term retail investor might watch. Plain English, no jargon dumps. End with one line: 'Not financial advice.'\n\n" + ctx;
     setAi({
       loading: true,
       text: "",
-      err: ""
+      err: "",
+      title: title
     });
     fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + encodeURIComponent(gkey), {
       method: "POST",
@@ -6313,20 +6832,141 @@ function InvestSection(_ref3) {
       setAi({
         loading: false,
         text: out || "(no response)",
-        err: ""
+        err: "",
+        title: title
       });
     })["catch"](function (e) {
       setAi({
         loading: false,
         text: "",
-        err: "AI error: " + (e.message || e)
+        err: "AI error: " + (e.message || e),
+        title: title
       });
     });
   }
+  function aiPortfolioReview() {
+    if (!openPositions.length) {
+      toast("Add holdings first");
+      return;
+    }
+    var rows = openPositions.map(function (p) {
+      var q = quotes[p.symbol];
+      var px = invQPrice(q);
+      var val = px !== null ? px * p.netShares * fx(p.ccy) : 0;
+      var w = portValue > 0 ? val / portValue * 100 : 0;
+      var prof = profiles[p.symbol] || {};
+      return "- " + p.symbol + " (" + (prof.industry || "?") + "): " + w.toFixed(1) + "% of portfolio, " + (px !== null ? invPct((px - p.avgCost) / p.avgCost * 100) : "?") + " unrealized";
+    }).join("\n");
+    var prompt = "You are a level-headed portfolio reviewer for a personal dashboard. Base currency " + baseCcy + ". Portfolio value " + invMoney(portValue, baseCcy) + ", unrealized " + invPct(unrealizedPct) + ". Holdings:\n" + rows + "\n\nIn 4-6 short bullets: assess concentration and sector/diversification risk, flag the biggest risks, and note 1-2 things to watch. Plain English. End with: 'Not financial advice.'";
+    askGemini("Portfolio health-check", prompt);
+  }
+  function aiThesisCheck() {
+    if (!selected) return;
+    var q = quotes[selected] || {};
+    var m = metrics[selected] || {};
+    var note = notes[selected] || "";
+    var heads = (news || []).slice(0, 4).map(function (x) {
+      return "- " + (x.headline || "");
+    }).join("\n");
+    var prompt = "You are a skeptical devil's-advocate analyst. The user's investment thesis for " + selected + " is:\n\"" + (note || "(none written)") + "\"\n\nCurrent: price " + invFmt(invQPrice(q)) + " (" + invPct(invQPct(q)) + " today), P/E " + (m.peTTM != null ? m.peTTM : "?") + ", rev growth " + (m.revenueGrowth != null ? m.revenueGrowth + "%" : "?") + ".\nRecent headlines:\n" + heads + "\n\nIn 4-6 bullets: does the thesis still hold? What would challenge it? What's the strongest bear case? Plain English. End with: 'Not financial advice.'";
+    askGemini("Thesis check — " + selected, prompt);
+  }
+  function aiDailyDigest() {
+    var movers = allSymbols.map(function (s) {
+      var q = quotes[s];
+      var pct = invQPct(q);
+      return pct === null ? null : {
+        s: s,
+        pct: pct
+      };
+    }).filter(Boolean).sort(function (a, b) {
+      return Math.abs(b.pct) - Math.abs(a.pct);
+    }).slice(0, 6);
+    if (!movers.length) {
+      toast("No data yet");
+      return;
+    }
+    var body = movers.map(function (m) {
+      return "- " + m.s + ": " + invPct(m.pct) + " today";
+    }).join("\n");
+    var earn = allSymbols.map(function (s) {
+      var e = earnings[s];
+      return e && e.next ? "- " + s + " earnings " + e.next.date : null;
+    }).filter(Boolean).join("\n");
+    var prompt = "You are a calm morning-briefing writer for a personal investing dashboard. Summarize today's watchlist & holdings in 3-5 short bullets — what moved and any notable context. Keep it low-anxiety, factual.\n\nMovers:\n" + body + (earn ? "\n\nUpcoming earnings:\n" + earn : "") + "\n\nEnd with: 'Not financial advice.'";
+    askGemini("Daily digest", prompt);
+  }
+
+  // ── derived views ──
+  var selCloses = candleMap[selected] || [];
+  var rangedSel = range && selCloses.length > range ? selCloses.slice(-range) : selCloses;
+  var rangedBench = benchCloses && range && benchCloses.length > range ? benchCloses.slice(-range) : benchCloses;
   var selQuote = selected ? quotes[selected] : null;
   var selProf = selected ? profiles[selected] : null;
-  var selCloses = invCloses(candles);
-  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  var selM = selected ? metrics[selected] : null;
+
+  // portfolio value series for hero sparkline
+  function portfolioSeries(nPts) {
+    var lens = openPositions.map(function (p) {
+      return (candleMap[p.symbol] || []).length;
+    }).filter(function (l) {
+      return l > 1;
+    });
+    if (!lens.length) return [];
+    var n = Math.min.apply(null, lens);
+    if (nPts) n = Math.min(n, nPts);
+    var out = [];
+    for (var i = 0; i < n; i++) {
+      var sum = 0,
+        any = false;
+      openPositions.forEach(function (p) {
+        var a = candleMap[p.symbol] || [];
+        if (a.length < 2) return;
+        var v = a[a.length - n + i];
+        if (v == null || isNaN(v)) return;
+        sum += v * p.netShares * fx(p.ccy);
+        any = true;
+      });
+      if (any) out.push(sum);
+    }
+    return out;
+  }
+  var heroSeries = portfolioSeries(range || 90);
+  var heroDeltaPct = heroSeries.length > 1 ? (heroSeries[heroSeries.length - 1] / heroSeries[0] - 1) * 100 : null;
+
+  // allocation slices
+  function allocSlices() {
+    var agg = {};
+    openPositions.forEach(function (p) {
+      var q = quotes[p.symbol];
+      var px = invQPrice(q);
+      if (px === null) return;
+      var val = px * p.netShares * fx(p.ccy);
+      var key = allocMode === "sector" ? profiles[p.symbol] && profiles[p.symbol].industry || "Other" : p.symbol;
+      agg[key] = (agg[key] || 0) + val;
+    });
+    var PAL = ["#5b8cff", "#69f0ae", "#ffd166", "#ff9a3c", "#c58cff", "#4dd0e1", "#ff6b6b", "#9ccc65", "#f06292", "#7986cb"];
+    return Object.keys(agg).map(function (k, i) {
+      return {
+        label: k,
+        value: agg[k],
+        color: PAL[i % PAL.length]
+      };
+    }).sort(function (a, b) {
+      return b.value - a.value;
+    });
+  }
+  var slices = allocSlices();
+  var sliceTotal = slices.reduce(function (a, s) {
+    return a + s.value;
+  }, 0);
+  var RANGES = [["1M", 22], ["3M", 66], ["6M", 132], ["1Y", 252], ["ALL", 0]];
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontVariantNumeric: "tabular-nums",
+      fontFeatureSettings: '"tnum"'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
@@ -6350,7 +6990,7 @@ function InvestSection(_ref3) {
       letterSpacing: "-0.02em"
     }
   }, "Invest"), /*#__PURE__*/React.createElement("span", {
-    title: demo ? "No Finnhub key — showing demo data" : "Live data via Finnhub (15-min delayed)",
+    title: demo ? "No keys — demo data" : "Live data",
     style: {
       fontSize: 9.5,
       fontWeight: 700,
@@ -6368,23 +7008,35 @@ function InvestSection(_ref3) {
       alignItems: "center",
       gap: 8
     }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: segWrap
   }, /*#__PURE__*/React.createElement("button", {
+    style: segBtn(baseCcy === "AUD"),
+    onClick: function onClick() {
+      setBase("AUD");
+    }
+  }, "AUD"), /*#__PURE__*/React.createElement("button", {
+    style: segBtn(baseCcy === "USD"),
+    onClick: function onClick() {
+      setBase("USD");
+    }
+  }, "USD")), /*#__PURE__*/React.createElement("button", {
     style: iGhost,
     onClick: loadQuotes,
     disabled: loading
-  }, loading ? "Refreshing…" : "↻ Refresh"), /*#__PURE__*/React.createElement("button", {
+  }, loading ? "…" : "↻"), /*#__PURE__*/React.createElement("button", {
     style: iGhost,
     onClick: function onClick() {
       setShowKey(!showKey);
     }
-  }, demo ? "Add live key" : "API key"))), /*#__PURE__*/React.createElement("div", {
+  }, demo ? "Add keys" : "Keys"))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: T.text3,
       marginBottom: 14,
       lineHeight: 1.5
     }
-  }, "Personal decision-support, not financial advice. Prices may be delayed 15+ minutes.", refreshedAt && " · Updated " + refreshedAt.toLocaleTimeString("en-AU", {
+  }, "Personal decision-support, not financial advice. Prices delayed 15+ min.", refreshedAt && " · Updated " + refreshedAt.toLocaleTimeString("en-AU", {
     hour: "2-digit",
     minute: "2-digit"
   })), showKey && /*#__PURE__*/React.createElement("div", {
@@ -6394,52 +7046,144 @@ function InvestSection(_ref3) {
       fontSize: 13,
       fontWeight: 600,
       color: T.text,
-      marginBottom: 6
+      marginBottom: 8
     }
-  }, "Finnhub API key"), /*#__PURE__*/React.createElement("div", {
+  }, "API keys (stored only in this browser)"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: T.text3,
-      marginBottom: 10,
-      lineHeight: 1.5
+      marginBottom: 6
     }
-  }, "Free key from ", /*#__PURE__*/React.createElement("span", {
+  }, "Finnhub \u2014 quotes, fundamentals, ratings, news (finnhub.io, free 60/min)"), /*#__PURE__*/React.createElement("input", {
+    style: _objectSpread(_objectSpread({}, iInp), {}, {
+      marginBottom: 10
+    }),
+    type: "password",
+    placeholder: "Finnhub key\u2026",
+    value: finnKey,
+    onChange: function onChange(e) {
+      setFinnKey(e.target.value);
+    }
+  }), /*#__PURE__*/React.createElement("div", {
     style: {
-      color: T.accent
+      fontSize: 11,
+      color: T.text3,
+      marginBottom: 6
     }
-  }, "finnhub.io/register"), " (60 calls/min). Stored only in this browser. Without it, the tab shows realistic demo data. Note: intraday price charts need a paid Finnhub plan; quotes, fundamentals & news are free."), /*#__PURE__*/React.createElement("div", {
+  }, "Twelve Data \u2014 price charts & benchmarks (twelvedata.com, free 800/day). Finnhub's chart endpoint is premium, so charts use this."), /*#__PURE__*/React.createElement("input", {
+    style: _objectSpread(_objectSpread({}, iInp), {}, {
+      marginBottom: 10
+    }),
+    type: "password",
+    placeholder: "Twelve Data key\u2026",
+    value: tdKey,
+    onChange: function onChange(e) {
+      setTdKey(e.target.value);
+    },
+    onKeyDown: function onKeyDown(e) {
+      if (e.key === "Enter") saveKeys();
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: iBtn,
+    onClick: saveKeys
+  }, "Save"), !demo && /*#__PURE__*/React.createElement("button", {
+    style: iGhost,
+    onClick: clearKeys
+  }, "Use demo"))), /*#__PURE__*/React.createElement("div", {
+    style: iCard({
+      paddingBottom: heroSeries.length > 1 ? 8 : 18
+    })
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      flexWrap: "wrap",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: iStatLabel
+  }, "Portfolio value \xB7 ", baseCcy), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: mob ? 30 : 38,
+      fontWeight: 700,
+      color: T.text,
+      letterSpacing: "-0.03em",
+      lineHeight: 1.05,
+      transition: "color .3s"
+    }
+  }, invMoney(portValue, baseCcy)), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
+      marginTop: 6,
       flexWrap: "wrap"
     }
-  }, /*#__PURE__*/React.createElement("input", {
-    style: _objectSpread(_objectSpread({}, iInp), {}, {
-      flex: 1,
-      minWidth: 200
-    }),
-    type: "password",
-    placeholder: "Paste Finnhub key\u2026",
-    value: keyInput,
-    onChange: function onChange(e) {
-      setKeyInput(e.target.value);
-    },
-    onKeyDown: function onKeyDown(e) {
-      if (e.key === "Enter") saveKey();
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      fontWeight: 600,
+      padding: "3px 9px",
+      borderRadius: 999,
+      background: todayChange >= 0 ? "rgba(105,240,174,0.14)" : "rgba(255,107,107,0.14)",
+      color: todayChange >= 0 ? T.success : T.danger
     }
-  }), /*#__PURE__*/React.createElement("button", {
-    style: iBtn,
-    onClick: saveKey
-  }, "Save"), !demo && /*#__PURE__*/React.createElement("button", {
-    style: iGhost,
-    onClick: clearKey
-  }, "Use demo"))), /*#__PURE__*/React.createElement("div", {
+  }, todayChange >= 0 ? "▲" : "▼", " ", invMoney(Math.abs(todayChange), baseCcy), " (", invPct(todayPct), ") today"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      fontWeight: 600,
+      padding: "3px 9px",
+      borderRadius: 999,
+      background: "rgba(255,255,255,0.05)",
+      color: unrealized >= 0 ? T.success : T.danger
+    }
+  }, unrealized >= 0 ? "+" : "", invMoney(unrealized, baseCcy), " (", invPct(unrealizedPct), ") unreal."), realized !== 0 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      fontWeight: 600,
+      padding: "3px 9px",
+      borderRadius: 999,
+      background: "rgba(255,255,255,0.05)",
+      color: realized >= 0 ? T.success : T.danger
+    }
+  }, realized >= 0 ? "+" : "", invMoney(realized, baseCcy), " realized"))), /*#__PURE__*/React.createElement("div", {
+    style: segWrap
+  }, RANGES.map(function (r) {
+    return /*#__PURE__*/React.createElement("button", {
+      key: r[0],
+      style: segBtn(range === r[1]),
+      onClick: function onClick() {
+        setRange(r[1]);
+      }
+    }, r[0]);
+  }))), heroSeries.length > 1 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      marginLeft: -4,
+      marginRight: -4
+    }
+  }, /*#__PURE__*/React.createElement(InvChart, {
+    closes: heroSeries,
+    h: mob ? 70 : 96,
+    accent: heroDeltaPct >= 0 ? "#69f0ae" : "#ff6b6b"
+  })), !heroSeries.length && openPositions.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: T.text3,
+      marginTop: 8
+    }
+  }, "Add a Twelve Data key for a live portfolio trend chart.")), openPositions.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: iCard()
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      alignItems: "center",
       justifyContent: "space-between",
+      alignItems: "center",
       marginBottom: 14
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -6448,72 +7192,130 @@ function InvestSection(_ref3) {
       fontWeight: 600,
       color: "#cdd5e2"
     }
-  }, "Portfolio"), /*#__PURE__*/React.createElement("div", {
+  }, "Allocation"), /*#__PURE__*/React.createElement("div", {
+    style: segWrap
+  }, /*#__PURE__*/React.createElement("button", {
+    style: segBtn(allocMode === "position"),
+    onClick: function onClick() {
+      setAllocMode("position");
+    }
+  }, "Position"), /*#__PURE__*/React.createElement("button", {
+    style: segBtn(allocMode === "sector"),
+    onClick: function onClick() {
+      setAllocMode("sector");
+    }
+  }, "Sector"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 20,
+      alignItems: "center",
+      flexWrap: mob ? "wrap" : "nowrap"
+    }
+  }, /*#__PURE__*/React.createElement(InvDonut, {
+    slices: slices,
+    size: mob ? 130 : 150
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 180
+    }
+  }, slices.slice(0, 8).map(function (s, i) {
+    var pctv = sliceTotal > 0 ? s.value / sliceTotal * 100 : 0;
+    return /*#__PURE__*/React.createElement("div", {
+      key: i,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        marginBottom: 7
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 9,
+        height: 9,
+        borderRadius: 2,
+        background: s.color,
+        flexShrink: 0
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 12,
+        color: T.text,
+        flex: 1,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }
+    }, s.label), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 12,
+        color: T.text2,
+        fontWeight: 600
+      }
+    }, pctv.toFixed(1), "%"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: T.text3,
+        minWidth: 64,
+        textAlign: "right"
+      }
+    }, invCompact(s.value, baseCcy)));
+  })))), /*#__PURE__*/React.createElement("div", {
+    style: iCard()
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: "#cdd5e2"
+    }
+  }, "Holdings"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
       color: T.text3
     }
-  }, holdings.length, " position", holdings.length === 1 ? "" : "s", holdings.length > priced ? " · " + (holdings.length - priced) + " unpriced" : "")), /*#__PURE__*/React.createElement("div", {
+  }, openPositions.length, " open", holdings.length > priced && priced < openPositions.length ? " · " + (openPositions.length - priced) + " unpriced" : "")), openPositions.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "grid",
-      gridTemplateColumns: mob ? "1fr 1fr" : "1fr 1fr 1fr",
-      gap: 12,
-      marginBottom: holdings.length ? 16 : 0
+      fontSize: 12,
+      color: T.text3,
+      padding: "4px 2px 10px"
     }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: iStatLabel
-  }, "Value"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 22,
-      fontWeight: 700,
-      color: T.text,
-      letterSpacing: "-0.02em"
-    }
-  }, "$", invFmt(portValue))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: iStatLabel
-  }, "Cost basis"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 22,
-      fontWeight: 700,
-      color: T.text2,
-      letterSpacing: "-0.02em"
-    }
-  }, "$", invFmt(portCost))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: iStatLabel
-  }, "Gain / loss"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 22,
-      fontWeight: 700,
-      letterSpacing: "-0.02em",
-      color: portGain >= 0 ? T.success : T.danger
-    }
-  }, portGain >= 0 ? "+" : "-", "$", invFmt(Math.abs(portGain)), " ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 13,
-      fontWeight: 600
-    }
-  }, "(", invPct(portGainPct), ")")))), holdings.map(function (h) {
-    var q = quotes[h.symbol];
+  }, "No holdings yet. Add a lot below \u2014 enter each buy separately to track cost basis."), openPositions.map(function (p) {
+    var q = quotes[p.symbol];
     var px = invQPrice(q);
-    var val = px !== null ? px * h.shares : null;
-    var g = px !== null ? (px - h.cost) * h.shares : null;
-    var gp = h.cost > 0 && px !== null ? (px - h.cost) / h.cost * 100 : null;
+    var r = fx(p.ccy);
+    var val = px !== null ? px * p.netShares * r : null;
+    var g = px !== null ? (px - p.avgCost) * p.netShares * r : null;
+    var gp = p.avgCost > 0 && px !== null ? (px - p.avgCost) / p.avgCost * 100 : null;
+    var open = expanded === p.symbol;
+    var spark = candleMap[p.symbol] || [];
     return /*#__PURE__*/React.createElement("div", {
-      key: h.id,
-      onClick: function onClick() {
-        setSelected(h.symbol);
-      },
+      key: p.symbol,
+      style: {
+        borderRadius: 12,
+        marginBottom: 8,
+        background: selected === p.symbol ? "rgba(91,140,255,0.08)" : "rgba(255,255,255,0.03)",
+        border: "0.5px solid rgba(255,255,255,0.07)",
+        overflow: "hidden"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
       className: "glow-item",
+      onClick: function onClick() {
+        setSelected(p.symbol);
+        setExpanded(open ? null : p.symbol);
+      },
       style: {
         display: "flex",
         alignItems: "center",
         gap: 10,
-        padding: "10px 12px",
-        borderRadius: 12,
-        marginTop: 8,
-        cursor: "pointer",
-        background: selected === h.symbol ? "rgba(91,140,255,0.10)" : "rgba(255,255,255,0.03)",
-        border: "0.5px solid rgba(255,255,255,0.07)"
+        padding: "11px 12px",
+        cursor: "pointer"
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -6525,12 +7327,14 @@ function InvestSection(_ref3) {
         fontWeight: 700,
         color: T.text
       }
-    }, h.symbol), /*#__PURE__*/React.createElement("div", {
+    }, p.symbol), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 10,
         color: T.text3
       }
-    }, invFmt(h.shares, h.shares % 1 ? 4 : 0), " @ $", invFmt(h.cost))), /*#__PURE__*/React.createElement("div", {
+    }, invFmt(p.netShares, p.netShares % 1 ? 4 : 0), " @ ", invMoney(p.avgCost, p.ccy === "USD" ? "USD" : p.ccy), " ", p.ccy)), !mob && /*#__PURE__*/React.createElement(InvSpark, {
+      closes: spark.slice(-40)
+    }), /*#__PURE__*/React.createElement("div", {
       style: {
         flex: 1
       }
@@ -6544,44 +7348,151 @@ function InvestSection(_ref3) {
         fontWeight: 600,
         color: T.text
       }
-    }, px !== null ? "$" + invFmt(val) : "—"), /*#__PURE__*/React.createElement("div", {
+    }, val !== null ? invMoney(val, baseCcy) : "—"), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 11,
         fontWeight: 600,
         color: g === null ? T.text3 : g >= 0 ? T.success : T.danger
       }
-    }, g === null ? "—" : (g >= 0 ? "+" : "-") + "$" + invFmt(Math.abs(g)) + " " + (gp !== null ? invPct(gp) : ""))), /*#__PURE__*/React.createElement("button", {
-      onClick: function onClick(e) {
-        e.stopPropagation();
-        removeHolding(h.id);
-      },
+    }, g === null ? "—" : (g >= 0 ? "▲ " : "▼ ") + invMoney(Math.abs(g), baseCcy) + " " + (gp !== null ? invPct(gp) : ""))), /*#__PURE__*/React.createElement("span", {
       style: {
-        background: "none",
-        border: "none",
         color: T.text3,
-        cursor: "pointer",
-        fontSize: 16,
-        lineHeight: 1,
-        padding: "0 4px"
+        fontSize: 12,
+        transform: open ? "rotate(90deg)" : "none",
+        transition: "transform .2s"
       }
-    }, "\xD7"));
+    }, "\u203A")), open && /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: "0 12px 12px",
+        borderTop: "0.5px solid rgba(255,255,255,0.06)"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        margin: "10px 0 6px",
+        textTransform: "uppercase",
+        letterSpacing: "0.05em"
+      }
+    }, "Lots"), p.lots.map(function (l) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: l.id,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          fontSize: 11,
+          color: T.text2,
+          padding: "4px 0"
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          flex: 1
+        }
+      }, invFmt(l.shares, l.shares % 1 ? 4 : 0), " @ ", invMoney(l.cost, l.ccy), " ", l.ccy, " \xB7 ", l.date), /*#__PURE__*/React.createElement("button", {
+        onClick: function onClick(e) {
+          e.stopPropagation();
+          removeLot(l.id);
+        },
+        style: {
+          background: "none",
+          border: "none",
+          color: T.text3,
+          cursor: "pointer",
+          fontSize: 14
+        }
+      }, "\xD7"));
+    }), p.sold > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        marginTop: 4
+      }
+    }, invFmt(p.sold, 0), " shares sold (realized tracked above)"), sellFor === p.symbol ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        marginTop: 8,
+        flexWrap: "wrap"
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      style: _objectSpread(_objectSpread({}, iInp), {}, {
+        flex: "1 1 80px"
+      }),
+      type: "number",
+      step: "any",
+      placeholder: "Shares",
+      value: sellForm.shares,
+      onChange: function onChange(e) {
+        setSellForm(_objectSpread(_objectSpread({}, sellForm), {}, {
+          shares: e.target.value
+        }));
+      }
+    }), /*#__PURE__*/React.createElement("input", {
+      style: _objectSpread(_objectSpread({}, iInp), {}, {
+        flex: "1 1 90px"
+      }),
+      type: "number",
+      step: "any",
+      placeholder: "Price (" + p.ccy + ")",
+      value: sellForm.price,
+      onChange: function onChange(e) {
+        setSellForm(_objectSpread(_objectSpread({}, sellForm), {}, {
+          price: e.target.value
+        }));
+      }
+    }), /*#__PURE__*/React.createElement("button", {
+      style: iBtn,
+      onClick: function onClick() {
+        recordSale(p.symbol);
+      }
+    }, "Record sale"), /*#__PURE__*/React.createElement("button", {
+      style: iGhost,
+      onClick: function onClick() {
+        setSellFor(null);
+      }
+    }, "Cancel")) : /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, iGhost), {}, {
+        marginTop: 8
+      }),
+      onClick: function onClick() {
+        setSellFor(p.symbol);
+        setSellForm({
+          shares: "",
+          price: invFmt(px, 2)
+        });
+      }
+    }, "Record a sale")));
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
-      marginTop: holdings.length ? 12 : 4,
+      marginTop: openPositions.length ? 12 : 4,
       flexWrap: "wrap"
     }
   }, /*#__PURE__*/React.createElement("input", {
     style: _objectSpread(_objectSpread({}, iInp), {}, {
-      flex: mob ? "1 1 100%" : "1 1 90px",
+      flex: mob ? "1 1 100%" : "1 1 80px",
       textTransform: "uppercase"
     }),
     placeholder: "Ticker",
-    value: holdForm.symbol,
+    value: lotForm.symbol,
     onChange: function onChange(e) {
-      setHoldForm(_objectSpread(_objectSpread({}, holdForm), {}, {
+      setLotForm(_objectSpread(_objectSpread({}, lotForm), {}, {
         symbol: e.target.value
+      }));
+    }
+  }), /*#__PURE__*/React.createElement("input", {
+    style: _objectSpread(_objectSpread({}, iInp), {}, {
+      flex: "1 1 70px"
+    }),
+    type: "number",
+    step: "any",
+    placeholder: "Shares",
+    value: lotForm.shares,
+    onChange: function onChange(e) {
+      setLotForm(_objectSpread(_objectSpread({}, lotForm), {}, {
+        shares: e.target.value
       }));
     }
   }), /*#__PURE__*/React.createElement("input", {
@@ -6590,33 +7501,38 @@ function InvestSection(_ref3) {
     }),
     type: "number",
     step: "any",
-    placeholder: "Shares",
-    value: holdForm.shares,
+    placeholder: "Cost/sh",
+    value: lotForm.cost,
     onChange: function onChange(e) {
-      setHoldForm(_objectSpread(_objectSpread({}, holdForm), {}, {
-        shares: e.target.value
-      }));
-    }
-  }), /*#__PURE__*/React.createElement("input", {
-    style: _objectSpread(_objectSpread({}, iInp), {}, {
-      flex: "1 1 90px"
-    }),
-    type: "number",
-    step: "any",
-    placeholder: "Avg cost",
-    value: holdForm.cost,
-    onChange: function onChange(e) {
-      setHoldForm(_objectSpread(_objectSpread({}, holdForm), {}, {
+      setLotForm(_objectSpread(_objectSpread({}, lotForm), {}, {
         cost: e.target.value
       }));
-    },
-    onKeyDown: function onKeyDown(e) {
-      if (e.key === "Enter") addHolding();
+    }
+  }), /*#__PURE__*/React.createElement("select", {
+    style: _objectSpread(_objectSpread({}, iInp), {}, {
+      flex: "1 1 70px"
+    }),
+    value: lotForm.ccy,
+    onChange: function onChange(e) {
+      setLotForm(_objectSpread(_objectSpread({}, lotForm), {}, {
+        ccy: e.target.value
+      }));
+    }
+  }, /*#__PURE__*/React.createElement("option", null, "USD"), /*#__PURE__*/React.createElement("option", null, "AUD"), /*#__PURE__*/React.createElement("option", null, "EUR"), /*#__PURE__*/React.createElement("option", null, "GBP")), /*#__PURE__*/React.createElement("input", {
+    style: _objectSpread(_objectSpread({}, iInp), {}, {
+      flex: "1 1 110px"
+    }),
+    type: "date",
+    value: lotForm.date,
+    onChange: function onChange(e) {
+      setLotForm(_objectSpread(_objectSpread({}, lotForm), {}, {
+        date: e.target.value
+      }));
     }
   }), /*#__PURE__*/React.createElement("button", {
     style: iBtn,
-    onClick: addHolding
-  }, "Add"))), /*#__PURE__*/React.createElement("div", {
+    onClick: addLot
+  }, "Add lot"))), /*#__PURE__*/React.createElement("div", {
     style: iCard()
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -6640,7 +7556,7 @@ function InvestSection(_ref3) {
       flex: 1,
       textTransform: "uppercase"
     }),
-    placeholder: "Add ticker (e.g. AAPL) or search\u2026",
+    placeholder: "Add ticker or search\u2026",
     value: addSym,
     onChange: function onChange(e) {
       runSearch(e.target.value);
@@ -6669,19 +7585,17 @@ function InvestSection(_ref3) {
       overflow: "hidden",
       boxShadow: cardShadow
     }
-  }, searchRes.map(function (r) {
+  }, searchRes.map(function (rr) {
     return /*#__PURE__*/React.createElement("div", {
-      key: r.symbol,
+      key: rr.symbol,
       onClick: function onClick() {
-        addToWatchlist(r.symbol);
+        addToWatchlist(rr.symbol);
       },
       style: {
         padding: "9px 12px",
         cursor: "pointer",
         display: "flex",
-        alignItems: "center",
-        gap: 8,
-        borderBottom: "0.5px solid rgba(255,255,255,0.05)"
+        gap: 8
       },
       onMouseOver: function onMouseOver(e) {
         e.currentTarget.style.background = "rgba(91,140,255,0.10)";
@@ -6696,7 +7610,7 @@ function InvestSection(_ref3) {
         color: T.text,
         minWidth: 54
       }
-    }, r.symbol), /*#__PURE__*/React.createElement("span", {
+    }, rr.symbol), /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 11,
         color: T.text3,
@@ -6704,7 +7618,7 @@ function InvestSection(_ref3) {
         textOverflow: "ellipsis",
         whiteSpace: "nowrap"
       }
-    }, r.description || r.name || ""));
+    }, rr.description || ""));
   })), searching && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
@@ -6721,6 +7635,7 @@ function InvestSection(_ref3) {
     var q = quotes[w.symbol];
     var px = invQPrice(q);
     var pct = invQPct(q);
+    var spark = candleMap[w.symbol] || [];
     return /*#__PURE__*/React.createElement("div", {
       key: w.symbol,
       onClick: function onClick() {
@@ -6740,7 +7655,7 @@ function InvestSection(_ref3) {
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
-        minWidth: 60
+        minWidth: 58
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -6752,12 +7667,14 @@ function InvestSection(_ref3) {
       style: {
         fontSize: 10,
         color: T.text3,
-        maxWidth: mob ? 110 : 200,
+        maxWidth: mob ? 90 : 150,
         overflow: "hidden",
         textOverflow: "ellipsis",
         whiteSpace: "nowrap"
       }
-    }, profiles[w.symbol] && profiles[w.symbol].name || "")), /*#__PURE__*/React.createElement("div", {
+    }, profiles[w.symbol] && profiles[w.symbol].name || "")), !mob && /*#__PURE__*/React.createElement(InvSpark, {
+      closes: spark.slice(-40)
+    }), /*#__PURE__*/React.createElement("div", {
       style: {
         flex: 1
       }
@@ -6777,7 +7694,7 @@ function InvestSection(_ref3) {
         fontWeight: 600,
         color: pct === null ? T.text3 : pct >= 0 ? T.success : T.danger
       }
-    }, invPct(pct))), /*#__PURE__*/React.createElement("button", {
+    }, pct !== null ? (pct >= 0 ? "▲ " : "▼ ") + invPct(pct).replace("+", "") : "—")), /*#__PURE__*/React.createElement("button", {
       onClick: function onClick(e) {
         e.stopPropagation();
         removeFromWatchlist(w.symbol);
@@ -6788,7 +7705,6 @@ function InvestSection(_ref3) {
         color: T.text3,
         cursor: "pointer",
         fontSize: 16,
-        lineHeight: 1,
         padding: "0 4px"
       }
     }, "\xD7"));
@@ -6840,34 +7756,290 @@ function InvestSection(_ref3) {
       fontWeight: 600,
       color: invQPct(selQuote) === null ? T.text3 : invQPct(selQuote) >= 0 ? T.success : T.danger
     }
-  }, invQChg(selQuote) !== null ? (invQChg(selQuote) >= 0 ? "+" : "") + invFmt(invQChg(selQuote)) : "", " ", invPct(invQPct(selQuote))))), /*#__PURE__*/React.createElement("button", {
+  }, invQChg(selQuote) !== null ? (invQChg(selQuote) >= 0 ? "+" : "") + invFmt(invQChg(selQuote)) : "", " ", invPct(invQPct(selQuote))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: _objectSpread(_objectSpread({}, iGhost), {}, {
+      display: "flex",
+      alignItems: "center",
+      gap: 5
+    }),
+    onClick: aiThesisCheck,
+    disabled: ai.loading
+  }, /*#__PURE__*/React.createElement(UIcon, {
+    name: "sparkle",
+    size: 12
+  }), "Thesis check"), /*#__PURE__*/React.createElement("button", {
     style: _objectSpread(_objectSpread({}, iBtn), {}, {
       display: "flex",
       alignItems: "center",
       gap: 6
     }),
-    onClick: explainSelected,
+    onClick: function onClick() {
+      askGemini("Explain — " + selected, "Explain " + selected + " (" + (selProf && selProf.name || selected) + ") to a long-term retail investor in 4-6 short bullets: what it does, what the price move & headlines suggest, and what to watch. End with 'Not financial advice.'");
+    },
     disabled: ai.loading
   }, /*#__PURE__*/React.createElement(UIcon, {
     name: ai.loading ? "clock" : "sparkle",
     size: 13
-  }), ai.loading ? "Thinking…" : "Explain with AI")), /*#__PURE__*/React.createElement("div", {
+  }), ai.loading ? "…" : "Explain"))), /*#__PURE__*/React.createElement("div", {
     style: {
-      margin: "4px -4px 0"
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 6,
+      flexWrap: "wrap"
     }
-  }, /*#__PURE__*/React.createElement(InvChart, {
-    closes: selCloses,
-    h: mob ? 150 : 200
-  })), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
+    style: segWrap
+  }, RANGES.map(function (r) {
+    return /*#__PURE__*/React.createElement("button", {
+      key: r[0],
+      style: segBtn(range === r[1]),
+      onClick: function onClick() {
+        setRange(r[1]);
+      }
+    }, r[0]);
+  })), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 10,
-      color: T.text3,
-      textAlign: "right",
-      marginTop: 2
+      color: T.text3
     }
-  }, selCloses.length > 1 ? "~" + selCloses.length + " sessions" + (demo ? " (demo)" : "") : demo ? "" : "Intraday charts require a paid Finnhub plan"), (ai.text || ai.err) && /*#__PURE__*/React.createElement("div", {
+  }, "vs"), /*#__PURE__*/React.createElement("input", {
+    style: _objectSpread(_objectSpread({}, iInp), {}, {
+      width: 78,
+      padding: "5px 8px",
+      textTransform: "uppercase"
+    }),
+    value: bench,
+    onChange: function onChange(e) {
+      setBench(e.target.value.toUpperCase());
+    }
+  })), rangedSel.length > 1 ? /*#__PURE__*/React.createElement(InvChart, {
+    series: [{
+      closes: rangedSel,
+      color: "#5b8cff",
+      name: selected,
+      label: "primary"
+    }, {
+      closes: rangedBench && rangedBench.length > 1 ? rangedBench : null,
+      color: "#8f97a6",
+      name: bench,
+      label: "benchmark"
+    }].filter(function (s) {
+      return s.closes;
+    }),
+    h: mob ? 160 : 210,
+    mob: mob
+  }) : /*#__PURE__*/React.createElement("div", {
     style: {
-      marginTop: 14,
+      height: mob ? 160 : 210,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      color: T.text3,
+      fontSize: 12,
+      textAlign: "center"
+    }
+  }, "No chart data. ", demo ? "" : "Add a Twelve Data key for live charts."), selM && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 600,
+      color: "#cdd5e2",
+      marginBottom: 8
+    }
+  }, "Valuation"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: mob ? "1fr 1fr 1fr" : "repeat(4,1fr)",
+      gap: 10
+    }
+  }, [["P/E", selM.peTTM], ["P/S", selM.ps], ["Net margin", selM.netMargin != null ? selM.netMargin + "%" : null], ["ROE", selM.roe != null ? selM.roe + "%" : null], ["Beta", selM.beta], ["Rev growth", selM.revenueGrowth != null ? selM.revenueGrowth + "%" : null], ["Div yield", selM.dividendYield != null ? selM.dividendYield + "%" : null], ["EPS", selM.eps]].map(function (kv, i) {
+    return /*#__PURE__*/React.createElement("div", {
+      key: i
+    }, /*#__PURE__*/React.createElement("div", {
+      style: iStatLabel
+    }, kv[0]), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 15,
+        fontWeight: 600,
+        color: T.text
+      }
+    }, kv[1] == null || kv[1] === "" ? "—" : typeof kv[1] === "number" ? invFmt(kv[1]) : kv[1]));
+  })), selM.week52Low != null && selM.week52High != null && invQPrice(selQuote) !== null && function () {
+    var lo = selM.week52Low,
+      hi = selM.week52High,
+      cur = invQPrice(selQuote);
+    var pos = Math.max(0, Math.min(100, (cur - lo) / (hi - lo || 1) * 100));
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        fontSize: 10,
+        color: T.text3,
+        marginBottom: 4
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "52wk low $", invFmt(lo)), /*#__PURE__*/React.createElement("span", null, "52wk high $", invFmt(hi))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "relative",
+        height: 6,
+        borderRadius: 3,
+        background: "rgba(255,255,255,0.08)"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        left: pos + "%",
+        top: -3,
+        width: 3,
+        height: 12,
+        borderRadius: 2,
+        background: T.accent,
+        transform: "translateX(-50%)"
+      }
+    })));
+  }()), (rec[selected] || ptarget[selected]) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 16,
+      display: "grid",
+      gridTemplateColumns: mob ? "1fr" : "1fr 1fr",
+      gap: 16
+    }
+  }, rec[selected] && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 600,
+      color: "#cdd5e2",
+      marginBottom: 8
+    }
+  }, "Analyst ratings"), /*#__PURE__*/React.createElement(InvRatingBar, {
+    rec: rec[selected]
+  })), ptarget[selected] && ptarget[selected].targetMean != null && function () {
+    var t = ptarget[selected];
+    var cur = invQPrice(selQuote);
+    var up = cur !== null && t.targetMean ? (t.targetMean - cur) / cur * 100 : null;
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        fontWeight: 600,
+        color: "#cdd5e2",
+        marginBottom: 8
+      }
+    }, "Price target"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 20,
+        fontWeight: 700,
+        color: T.text
+      }
+    }, "$", invFmt(t.targetMean), " ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 12,
+        fontWeight: 600,
+        color: up == null ? T.text3 : up >= 0 ? T.success : T.danger
+      }
+    }, up != null ? "(" + invPct(up) + ")" : "")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        marginTop: 2
+      }
+    }, "Range $", invFmt(t.targetLow), " \u2013 $", invFmt(t.targetHigh)));
+  }()), earnings[selected] && (earnings[selected].next || earnings[selected].recent && earnings[selected].recent.length) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 600,
+      color: "#cdd5e2",
+      marginBottom: 8
+    }
+  }, "Earnings", earnings[selected].next ? " · next " + earnings[selected].next.date : ""), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      flexWrap: "wrap"
+    }
+  }, (earnings[selected].recent || []).map(function (e, i) {
+    var beat = e.surprisePercent != null && e.surprisePercent >= 0;
+    return /*#__PURE__*/React.createElement("span", {
+      key: i,
+      style: {
+        fontSize: 10,
+        padding: "4px 8px",
+        borderRadius: 8,
+        background: e.surprisePercent == null ? "rgba(255,255,255,0.05)" : beat ? "rgba(105,240,174,0.12)" : "rgba(255,107,107,0.12)",
+        color: e.surprisePercent == null ? T.text3 : beat ? T.success : T.danger
+      }
+    }, e.period || "Q", " ", e.surprisePercent != null ? (e.surprisePercent >= 0 ? "+" : "") + e.surprisePercent + "%" : "");
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 600,
+      color: "#cdd5e2",
+      marginBottom: 8
+    }
+  }, "My thesis"), noteDraft !== null ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("textarea", {
+    style: _objectSpread(_objectSpread({}, iInp), {}, {
+      minHeight: 60,
+      resize: "vertical",
+      fontFamily: "inherit"
+    }),
+    value: noteDraft,
+    onChange: function onChange(e) {
+      setNoteDraft(e.target.value);
+    },
+    placeholder: "Why do you own / watch this? What would change your mind?"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      marginTop: 6
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: iBtn,
+    onClick: function onClick() {
+      saveNote(selected, noteDraft);
+    }
+  }, "Save"), /*#__PURE__*/React.createElement("button", {
+    style: iGhost,
+    onClick: function onClick() {
+      setNoteDraft(null);
+    }
+  }, "Cancel"))) : /*#__PURE__*/React.createElement("div", {
+    onClick: function onClick() {
+      setNoteDraft(notes[selected] || "");
+    },
+    style: {
+      fontSize: 12,
+      color: notes[selected] ? T.text2 : T.text3,
+      lineHeight: 1.5,
+      cursor: "pointer",
+      padding: "8px 10px",
+      borderRadius: 8,
+      background: "rgba(255,255,255,0.03)",
+      border: "0.5px dashed rgba(255,255,255,0.12)"
+    }
+  }, notes[selected] || "Add your investment thesis…")), (ai.text || ai.err) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 16,
       padding: "14px 16px",
       borderRadius: 14,
       background: "rgba(91,140,255,0.06)",
@@ -6888,7 +8060,7 @@ function InvestSection(_ref3) {
   }, /*#__PURE__*/React.createElement(UIcon, {
     name: "sparkle",
     size: 12
-  }), "AI summary"), ai.err ? /*#__PURE__*/React.createElement("div", {
+  }), ai.title || "AI"), ai.err ? /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: T.warn
@@ -6929,7 +8101,7 @@ function InvestSection(_ref3) {
         color: T.text,
         lineHeight: 1.4
       }
-    }, a.headline || a.title || "(untitled)"), /*#__PURE__*/React.createElement("div", {
+    }, a.headline || "(untitled)"), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 10,
         color: T.text3,
@@ -6937,6 +8109,47 @@ function InvestSection(_ref3) {
       }
     }, a.source || ""));
   }))), /*#__PURE__*/React.createElement("div", {
+    style: iCard({
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap",
+      alignItems: "center"
+    })
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      fontWeight: 600,
+      color: "#cdd5e2",
+      marginRight: 4
+    }
+  }, "AI"), /*#__PURE__*/React.createElement("button", {
+    style: _objectSpread(_objectSpread({}, iGhost), {}, {
+      display: "flex",
+      alignItems: "center",
+      gap: 5
+    }),
+    onClick: aiPortfolioReview,
+    disabled: ai.loading
+  }, /*#__PURE__*/React.createElement(UIcon, {
+    name: "sparkle",
+    size: 12
+  }), "Portfolio health-check"), /*#__PURE__*/React.createElement("button", {
+    style: _objectSpread(_objectSpread({}, iGhost), {}, {
+      display: "flex",
+      alignItems: "center",
+      gap: 5
+    }),
+    onClick: aiDailyDigest,
+    disabled: ai.loading
+  }, /*#__PURE__*/React.createElement(UIcon, {
+    name: "sparkle",
+    size: 12
+  }), "Daily digest"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      color: T.text3
+    }
+  }, "Uses your Gemini key \xB7 grounded in your data")), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
       color: T.text3,
@@ -6944,53 +8157,53 @@ function InvestSection(_ref3) {
       padding: "6px 0 20px",
       lineHeight: 1.5
     }
-  }, "Data ", demo ? "is simulated (demo mode)" : "via Finnhub, delayed ≥15 min", ". For personal, informational use only \u2014 not investment advice."));
+  }, "Data ", demo ? "is simulated (demo mode)" : "via Finnhub + Twelve Data, delayed ≥15 min", ". Realized P&L uses average-cost basis. Personal, informational use only \u2014 not investment advice."));
 }
-function WorkSection(_ref4) {
-  var data = _ref4.data,
-    mob = _ref4.mob,
-    onUpdate = _ref4.onUpdate,
-    onFlush = _ref4.onFlush,
-    gcalEvents = _ref4.gcalEvents;
+function WorkSection(_ref3) {
+  var data = _ref3.data,
+    mob = _ref3.mob,
+    onUpdate = _ref3.onUpdate,
+    onFlush = _ref3.onFlush,
+    gcalEvents = _ref3.gcalEvents;
   mob = mob || false;
-  var _useState85 = useState(null),
-    _useState86 = _slicedToArray(_useState85, 2),
-    expandedShift = _useState86[0],
-    setExpandedShift = _useState86[1];
-  var _useState87 = useState({
+  var _useState113 = useState(null),
+    _useState114 = _slicedToArray(_useState113, 2),
+    expandedShift = _useState114[0],
+    setExpandedShift = _useState114[1];
+  var _useState115 = useState({
       notes: ""
     }),
-    _useState88 = _slicedToArray(_useState87, 2),
-    logDraft = _useState88[0],
-    setLogDraft = _useState88[1];
+    _useState116 = _slicedToArray(_useState115, 2),
+    logDraft = _useState116[0],
+    setLogDraft = _useState116[1];
   // Live refs so the draft-autosave (which fires on close/unmount) reads current
   // values instead of stale closure values captured when the shift was opened.
   var _draftRef = useRef(logDraft);
   _draftRef.current = logDraft;
-  var _useState89 = useState(""),
-    _useState90 = _slicedToArray(_useState89, 2),
-    goalInput = _useState90[0],
-    setGoalInput = _useState90[1];
-  var _useState91 = useState(false),
-    _useState92 = _slicedToArray(_useState91, 2),
-    showSettings = _useState92[0],
-    setShowSettings = _useState92[1];
-  var _useState93 = useState(0),
-    _useState94 = _slicedToArray(_useState93, 2),
-    cycleOffset = _useState94[0],
-    setCycleOffset = _useState94[1];
-  var _useState95 = useState(""),
-    _useState96 = _slicedToArray(_useState95, 2),
-    taskInput = _useState96[0],
-    setTaskInput = _useState96[1];
-  var _useState97 = useState(null),
-    _useState98 = _slicedToArray(_useState97, 2),
-    taskTag = _useState98[0],
-    setTaskTag = _useState98[1];
-  var _useState99 = useState(todayStr()),
-    _useState100 = _slicedToArray(_useState99, 2),
-    taskShiftDate = _useState100[0],
-    setTaskShiftDate = _useState100[1];
+  var _useState117 = useState(""),
+    _useState118 = _slicedToArray(_useState117, 2),
+    goalInput = _useState118[0],
+    setGoalInput = _useState118[1];
+  var _useState119 = useState(false),
+    _useState120 = _slicedToArray(_useState119, 2),
+    showSettings = _useState120[0],
+    setShowSettings = _useState120[1];
+  var _useState121 = useState(0),
+    _useState122 = _slicedToArray(_useState121, 2),
+    cycleOffset = _useState122[0],
+    setCycleOffset = _useState122[1];
+  var _useState123 = useState(""),
+    _useState124 = _slicedToArray(_useState123, 2),
+    taskInput = _useState124[0],
+    setTaskInput = _useState124[1];
+  var _useState125 = useState(null),
+    _useState126 = _slicedToArray(_useState125, 2),
+    taskTag = _useState126[0],
+    setTaskTag = _useState126[1];
+  var _useState127 = useState(todayStr()),
+    _useState128 = _slicedToArray(_useState127, 2),
+    taskShiftDate = _useState128[0],
+    setTaskShiftDate = _useState128[1];
   useEffect(function () {
     var first = (gcalEvents || []).filter(isGoTabEvent).sort(function (a, b) {
       return b.date.localeCompare(a.date);
@@ -8251,11 +9464,11 @@ function WorkSection(_ref4) {
   }))));
 }
 function App() {
-  var _useState101 = useState("Dashboard"),
-    _useState102 = _slicedToArray(_useState101, 2),
-    page = _useState102[0],
-    setPage = _useState102[1];
-  var _useState103 = useState(function () {
+  var _useState129 = useState("Dashboard"),
+    _useState130 = _slicedToArray(_useState129, 2),
+    page = _useState130[0],
+    setPage = _useState130[1];
+  var _useState131 = useState(function () {
       try {
         var s = localStorage.getItem("dash_v1");
         if (!s) return mergeWithDefaults(_objectSpread(_objectSpread({}, INIT), {}, {
@@ -8276,26 +9489,26 @@ function App() {
         }));
       }
     }),
-    _useState104 = _slicedToArray(_useState103, 2),
-    data = _useState104[0],
-    setData = _useState104[1];
-  var _useState105 = useState(0),
-    _useState106 = _slicedToArray(_useState105, 2),
-    wkOff = _useState106[0],
-    setWkOff = _useState106[1];
-  var _useState107 = useState(todayStr()),
-    _useState108 = _slicedToArray(_useState107, 2),
-    activeDay = _useState108[0],
-    setActiveDay = _useState108[1];
-  var _useState109 = useState([]),
-    _useState110 = _slicedToArray(_useState109, 2),
-    checkinBlocks = _useState110[0],
-    setCheckinBlocks = _useState110[1];
-  var _useState111 = useState(false),
-    _useState112 = _slicedToArray(_useState111, 2),
-    checkinOpen = _useState112[0],
-    setCheckinOpen = _useState112[1];
-  var _useState113 = useState([{
+    _useState132 = _slicedToArray(_useState131, 2),
+    data = _useState132[0],
+    setData = _useState132[1];
+  var _useState133 = useState(0),
+    _useState134 = _slicedToArray(_useState133, 2),
+    wkOff = _useState134[0],
+    setWkOff = _useState134[1];
+  var _useState135 = useState(todayStr()),
+    _useState136 = _slicedToArray(_useState135, 2),
+    activeDay = _useState136[0],
+    setActiveDay = _useState136[1];
+  var _useState137 = useState([]),
+    _useState138 = _slicedToArray(_useState137, 2),
+    checkinBlocks = _useState138[0],
+    setCheckinBlocks = _useState138[1];
+  var _useState139 = useState(false),
+    _useState140 = _slicedToArray(_useState139, 2),
+    checkinOpen = _useState140[0],
+    setCheckinOpen = _useState140[1];
+  var _useState141 = useState([{
       id: 1,
       exercise: "",
       sets: "",
@@ -8314,9 +9527,9 @@ function App() {
       reps: "",
       weight: ""
     }]),
-    _useState114 = _slicedToArray(_useState113, 2),
-    nxtRows = _useState114[0],
-    setNxtRows = _useState114[1];
+    _useState142 = _slicedToArray(_useState141, 2),
+    nxtRows = _useState142[0],
+    setNxtRows = _useState142[1];
   // Pre-fill nxtRows — check for a saved draft first, then fall back to rotation template
   useEffect(function () {
     var gr = data.gym.rotation || [];
@@ -8369,221 +9582,221 @@ function App() {
       }));
     } catch (_) {}
   }, [nxtRows]);
-  var _useState115 = useState(""),
-    _useState116 = _slicedToArray(_useState115, 2),
-    bwIn = _useState116[0],
-    setBwIn = _useState116[1];
-  var _useState117 = useState(todayStr()),
-    _useState118 = _slicedToArray(_useState117, 2),
-    bwDate = _useState118[0],
-    setBwDate = _useState118[1];
-  var _useState119 = useState(false),
-    _useState120 = _slicedToArray(_useState119, 2),
-    bwEditing = _useState120[0],
-    setBwEditing = _useState120[1];
-  var _useState121 = useState(false),
-    _useState122 = _slicedToArray(_useState121, 2),
-    showCapture = _useState122[0],
-    setShowCapture = _useState122[1];
-  var _useState123 = useState(""),
-    _useState124 = _slicedToArray(_useState123, 2),
-    captureText = _useState124[0],
-    setCaptureText = _useState124[1];
-  var _useState125 = useState(false),
-    _useState126 = _slicedToArray(_useState125, 2),
-    captureLoading = _useState126[0],
-    setCaptureLoading = _useState126[1];
-  var _useState127 = useState(null),
-    _useState128 = _slicedToArray(_useState127, 2),
-    captureResult = _useState128[0],
-    setCaptureResult = _useState128[1];
-  var _useState129 = useState(false),
-    _useState130 = _slicedToArray(_useState129, 2),
-    showBoardroom = _useState130[0],
-    setShowBoardroom = _useState130[1];
-  var _useState131 = useState([]),
-    _useState132 = _slicedToArray(_useState131, 2),
-    brMessages = _useState132[0],
-    setBrMessages = _useState132[1];
-  var _useState133 = useState(""),
-    _useState134 = _slicedToArray(_useState133, 2),
-    brInput = _useState134[0],
-    setBrInput = _useState134[1];
-  var _useState135 = useState(false),
-    _useState136 = _slicedToArray(_useState135, 2),
-    brLoading = _useState136[0],
-    setBrLoading = _useState136[1];
-  var _useState137 = useState(null),
-    _useState138 = _slicedToArray(_useState137, 2),
-    brLastSpeaker = _useState138[0],
-    setBrLastSpeaker = _useState138[1]; // kept for Firestore compat only
-  var _useState139 = useState([]),
-    _useState140 = _slicedToArray(_useState139, 2),
-    brGoalProposals = _useState140[0],
-    setBrGoalProposals = _useState140[1];
-  var _useState141 = useState([]),
-    _useState142 = _slicedToArray(_useState141, 2),
-    brTaskProposals = _useState142[0],
-    setBrTaskProposals = _useState142[1]; // commitments from the last session, addable as real tasks
-  var _useState143 = useState(false),
+  var _useState143 = useState(""),
     _useState144 = _slicedToArray(_useState143, 2),
-    brClosing = _useState144[0],
-    setBrClosing = _useState144[1];
-  var _useState145 = useState(null),
+    bwIn = _useState144[0],
+    setBwIn = _useState144[1];
+  var _useState145 = useState(todayStr()),
     _useState146 = _slicedToArray(_useState145, 2),
-    brIntentMode = _useState146[0],
-    setBrIntentMode = _useState146[1]; // 'howto' | 'direction' — for header badge / loading copy
-  var _useState147 = useState(null),
+    bwDate = _useState146[0],
+    setBwDate = _useState146[1];
+  var _useState147 = useState(false),
     _useState148 = _slicedToArray(_useState147, 2),
-    brPendingIntent = _useState148[0],
-    setBrPendingIntent = _useState148[1]; // {text, reconfirmed} awaiting a one-tap mode choice
+    bwEditing = _useState148[0],
+    setBwEditing = _useState148[1];
   var _useState149 = useState(false),
     _useState150 = _slicedToArray(_useState149, 2),
-    brShowProjCtx = _useState150[0],
-    setBrShowProjCtx = _useState150[1]; // project-context panel open/closed
-  var brMigrationRef = React.useRef(false);
-  var _useState151 = useState([]),
+    showCapture = _useState150[0],
+    setShowCapture = _useState150[1];
+  var _useState151 = useState(""),
     _useState152 = _slicedToArray(_useState151, 2),
-    capturesData = _useState152[0],
-    setCapturesData = _useState152[1];
+    captureText = _useState152[0],
+    setCaptureText = _useState152[1];
   var _useState153 = useState(false),
     _useState154 = _slicedToArray(_useState153, 2),
-    capturesLoading = _useState154[0],
-    setCapturesLoading = _useState154[1];
-  var _useState155 = useState("all"),
+    captureLoading = _useState154[0],
+    setCaptureLoading = _useState154[1];
+  var _useState155 = useState(null),
     _useState156 = _slicedToArray(_useState155, 2),
-    capturesFilter = _useState156[0],
-    setCapturesFilter = _useState156[1];
-  var _useState157 = useState("captures"),
+    captureResult = _useState156[0],
+    setCaptureResult = _useState156[1];
+  var _useState157 = useState(false),
     _useState158 = _slicedToArray(_useState157, 2),
-    journalTab = _useState158[0],
-    setJournalTab = _useState158[1];
-  var _useState159 = useState(""),
+    showBoardroom = _useState158[0],
+    setShowBoardroom = _useState158[1];
+  var _useState159 = useState([]),
     _useState160 = _slicedToArray(_useState159, 2),
-    capturesSearch = _useState160[0],
-    setCapturesSearch = _useState160[1];
-  var _useState161 = useState(null),
+    brMessages = _useState160[0],
+    setBrMessages = _useState160[1];
+  var _useState161 = useState(""),
     _useState162 = _slicedToArray(_useState161, 2),
-    expandedCapture = _useState162[0],
-    setExpandedCapture = _useState162[1];
-  var _useState163 = useState(null),
+    brInput = _useState162[0],
+    setBrInput = _useState162[1];
+  var _useState163 = useState(false),
     _useState164 = _slicedToArray(_useState163, 2),
-    expandedRefl = _useState164[0],
-    setExpandedRefl = _useState164[1];
+    brLoading = _useState164[0],
+    setBrLoading = _useState164[1];
   var _useState165 = useState(null),
     _useState166 = _slicedToArray(_useState165, 2),
-    editCaptureData = _useState166[0],
-    setEditCaptureData = _useState166[1];
-  var _useState167 = useState(""),
+    brLastSpeaker = _useState166[0],
+    setBrLastSpeaker = _useState166[1]; // kept for Firestore compat only
+  var _useState167 = useState([]),
     _useState168 = _slicedToArray(_useState167, 2),
-    editCaptureTagStr = _useState168[0],
-    setEditCaptureTagStr = _useState168[1];
-  var _useState169 = useState(null),
+    brGoalProposals = _useState168[0],
+    setBrGoalProposals = _useState168[1];
+  var _useState169 = useState([]),
     _useState170 = _slicedToArray(_useState169, 2),
-    appVersion = _useState170[0],
-    setAppVersion = _useState170[1];
-  var _useState171 = useState(null),
+    brTaskProposals = _useState170[0],
+    setBrTaskProposals = _useState170[1]; // commitments from the last session, addable as real tasks
+  var _useState171 = useState(false),
     _useState172 = _slicedToArray(_useState171, 2),
-    editTaskId = _useState172[0],
-    setEditTaskId = _useState172[1];
-  var _useState173 = useState({}),
+    brClosing = _useState172[0],
+    setBrClosing = _useState172[1];
+  var _useState173 = useState(null),
     _useState174 = _slicedToArray(_useState173, 2),
-    editTaskForm = _useState174[0],
-    setEditTaskForm = _useState174[1];
-  var _useState175 = useState(false),
+    brIntentMode = _useState174[0],
+    setBrIntentMode = _useState174[1]; // 'howto' | 'direction' — for header badge / loading copy
+  var _useState175 = useState(null),
     _useState176 = _slicedToArray(_useState175, 2),
-    gymDraftBanner = _useState176[0],
-    setGymDraftBanner = _useState176[1];
-  var _useState177 = useState(null),
+    brPendingIntent = _useState176[0],
+    setBrPendingIntent = _useState176[1]; // {text, reconfirmed} awaiting a one-tap mode choice
+  var _useState177 = useState(false),
     _useState178 = _slicedToArray(_useState177, 2),
-    scheduleTaskId = _useState178[0],
-    setScheduleTaskId = _useState178[1];
-  var _useState179 = useState(null),
+    brShowProjCtx = _useState178[0],
+    setBrShowProjCtx = _useState178[1]; // project-context panel open/closed
+  var brMigrationRef = React.useRef(false);
+  var _useState179 = useState([]),
     _useState180 = _slicedToArray(_useState179, 2),
-    scheduleForDay = _useState180[0],
-    setScheduleForDay = _useState180[1];
-  var _useState181 = useState("09:00"),
+    capturesData = _useState180[0],
+    setCapturesData = _useState180[1];
+  var _useState181 = useState(false),
     _useState182 = _slicedToArray(_useState181, 2),
-    scheduleTime = _useState182[0],
-    setScheduleTime = _useState182[1];
-  var _useState183 = useState(60),
+    capturesLoading = _useState182[0],
+    setCapturesLoading = _useState182[1];
+  var _useState183 = useState("all"),
     _useState184 = _slicedToArray(_useState183, 2),
-    scheduleDuration = _useState184[0],
-    setScheduleDuration = _useState184[1];
-  var _useState185 = useState(false),
+    capturesFilter = _useState184[0],
+    setCapturesFilter = _useState184[1];
+  var _useState185 = useState("captures"),
     _useState186 = _slicedToArray(_useState185, 2),
-    showTimePicker = _useState186[0],
-    setShowTimePicker = _useState186[1];
-  var _useState187 = useState(false),
+    journalTab = _useState186[0],
+    setJournalTab = _useState186[1];
+  var _useState187 = useState(""),
     _useState188 = _slicedToArray(_useState187, 2),
-    showArch = _useState188[0],
-    setShowArch = _useState188[1];
-  var _useState189 = useState(0),
+    capturesSearch = _useState188[0],
+    setCapturesSearch = _useState188[1];
+  var _useState189 = useState(null),
     _useState190 = _slicedToArray(_useState189, 2),
-    reflStep = _useState190[0],
-    setReflStep = _useState190[1];
-  var _useState191 = useState([]),
+    expandedCapture = _useState190[0],
+    setExpandedCapture = _useState190[1];
+  var _useState191 = useState(null),
     _useState192 = _slicedToArray(_useState191, 2),
-    reflAns = _useState192[0],
-    setReflAns = _useState192[1];
-  var _useState193 = useState(""),
+    expandedRefl = _useState192[0],
+    setExpandedRefl = _useState192[1];
+  var _useState193 = useState(null),
     _useState194 = _slicedToArray(_useState193, 2),
-    reflIn = _useState194[0],
-    setReflIn = _useState194[1];
-  var _useState195 = useState(null),
+    editCaptureData = _useState194[0],
+    setEditCaptureData = _useState194[1];
+  var _useState195 = useState(""),
     _useState196 = _slicedToArray(_useState195, 2),
-    reflAnalysis = _useState196[0],
-    setReflAnalysis = _useState196[1];
+    editCaptureTagStr = _useState196[0],
+    setEditCaptureTagStr = _useState196[1];
   var _useState197 = useState(null),
     _useState198 = _slicedToArray(_useState197, 2),
-    modal = _useState198[0],
-    setModal = _useState198[1];
-  var _useState199 = useState({}),
+    appVersion = _useState198[0],
+    setAppVersion = _useState198[1];
+  var _useState199 = useState(null),
     _useState200 = _slicedToArray(_useState199, 2),
-    mForm = _useState200[0],
-    setMForm = _useState200[1];
-  var _useState201 = useState("loading"),
+    editTaskId = _useState200[0],
+    setEditTaskId = _useState200[1];
+  var _useState201 = useState({}),
     _useState202 = _slicedToArray(_useState201, 2),
-    syncStatus = _useState202[0],
-    setSyncStatus = _useState202[1];
-  var _useState203 = useState("idle"),
+    editTaskForm = _useState202[0],
+    setEditTaskForm = _useState202[1];
+  var _useState203 = useState(false),
     _useState204 = _slicedToArray(_useState203, 2),
-    obsExportStatus = _useState204[0],
-    setObsExportStatus = _useState204[1]; // idle | running | done | error
+    gymDraftBanner = _useState204[0],
+    setGymDraftBanner = _useState204[1];
   var _useState205 = useState(null),
     _useState206 = _slicedToArray(_useState205, 2),
-    authUser = _useState206[0],
-    setAuthUser = _useState206[1];
-  var _useState207 = useState(true),
+    scheduleTaskId = _useState206[0],
+    setScheduleTaskId = _useState206[1];
+  var _useState207 = useState(null),
     _useState208 = _slicedToArray(_useState207, 2),
-    authLoading = _useState208[0],
-    setAuthLoading = _useState208[1];
+    scheduleForDay = _useState208[0],
+    setScheduleForDay = _useState208[1];
+  var _useState209 = useState("09:00"),
+    _useState210 = _slicedToArray(_useState209, 2),
+    scheduleTime = _useState210[0],
+    setScheduleTime = _useState210[1];
+  var _useState211 = useState(60),
+    _useState212 = _slicedToArray(_useState211, 2),
+    scheduleDuration = _useState212[0],
+    setScheduleDuration = _useState212[1];
+  var _useState213 = useState(false),
+    _useState214 = _slicedToArray(_useState213, 2),
+    showTimePicker = _useState214[0],
+    setShowTimePicker = _useState214[1];
+  var _useState215 = useState(false),
+    _useState216 = _slicedToArray(_useState215, 2),
+    showArch = _useState216[0],
+    setShowArch = _useState216[1];
+  var _useState217 = useState(0),
+    _useState218 = _slicedToArray(_useState217, 2),
+    reflStep = _useState218[0],
+    setReflStep = _useState218[1];
+  var _useState219 = useState([]),
+    _useState220 = _slicedToArray(_useState219, 2),
+    reflAns = _useState220[0],
+    setReflAns = _useState220[1];
+  var _useState221 = useState(""),
+    _useState222 = _slicedToArray(_useState221, 2),
+    reflIn = _useState222[0],
+    setReflIn = _useState222[1];
+  var _useState223 = useState(null),
+    _useState224 = _slicedToArray(_useState223, 2),
+    reflAnalysis = _useState224[0],
+    setReflAnalysis = _useState224[1];
+  var _useState225 = useState(null),
+    _useState226 = _slicedToArray(_useState225, 2),
+    modal = _useState226[0],
+    setModal = _useState226[1];
+  var _useState227 = useState({}),
+    _useState228 = _slicedToArray(_useState227, 2),
+    mForm = _useState228[0],
+    setMForm = _useState228[1];
+  var _useState229 = useState("loading"),
+    _useState230 = _slicedToArray(_useState229, 2),
+    syncStatus = _useState230[0],
+    setSyncStatus = _useState230[1];
+  var _useState231 = useState("idle"),
+    _useState232 = _slicedToArray(_useState231, 2),
+    obsExportStatus = _useState232[0],
+    setObsExportStatus = _useState232[1]; // idle | running | done | error
+  var _useState233 = useState(null),
+    _useState234 = _slicedToArray(_useState233, 2),
+    authUser = _useState234[0],
+    setAuthUser = _useState234[1];
+  var _useState235 = useState(true),
+    _useState236 = _slicedToArray(_useState235, 2),
+    authLoading = _useState236[0],
+    setAuthLoading = _useState236[1];
   var _fbReady = useRef(false);
   var _dataLoaded = useRef(false); // only true after we've confirmed Firebase state
   var _saveTimer = useRef(null);
   var _flushNow = useRef(false); // set to skip the 2s debounce for discrete saves (e.g. shift logs)
-  var _useState209 = useState({
+  var _useState237 = useState({
       title: "",
       tags: "",
       content: ""
     }),
-    _useState210 = _slicedToArray(_useState209, 2),
-    docIn = _useState210[0],
-    setDocIn = _useState210[1];
-  var _useState211 = useState(false),
-    _useState212 = _slicedToArray(_useState211, 2),
-    forceMob = _useState212[0],
-    setForceMob = _useState212[1];
-  var _useState213 = useState(function () {
+    _useState238 = _slicedToArray(_useState237, 2),
+    docIn = _useState238[0],
+    setDocIn = _useState238[1];
+  var _useState239 = useState(false),
+    _useState240 = _slicedToArray(_useState239, 2),
+    forceMob = _useState240[0],
+    setForceMob = _useState240[1];
+  var _useState241 = useState(function () {
       try {
         return localStorage.getItem("nav_collapsed") === "1";
       } catch (_) {
         return false;
       }
     }),
-    _useState214 = _slicedToArray(_useState213, 2),
-    navCollapsed = _useState214[0],
-    setNavCollapsed = _useState214[1];
+    _useState242 = _slicedToArray(_useState241, 2),
+    navCollapsed = _useState242[0],
+    setNavCollapsed = _useState242[1];
   function toggleNav() {
     setNavCollapsed(function (c) {
       var nv = !c;
@@ -8595,32 +9808,32 @@ function App() {
   }
   var rawMob = useIsMob();
   var mob = forceMob || rawMob;
-  var _useState215 = useState(false),
-    _useState216 = _slicedToArray(_useState215, 2),
-    checkinLoading = _useState216[0],
-    setCheckinLoading = _useState216[1];
-  var _useState217 = useState(false),
-    _useState218 = _slicedToArray(_useState217, 2),
-    reflAnalysisLoading = _useState218[0],
-    setReflAnalysisLoading = _useState218[1];
-  var _useState219 = useState(false),
-    _useState220 = _slicedToArray(_useState219, 2),
-    showMonitor = _useState220[0],
-    setShowMonitor = _useState220[1];
-  var _useState221 = useState(null),
-    _useState222 = _slicedToArray(_useState221, 2),
-    toast = _useState222[0],
-    setToast = _useState222[1]; // {msg,type:'error'|'success'|'warn'}
-  var _useState223 = useState([]),
-    _useState224 = _slicedToArray(_useState223, 2),
-    errLog = _useState224[0],
-    setErrLog = _useState224[1];
-  var _useState225 = useState(false),
-    _useState226 = _slicedToArray(_useState225, 2),
-    showErrPanel = _useState226[0],
-    setShowErrPanel = _useState226[1];
+  var _useState243 = useState(false),
+    _useState244 = _slicedToArray(_useState243, 2),
+    checkinLoading = _useState244[0],
+    setCheckinLoading = _useState244[1];
+  var _useState245 = useState(false),
+    _useState246 = _slicedToArray(_useState245, 2),
+    reflAnalysisLoading = _useState246[0],
+    setReflAnalysisLoading = _useState246[1];
+  var _useState247 = useState(false),
+    _useState248 = _slicedToArray(_useState247, 2),
+    showMonitor = _useState248[0],
+    setShowMonitor = _useState248[1];
+  var _useState249 = useState(null),
+    _useState250 = _slicedToArray(_useState249, 2),
+    toast = _useState250[0],
+    setToast = _useState250[1]; // {msg,type:'error'|'success'|'warn'}
+  var _useState251 = useState([]),
+    _useState252 = _slicedToArray(_useState251, 2),
+    errLog = _useState252[0],
+    setErrLog = _useState252[1];
+  var _useState253 = useState(false),
+    _useState254 = _slicedToArray(_useState253, 2),
+    showErrPanel = _useState254[0],
+    setShowErrPanel = _useState254[1];
   // Google Calendar sync state
-  var _useState227 = useState(function () {
+  var _useState255 = useState(function () {
       try {
         var c = localStorage.getItem('__gcal_events__');
         return c ? JSON.parse(c) : [];
@@ -8628,18 +9841,18 @@ function App() {
         return [];
       }
     }),
-    _useState228 = _slicedToArray(_useState227, 2),
-    gcalEvents = _useState228[0],
-    setGcalEvents = _useState228[1];
-  var _useState229 = useState(false),
-    _useState230 = _slicedToArray(_useState229, 2),
-    gcalConnected = _useState230[0],
-    setGcalConnected = _useState230[1];
-  var _useState231 = useState([]),
-    _useState232 = _slicedToArray(_useState231, 2),
-    gcalCalendars = _useState232[0],
-    setGcalCalendars = _useState232[1];
-  var _useState233 = useState(function () {
+    _useState256 = _slicedToArray(_useState255, 2),
+    gcalEvents = _useState256[0],
+    setGcalEvents = _useState256[1];
+  var _useState257 = useState(false),
+    _useState258 = _slicedToArray(_useState257, 2),
+    gcalConnected = _useState258[0],
+    setGcalConnected = _useState258[1];
+  var _useState259 = useState([]),
+    _useState260 = _slicedToArray(_useState259, 2),
+    gcalCalendars = _useState260[0],
+    setGcalCalendars = _useState260[1];
+  var _useState261 = useState(function () {
       try {
         var s = localStorage.getItem('__gcal_selected__');
         return s ? JSON.parse(s) : [];
@@ -8647,72 +9860,72 @@ function App() {
         return [];
       }
     }),
-    _useState234 = _slicedToArray(_useState233, 2),
-    gcalSelectedIds = _useState234[0],
-    setGcalSelectedIds = _useState234[1];
-  var _useState235 = useState(false),
-    _useState236 = _slicedToArray(_useState235, 2),
-    gcalReady = _useState236[0],
-    setGcalReady = _useState236[1];
-  var _useState237 = useState(false),
-    _useState238 = _slicedToArray(_useState237, 2),
-    showCalPicker = _useState238[0],
-    setShowCalPicker = _useState238[1];
+    _useState262 = _slicedToArray(_useState261, 2),
+    gcalSelectedIds = _useState262[0],
+    setGcalSelectedIds = _useState262[1];
+  var _useState263 = useState(false),
+    _useState264 = _slicedToArray(_useState263, 2),
+    gcalReady = _useState264[0],
+    setGcalReady = _useState264[1];
+  var _useState265 = useState(false),
+    _useState266 = _slicedToArray(_useState265, 2),
+    showCalPicker = _useState266[0],
+    setShowCalPicker = _useState266[1];
   // Syllabus / assessment hub state
-  var _useState239 = useState(false),
-    _useState240 = _slicedToArray(_useState239, 2),
-    showSyllabusImport = _useState240[0],
-    setShowSyllabusImport = _useState240[1];
-  var _useState241 = useState(""),
-    _useState242 = _slicedToArray(_useState241, 2),
-    syllabusText = _useState242[0],
-    setSyllabusText = _useState242[1];
-  var _useState243 = useState("2026-04-20"),
-    _useState244 = _slicedToArray(_useState243, 2),
-    syllabusStart = _useState244[0],
-    setSyllabusStart = _useState244[1];
-  var _useState245 = useState(function () {
+  var _useState267 = useState(false),
+    _useState268 = _slicedToArray(_useState267, 2),
+    showSyllabusImport = _useState268[0],
+    setShowSyllabusImport = _useState268[1];
+  var _useState269 = useState(""),
+    _useState270 = _slicedToArray(_useState269, 2),
+    syllabusText = _useState270[0],
+    setSyllabusText = _useState270[1];
+  var _useState271 = useState("2026-04-20"),
+    _useState272 = _slicedToArray(_useState271, 2),
+    syllabusStart = _useState272[0],
+    setSyllabusStart = _useState272[1];
+  var _useState273 = useState(function () {
       try {
         return localStorage.getItem('__gemini_key__') || "";
       } catch (_) {
         return "";
       }
     }),
-    _useState246 = _slicedToArray(_useState245, 2),
-    geminiKey = _useState246[0],
-    setGeminiKey = _useState246[1];
-  var _useState247 = useState(function () {
+    _useState274 = _slicedToArray(_useState273, 2),
+    geminiKey = _useState274[0],
+    setGeminiKey = _useState274[1];
+  var _useState275 = useState(function () {
       try {
         return localStorage.getItem('__groq_key__') || "";
       } catch (_) {
         return "";
       }
     }),
-    _useState248 = _slicedToArray(_useState247, 2),
-    groqKey = _useState248[0],
-    setGroqKey = _useState248[1];
-  var _useState249 = useState(false),
-    _useState250 = _slicedToArray(_useState249, 2),
-    geminiLoading = _useState250[0],
-    setGeminiLoading = _useState250[1];
-  var _useState251 = useState(null),
-    _useState252 = _slicedToArray(_useState251, 2),
-    geminiPreview = _useState252[0],
-    setGeminiPreview = _useState252[1];
-  var _useState253 = useState(false),
-    _useState254 = _slicedToArray(_useState253, 2),
-    showAddAssess = _useState254[0],
-    setShowAddAssess = _useState254[1];
-  var _useState255 = useState({
+    _useState276 = _slicedToArray(_useState275, 2),
+    groqKey = _useState276[0],
+    setGroqKey = _useState276[1];
+  var _useState277 = useState(false),
+    _useState278 = _slicedToArray(_useState277, 2),
+    geminiLoading = _useState278[0],
+    setGeminiLoading = _useState278[1];
+  var _useState279 = useState(null),
+    _useState280 = _slicedToArray(_useState279, 2),
+    geminiPreview = _useState280[0],
+    setGeminiPreview = _useState280[1];
+  var _useState281 = useState(false),
+    _useState282 = _slicedToArray(_useState281, 2),
+    showAddAssess = _useState282[0],
+    setShowAddAssess = _useState282[1];
+  var _useState283 = useState({
       subject: "WIA&B",
       name: "",
       type: "SUBMISSION",
       date: todayStr()
     }),
-    _useState256 = _slicedToArray(_useState255, 2),
-    addAssessForm = _useState256[0],
-    setAddAssessForm = _useState256[1];
-  var _useState257 = useState(function () {
+    _useState284 = _slicedToArray(_useState283, 2),
+    addAssessForm = _useState284[0],
+    setAddAssessForm = _useState284[1];
+  var _useState285 = useState(function () {
       try {
         var x = localStorage.getItem('__gcal_excluded__');
         return x ? JSON.parse(x) : [];
@@ -8720,9 +9933,9 @@ function App() {
         return [];
       }
     }),
-    _useState258 = _slicedToArray(_useState257, 2),
-    gcalExcludedIds = _useState258[0],
-    setGcalExcludedIds = _useState258[1];
+    _useState286 = _slicedToArray(_useState285, 2),
+    gcalExcludedIds = _useState286[0],
+    setGcalExcludedIds = _useState286[1];
 
   // Call this anywhere in App to show a brief auto-dismissing notification.
   // Child components can call window.showToast() which is wired up below.

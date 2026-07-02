@@ -1462,15 +1462,18 @@ function FinanceSection({data,onUpdate,mob,gcalEvents,work}){
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// Invest tab — personal "mini-Bloomberg": watchlist, portfolio P&L, price
-// chart, and an AI "explain this" panel. Market data comes from
-// window.MarketService (Finnhub, 15-min delayed). With no Finnhub key set it
-// runs in DEMO MODE with deterministic mock data so the tab always renders.
+// Invest tab — personal "mini-Bloomberg": watchlist, cost-basis lots, portfolio
+// P&L in a base currency (AUD), allocation, valuation, analyst ratings,
+// benchmark overlay, and AI portfolio review. Market data via
+// window.MarketService (Finnhub quotes/metrics + Twelve Data EOD charts + ECB
+// FX), with a deterministic DEMO MODE so the tab always renders with no keys.
 // Not financial advice — informational only.
 // ══════════════════════════════════════════════════════════════════════════
 function invFmt(n,dp){if(n===undefined||n===null||n===""||isNaN(n))return "—";dp=dp===undefined?2:dp;return Number(n).toLocaleString("en-US",{minimumFractionDigits:dp,maximumFractionDigits:dp});}
 function invPct(n){if(n===undefined||n===null||isNaN(n))return "—";return (n>=0?"+":"")+Number(n).toFixed(2)+"%";}
 function invUniq(a){var seen={},out=[];a.forEach(function(x){var k=(x||"").toUpperCase();if(x&&!seen[k]){seen[k]=1;out.push(k);}});return out;}
+function invMoney(n,base){if(n===undefined||n===null||isNaN(n))return "—";return (base==="AUD"?"A$":"$")+invFmt(n);}
+function invCompact(n,base){if(n===undefined||n===null||isNaN(n))return "—";var p=base==="AUD"?"A$":"$";var a=Math.abs(n);if(a>=1e9)return p+(n/1e9).toFixed(2)+"B";if(a>=1e6)return p+(n/1e6).toFixed(2)+"M";if(a>=1e3)return p+(n/1e3).toFixed(1)+"k";return p+invFmt(n);}
 // Coerce whatever getCandles returns into a flat array of closing prices.
 function invCloses(c){
   if(!c)return[];
@@ -1487,33 +1490,82 @@ function invCloses(c){
 function invQPrice(q){if(!q)return null;return q.price!==undefined?q.price:(q.c!==undefined?q.c:null);}
 function invQChg(q){if(!q)return null;return q.change!==undefined?q.change:(q.d!==undefined?q.d:null);}
 function invQPct(q){if(!q)return null;return q.changePercent!==undefined?q.changePercent:(q.changePct!==undefined?q.changePct:(q.dp!==undefined?q.dp:null));}
+function invNorm(closes){if(!closes||closes.length<2)return[];var base=closes[0]||1;return closes.map(function(v){return ((v/base)-1)*100;});}
+var INV_PALETTE=["#5b8cff","#69f0ae","#ffd166","#ff9a3c","#c58cff","#4dd0e1","#ff6b6b","#9ccc65","#f06292","#7986cb"];
 
-// Dependency-free SVG area+line chart of closing prices.
-function InvChart({closes,h,accent}){
-  h=h||190;
-  var W=1000; // viewBox width; SVG scales to container via width:100%
-  if(!closes||closes.length<2)return <div style={{height:h,display:"flex",alignItems:"center",justifyContent:"center",color:T.text3,fontSize:12}}>No chart data available</div>;
-  var n=closes.length;
-  var min=Math.min.apply(null,closes),max=Math.max.apply(null,closes);
-  var pad=(max-min)*0.10||Math.abs(max)*0.02||1;min-=pad;max+=pad;
-  var span=(max-min)||1;
-  var X=function(i){return (i/(n-1))*W;};
-  var Y=function(v){return h-((v-min)/span)*h;};
-  var pts=closes.map(function(v,i){return X(i).toFixed(1)+","+Y(v).toFixed(1);});
-  var line="M"+pts.join(" L");
-  var area=line+" L"+W.toFixed(1)+","+h+" L0,"+h+" Z";
-  var up=closes[n-1]>=closes[0];
-  var col=accent||(up?"#69f0ae":"#ff6b6b");
-  var gid="invgrad_"+n+"_"+Math.round(closes[0]);
+// Dependency-free SVG chart. Pass `closes` for a single price line (with area
+// fill), or `series:[{closes,color,label}]` for a normalized %-return overlay.
+function InvChart(props){
+  var h=props.h||190;var W=1000;var mob=props.mob;
+  var lines;
+  if(props.series&&props.series.length){
+    lines=props.series.map(function(s){return{vals:invNorm(s.closes),color:s.color,label:s.label,pct:true};}).filter(function(l){return l.vals.length>1;});
+  }else if(props.closes&&props.closes.length>1){
+    var up=props.closes[props.closes.length-1]>=props.closes[0];
+    lines=[{vals:props.closes,color:props.accent||(up?"#69f0ae":"#ff6b6b"),area:true}];
+  }else{lines=[];}
+  if(!lines.length)return <div style={{height:h,display:"flex",alignItems:"center",justifyContent:"center",color:T.text3,fontSize:12}}>No chart data available</div>;
+  var allV=[];lines.forEach(function(l){allV=allV.concat(l.vals);});
+  var min=Math.min.apply(null,allV),max=Math.max.apply(null,allV);
+  var pad=(max-min)*0.10||Math.abs(max)*0.02||1;min-=pad;max+=pad;var span=(max-min)||1;
+  function Y(v){return h-((v-min)/span)*h;}
+  function pathFor(vals){var nn=vals.length;return vals.map(function(v,i){return ((i/((nn-1)||1))*W).toFixed(1)+","+Y(v).toFixed(1);});}
+  var zeroY=(props.series&&min<0&&max>0)?Y(0):null;
   return (
-    <svg viewBox={"0 0 "+W+" "+h} preserveAspectRatio="none" style={{width:"100%",height:h,display:"block"}}>
-      <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor={col} stopOpacity="0.28"/>
-        <stop offset="100%" stopColor={col} stopOpacity="0"/>
-      </linearGradient></defs>
-      <path d={area} fill={"url(#"+gid+")"}/>
-      <path d={line} fill="none" stroke={col} strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
+    <div>
+      <svg viewBox={"0 0 "+W+" "+h} preserveAspectRatio="none" style={{width:"100%",height:h,display:"block"}}>
+        <defs>{lines.map(function(l,i){return l.area?<linearGradient key={i} id={"invg"+i+"_"+Math.round(l.vals[0]||0)} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={l.color} stopOpacity="0.28"/><stop offset="100%" stopColor={l.color} stopOpacity="0"/></linearGradient>:null;})}</defs>
+        {zeroY!==null&&<line x1="0" y1={zeroY} x2={W} y2={zeroY} stroke="rgba(255,255,255,0.14)" strokeWidth="1" strokeDasharray="4 5" vectorEffect="non-scaling-stroke"/>}
+        {lines.map(function(l,i){var pts=pathFor(l.vals);var line="M"+pts.join(" L");return (
+          <g key={i}>
+            {l.area&&<path d={line+" L"+W.toFixed(1)+","+h+" L0,"+h+" Z"} fill={"url(#invg"+i+"_"+Math.round(l.vals[0]||0)+")"}/>}
+            <path d={line} fill="none" stroke={l.color} strokeWidth={l.pct?1.8:2} strokeLinejoin="round" strokeOpacity={l.label==="benchmark"?0.65:1} strokeDasharray={l.label==="benchmark"?"5 4":undefined} vectorEffect="non-scaling-stroke"/>
+          </g>
+        );})}
+      </svg>
+      {props.series&&<div style={{display:"flex",gap:14,marginTop:6,flexWrap:"wrap"}}>{props.series.map(function(s,i){return <span key={i} style={{fontSize:10,color:T.text3,display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:2,background:s.color,display:"inline-block",borderRadius:2}}/>{s.name} {invNorm(s.closes).length>1?invPct(invNorm(s.closes).slice(-1)[0]):""}</span>;})}</div>}
+    </div>
+  );
+}
+
+// Compact inline sparkline for table rows.
+function InvSpark(props){
+  var closes=props.closes||[];var w=props.w||88,h=props.h||26;
+  if(closes.length<2)return <svg width={w} height={h}/>;
+  var min=Math.min.apply(null,closes),max=Math.max.apply(null,closes);var span=(max-min)||1;
+  var up=closes[closes.length-1]>=closes[0];var col=up?"#69f0ae":"#ff6b6b";
+  var pts=closes.map(function(v,i){return ((i/(closes.length-1))*w).toFixed(1)+","+(h-((v-min)/span)*(h-3)-1.5).toFixed(1);});
+  return <svg width={w} height={h} style={{display:"block"}}><path d={"M"+pts.join(" L")} fill="none" stroke={col} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round"/></svg>;
+}
+
+// SVG donut from slices [{label,value,color}].
+function InvDonut(props){
+  var slices=(props.slices||[]).filter(function(s){return s.value>0;});var size=props.size||150;
+  var total=slices.reduce(function(a,s){return a+s.value;},0);
+  var r=size/2-14,cx=size/2,cy=size/2,C=2*Math.PI*r;var off=0;
+  if(!total)return <div style={{width:size,height:size,display:"flex",alignItems:"center",justifyContent:"center",color:T.text3,fontSize:11}}>No data</div>;
+  return (
+    <svg width={size} height={size} viewBox={"0 0 "+size+" "+size}>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="14"/>
+      {slices.map(function(s,i){var frac=s.value/total;var dash=frac*C;var el=<circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={s.color} strokeWidth="14" strokeDasharray={dash.toFixed(2)+" "+(C-dash).toFixed(2)} strokeDashoffset={(-off).toFixed(2)} transform={"rotate(-90 "+cx+" "+cy+")"} strokeLinecap="butt"/>;off+=dash;return el;})}
     </svg>
+  );
+}
+
+// Analyst recommendation stacked bar.
+function InvRatingBar(props){
+  var r=props.rec||{};var segs=[["strongBuy","#2e9e5b"],["buy","#69f0ae"],["hold","#ffd166"],["sell","#ff9a3c"],["strongSell","#ff6b6b"]];
+  var total=segs.reduce(function(a,s){return a+(Number(r[s[0]])||0);},0);
+  if(!total)return <div style={{fontSize:11,color:T.text3}}>No analyst data</div>;
+  return (
+    <div>
+      <div style={{display:"flex",height:10,borderRadius:6,overflow:"hidden",background:"rgba(255,255,255,0.05)"}}>
+        {segs.map(function(s,i){var v=Number(r[s[0]])||0;if(!v)return null;return <div key={i} title={s[0]+": "+v} style={{width:(v/total*100)+"%",background:s[1]}}/>;})}
+      </div>
+      <div style={{display:"flex",gap:12,marginTop:6,flexWrap:"wrap",fontSize:10,color:T.text3}}>
+        {segs.map(function(s,i){var v=Number(r[s[0]])||0;if(!v)return null;return <span key={i} style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,borderRadius:2,background:s[1]}}/>{s[0].replace(/([A-Z])/g," $1").replace(/^./,function(c){return c.toUpperCase();})} {v}</span>;})}
+      </div>
+    </div>
   );
 }
 
@@ -1521,200 +1573,334 @@ function InvestSection({data,onUpdate,mob}){
   mob=mob||false;
   const MS=window.MarketService||null;
   const watchlist=Array.isArray(data.watchlist)?data.watchlist:[];
-  const holdings=Array.isArray(data.holdings)?data.holdings:[];
+  const holdings=Array.isArray(data.holdings)?data.holdings:[];   // each entry = a buy lot
+  const sales=Array.isArray(data.sales)?data.sales:[];
+  const notes=data.notes||{};
+  const baseCcy=data.baseCurrency||"AUD";
+
   const [quotes,setQuotes]=useState({});
   const [profiles,setProfiles]=useState({});
+  const [candleMap,setCandleMap]=useState({});   // symbol -> closes[]
+  const [fxRates,setFxRates]=useState({});        // ccy -> rate to base
+  const [metrics,setMetrics]=useState({});
+  const [rec,setRec]=useState({});
+  const [ptarget,setPtarget]=useState({});
+  const [earnings,setEarnings]=useState({});
+  const [benchCloses,setBenchCloses]=useState(null);
   const [loading,setLoading]=useState(false);
   const [selected,setSelected]=useState(watchlist[0]?watchlist[0].symbol:(holdings[0]?holdings[0].symbol:null));
-  const [candles,setCandles]=useState(null);
   const [news,setNews]=useState([]);
-  const [ai,setAi]=useState({loading:false,text:"",err:""});
+  const [ai,setAi]=useState({loading:false,text:"",err:"",title:""});
   const [addSym,setAddSym]=useState("");
   const [searchRes,setSearchRes]=useState([]);
   const [searching,setSearching]=useState(false);
-  const [holdForm,setHoldForm]=useState({symbol:"",shares:"",cost:""});
+  const [lotForm,setLotForm]=useState({symbol:"",shares:"",cost:"",ccy:"USD",date:""});
+  const [sellFor,setSellFor]=useState(null);
+  const [sellForm,setSellForm]=useState({shares:"",price:""});
+  const [expanded,setExpanded]=useState(null);
   const [showKey,setShowKey]=useState(false);
-  const [keyInput,setKeyInput]=useState("");
+  const [finnKey,setFinnKey]=useState("");
+  const [tdKey,setTdKey]=useState("");
   const [demo,setDemo]=useState(MS?MS.isDemo():true);
+  const [range,setRange]=useState(90);
+  const [allocMode,setAllocMode]=useState("position");
+  const [bench,setBench]=useState("SPY");
+  const [noteDraft,setNoteDraft]=useState(null);
   const [refreshedAt,setRefreshedAt]=useState(null);
 
   const allSymbols=invUniq([].concat(watchlist.map(function(w){return w.symbol;}),holdings.map(function(h){return h.symbol;})));
   const symbolsKey=allSymbols.join(",");
 
-  // ── styles (mirror the Finance tab's glass system) ──
+  // ── styles ──
   const iCard=function(ex){return{position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:14,boxShadow:cardShadow,...(ex||{})};};
   const iStatLabel={fontSize:10,fontWeight:600,color:"#8f97a6",textTransform:"uppercase",letterSpacing:"0.05em"};
   const iInp={width:"100%",padding:"8px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"};
   const iBtn={...btnGlassP};
   const iGhost={appearance:"none",padding:"6px 12px",borderRadius:999,border:"0.5px solid rgba(255,255,255,0.16)",background:"rgba(255,255,255,0.05)",color:T.text2,cursor:"pointer",fontSize:11,fontWeight:600,whiteSpace:"nowrap"};
-
+  const segWrap={display:"inline-flex",gap:2,padding:2,borderRadius:999,background:"rgba(255,255,255,0.05)",border:"0.5px solid rgba(255,255,255,0.10)"};
+  const segBtn=function(on){return{appearance:"none",border:"none",cursor:"pointer",padding:"4px 10px",borderRadius:999,fontSize:11,fontWeight:600,background:on?"rgba(91,140,255,0.22)":"transparent",color:on?T.text:T.text2};};
   function toast(m,t){if(window.showToast)window.showToast(m,t);}
+  function fx(ccy){return fxRates[ccy||"USD"]!==undefined?fxRates[ccy||"USD"]:(ccy===baseCcy?1:1);}
 
-  // ── load quotes for every symbol in watchlist + holdings ──
+  // ── positions: aggregate lots by symbol (average-cost basis) ──
+  function buildPositions(){
+    var map={};
+    holdings.forEach(function(l){
+      var s=l.symbol;if(!map[s])map[s]={symbol:s,ccy:l.ccy||"USD",buyShares:0,buyCost:0,lots:[]};
+      map[s].buyShares+=Number(l.shares)||0;map[s].buyCost+=(Number(l.shares)||0)*(Number(l.cost)||0);map[s].lots.push(l);
+      if(l.ccy)map[s].ccy=l.ccy;
+    });
+    var soldMap={};
+    sales.forEach(function(s){soldMap[s.symbol]=(soldMap[s.symbol]||0)+(Number(s.shares)||0);});
+    return Object.keys(map).map(function(s){
+      var p=map[s];var avg=p.buyShares>0?p.buyCost/p.buyShares:0;var sold=soldMap[s]||0;var net=p.buyShares-sold;
+      return{symbol:s,ccy:p.ccy,lots:p.lots,avgCost:avg,netShares:net,buyShares:p.buyShares,sold:sold};
+    });
+  }
+  const positions=buildPositions();
+  const openPositions=positions.filter(function(p){return p.netShares>0.0001;});
+
+  // realized P&L (average-cost, in base ccy)
+  var realized=0;
+  sales.forEach(function(s){var pos=positions.filter(function(p){return p.symbol===s.symbol;})[0];var avg=pos?pos.avgCost:0;realized+=((Number(s.price)||0)-avg)*(Number(s.shares)||0)*fx(s.ccy||(pos&&pos.ccy)||"USD");});
+
+  // portfolio totals (base ccy)
+  var portValue=0,portCost=0,todayChange=0,priced=0;
+  openPositions.forEach(function(p){
+    var q=quotes[p.symbol];var px=invQPrice(q);var r=fx(p.ccy);
+    if(px!==null){portValue+=px*p.netShares*r;priced++;var ch=invQChg(q);if(ch!==null)todayChange+=ch*p.netShares*r;}
+    portCost+=p.avgCost*p.netShares*r;
+  });
+  var unrealized=portValue-portCost;
+  var unrealizedPct=portCost>0?(unrealized/portCost)*100:0;
+  var todayPct=(portValue-todayChange)>0?(todayChange/(portValue-todayChange))*100:0;
+
+  // ── data loading ──
   function loadQuotes(){
     if(!MS||allSymbols.length===0){setRefreshedAt(new Date());return;}
     setLoading(true);
     Promise.all(allSymbols.map(function(sym){return MS.getQuote(sym).then(function(q){return[sym,q];}).catch(function(){return[sym,null];});}))
       .then(function(pairs){setQuotes(function(prev){var nq={...prev};pairs.forEach(function(pr){if(pr[1])nq[pr[0]]=pr[1];});return nq;});})
-      .then(function(){setRefreshedAt(new Date());})
-      .catch(function(){})
-      .then(function(){setLoading(false);});
+      .then(function(){setRefreshedAt(new Date());}).catch(function(){}).then(function(){setLoading(false);});
+    // sparkline/portfolio-series candles + profiles (best effort, cached)
+    allSymbols.forEach(function(sym){
+      if(candleMap[sym]===undefined){
+        MS.getCandles(sym,"D",Math.floor(Date.now()/1000)-86400*400,Math.floor(Date.now()/1000)).then(function(c){var cl=invCloses(c);setCandleMap(function(prev){var n={...prev};n[sym]=cl;return n;});}).catch(function(){setCandleMap(function(prev){var n={...prev};n[sym]=[];return n;});});
+      }
+      if(profiles[sym]===undefined){MS.getProfile(sym).then(function(p){setProfiles(function(prev){var n={...prev};n[sym]=p;return n;});}).catch(function(){});}
+    });
   }
   useEffect(function(){loadQuotes();},[symbolsKey]);
 
-  // ── load detail (profile, candles, news) for the selected symbol ──
+  // FX: fetch rate for each distinct currency -> base
   useEffect(function(){
-    if(!MS||!selected)return;
-    var alive=true;
-    setCandles(null);setNews([]);
-    MS.getProfile(selected).then(function(p){if(alive)setProfiles(function(prev){var np={...prev};np[selected]=p;return np;});}).catch(function(){});
-    var to=Math.floor(Date.now()/1000);var from=to-60*60*24*180;
-    MS.getCandles(selected,"D",from,to).then(function(c){if(alive)setCandles(c);}).catch(function(){if(alive)setCandles(null);});
+    if(!MS)return;
+    var ccys=invUniq(holdings.map(function(h){return h.ccy||"USD";}).concat(["USD"]));
+    ccys.forEach(function(c){MS.getFxRate(c,baseCcy).then(function(rate){setFxRates(function(prev){var n={...prev};n[c]=rate;return n;});}).catch(function(){});});
+  },[symbolsKey,baseCcy]);
+
+  // detail: profile/candles/news/metrics/ratings/target/earnings + benchmark
+  useEffect(function(){
+    if(!MS||!selected)return;var alive=true;
+    setNews([]);setBenchCloses(null);
+    MS.getProfile(selected).then(function(p){if(alive)setProfiles(function(prev){var n={...prev};n[selected]=p;return n;});}).catch(function(){});
     MS.getNews(selected).then(function(nw){if(alive)setNews(Array.isArray(nw)?nw.slice(0,5):[]);}).catch(function(){if(alive)setNews([]);});
+    MS.getMetrics(selected).then(function(m){if(alive)setMetrics(function(prev){var n={...prev};n[selected]=m;return n;});}).catch(function(){});
+    MS.getRecommendation(selected).then(function(r){if(alive)setRec(function(prev){var n={...prev};n[selected]=r;return n;});}).catch(function(){});
+    MS.getPriceTarget(selected).then(function(t){if(alive)setPtarget(function(prev){var n={...prev};n[selected]=t;return n;});}).catch(function(){});
+    MS.getEarnings(selected).then(function(e){if(alive)setEarnings(function(prev){var n={...prev};n[selected]=e;return n;});}).catch(function(){});
     return function(){alive=false;};
   },[selected]);
 
-  // ── watchlist mutations ──
-  function addToWatchlist(sym){
-    sym=(sym||"").trim().toUpperCase();if(!sym)return;
-    if(watchlist.some(function(w){return w.symbol===sym;})){toast(sym+" already in watchlist");return;}
-    onUpdate({...data,watchlist:watchlist.concat([{symbol:sym}])});
-    setAddSym("");setSearchRes([]);setSelected(sym);toast(sym+" added","success");
-  }
-  function removeFromWatchlist(sym){
-    onUpdate({...data,watchlist:watchlist.filter(function(w){return w.symbol!==sym;})});
-    if(selected===sym)setSelected(null);
-  }
-  function runSearch(q){
-    setAddSym(q);
-    if(!MS||!q||q.trim().length<1){setSearchRes([]);return;}
-    setSearching(true);
-    MS.searchSymbols(q.trim()).then(function(r){setSearchRes((r||[]).slice(0,6));}).catch(function(){setSearchRes([]);}).then(function(){setSearching(false);});
-  }
+  // benchmark candles for the overlay
+  useEffect(function(){
+    if(!MS||!selected||!bench)return;var alive=true;
+    MS.getCandles(bench,"D",Math.floor(Date.now()/1000)-86400*400,Math.floor(Date.now()/1000)).then(function(c){if(alive)setBenchCloses(invCloses(c));}).catch(function(){if(alive)setBenchCloses(null);});
+    return function(){alive=false;};
+  },[selected,bench]);
 
-  // ── holdings mutations ──
-  function addHolding(){
-    var sym=(holdForm.symbol||"").trim().toUpperCase();
-    var sh=Number(holdForm.shares),cost=Number(holdForm.cost);
-    if(!sym){toast("Enter a ticker");return;}
-    if(isNaN(sh)||sh<=0){toast("Enter share count");return;}
-    if(isNaN(cost)||cost<0){toast("Enter avg cost");return;}
-    var id="h"+Date.now();
-    onUpdate({...data,holdings:holdings.concat([{id:id,symbol:sym,shares:sh,cost:cost}])});
-    setHoldForm({symbol:"",shares:"",cost:""});
-    if(!quotes[sym])setSelected(sym);
-    toast(sym+" position added","success");
+  // ── mutations ──
+  function addToWatchlist(sym){sym=(sym||"").trim().toUpperCase();if(!sym)return;if(watchlist.some(function(w){return w.symbol===sym;})){toast(sym+" already in watchlist");return;}onUpdate({...data,watchlist:watchlist.concat([{symbol:sym}])});setAddSym("");setSearchRes([]);setSelected(sym);toast(sym+" added","success");}
+  function removeFromWatchlist(sym){onUpdate({...data,watchlist:watchlist.filter(function(w){return w.symbol!==sym;})});if(selected===sym)setSelected(null);}
+  function runSearch(q){setAddSym(q);if(!MS||!q||q.trim().length<1){setSearchRes([]);return;}setSearching(true);MS.searchSymbols(q.trim()).then(function(r){setSearchRes((r||[]).slice(0,6));}).catch(function(){setSearchRes([]);}).then(function(){setSearching(false);});}
+  function addLot(){
+    var sym=(lotForm.symbol||"").trim().toUpperCase();var sh=Number(lotForm.shares),cost=Number(lotForm.cost);
+    if(!sym){toast("Enter a ticker");return;}if(isNaN(sh)||sh<=0){toast("Enter share count");return;}if(isNaN(cost)||cost<0){toast("Enter cost/share");return;}
+    var lot={id:"l"+Date.now(),symbol:sym,shares:sh,cost:cost,ccy:lotForm.ccy||"USD",date:lotForm.date||todayStr()};
+    onUpdate({...data,holdings:holdings.concat([lot])});setLotForm({symbol:"",shares:"",cost:"",ccy:lotForm.ccy||"USD",date:""});
+    if(!quotes[sym])setSelected(sym);toast(sym+" lot added","success");
   }
-  function removeHolding(id){onUpdate({...data,holdings:holdings.filter(function(h){return h.id!==id;})});}
-
-  // ── portfolio totals ──
-  var portValue=0,portCost=0,priced=0;
-  holdings.forEach(function(h){
-    var q=quotes[h.symbol];var px=invQPrice(q);
-    if(px!==null){portValue+=px*h.shares;priced++;}
-    portCost+=h.cost*h.shares;
-  });
-  var portGain=portValue-portCost;
-  var portGainPct=portCost>0?(portGain/portCost)*100:0;
-
-  // ── API key entry ──
-  function saveKey(){
-    var k=(keyInput||"").trim();
-    if(!k){toast("Paste your Finnhub key");return;}
-    if(MS&&MS.setKey)MS.setKey(k);else{try{localStorage.setItem("__finnhub_key__",k);}catch(_){}}
-    setDemo(MS?MS.isDemo():false);setShowKey(false);setKeyInput("");
-    toast("Finnhub key saved — loading live data","success");
-    setTimeout(loadQuotes,60);
+  function removeLot(id){onUpdate({...data,holdings:holdings.filter(function(l){return l.id!==id;})});}
+  function recordSale(symbol){
+    var sh=Number(sellForm.shares),px=Number(sellForm.price);
+    if(isNaN(sh)||sh<=0){toast("Enter shares sold");return;}if(isNaN(px)||px<0){toast("Enter sale price");return;}
+    var pos=positions.filter(function(p){return p.symbol===symbol;})[0];
+    var sale={id:"s"+Date.now(),symbol:symbol,shares:sh,price:px,ccy:(pos&&pos.ccy)||"USD",date:todayStr()};
+    onUpdate({...data,sales:sales.concat([sale])});setSellFor(null);setSellForm({shares:"",price:""});toast("Sale recorded","success");
   }
-  function clearKey(){
-    if(MS&&MS.setKey)MS.setKey("");else{try{localStorage.removeItem("__finnhub_key__");}catch(_){}}
-    if(MS&&MS.clearCache)MS.clearCache();
-    setDemo(true);toast("Reverted to demo mode");setTimeout(loadQuotes,60);
-  }
+  function setBase(c){onUpdate({...data,baseCurrency:c});}
+  function saveNote(sym,text){var n={...notes};if(text&&text.trim())n[sym]=text.trim();else delete n[sym];onUpdate({...data,notes:n});setNoteDraft(null);toast("Thesis saved","success");}
 
-  // ── AI "explain this" via Gemini (key reused from the app's Gemini setup) ──
-  function explainSelected(){
-    if(!selected){return;}
+  // ── keys ──
+  function saveKeys(){
+    var f=(finnKey||"").trim(),t=(tdKey||"").trim();
+    if(f){if(MS&&MS.setKey)MS.setKey(f);else{try{localStorage.setItem("__finnhub_key__",f);}catch(_){}}}
+    if(t){if(MS&&MS.setTdKey)MS.setTdKey(t);else{try{localStorage.setItem("__twelvedata_key__",t);}catch(_){}}}
+    setDemo(MS?MS.isDemo():false);setShowKey(false);setFinnKey("");setTdKey("");
+    if(MS&&MS.clearCache)MS.clearCache();setCandleMap({});setQuotes({});
+    toast("Keys saved — loading live data","success");setTimeout(loadQuotes,80);
+  }
+  function clearKeys(){if(MS){if(MS.setKey)MS.setKey("");if(MS.setTdKey)MS.setTdKey("");if(MS.clearCache)MS.clearCache();}setDemo(true);setCandleMap({});setQuotes({});toast("Reverted to demo mode");setTimeout(loadQuotes,80);}
+
+  // ── AI (reuses the app's Gemini key) ──
+  function askGemini(title,prompt){
     var gkey="";try{gkey=(localStorage.getItem("__gemini_key__")||"").trim();}catch(_){}
-    if(!gkey){setAi({loading:false,text:"",err:"No Gemini API key set. Add it in Logs → Settings to enable AI explanations."});return;}
-    var q=quotes[selected]||{};var prof=profiles[selected]||{};
-    var headlines=(news||[]).slice(0,4).map(function(x){return "- "+(x.headline||x.title||"");}).join("\n");
-    var ctx="Ticker: "+selected+"\n"+
-      "Company: "+(prof.name||"?")+(prof.industry?(" ("+prof.industry+")"):"")+"\n"+
-      "Price: "+invFmt(invQPrice(q))+" ("+invPct(invQPct(q))+" today)\n"+
-      (prof.marketCap?("Market cap: "+invFmt(prof.marketCap,0)+"M USD\n"):"")+
-      (headlines?("Recent headlines:\n"+headlines+"\n"):"");
-    var prompt="You are a concise financial explainer for a personal dashboard. In 4-6 short bullet points, explain what this company does, what the recent price move and headlines suggest, and 1-2 things a long-term retail investor might watch. Plain English, no jargon dumps. End with one line: 'Not financial advice.'\n\n"+ctx;
-    setAi({loading:true,text:"",err:""});
-    fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+encodeURIComponent(gkey),{
-      method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})
-    }).then(function(r){if(!r.ok)throw new Error("Gemini "+r.status);return r.json();})
-      .then(function(j){var t=(((j.candidates||[])[0]||{}).content||{}).parts||[];var out=t.map(function(p){return p.text||"";}).join("").trim();setAi({loading:false,text:out||"(no response)",err:""});})
-      .catch(function(e){setAi({loading:false,text:"",err:"AI error: "+(e.message||e)});});
+    if(!gkey){setAi({loading:false,text:"",err:"No Gemini API key set. Add it in Logs → Settings to enable AI.",title:title});return;}
+    setAi({loading:true,text:"",err:"",title:title});
+    fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+encodeURIComponent(gkey),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})})
+      .then(function(r){if(!r.ok)throw new Error("Gemini "+r.status);return r.json();})
+      .then(function(j){var t=(((j.candidates||[])[0]||{}).content||{}).parts||[];var out=t.map(function(p){return p.text||"";}).join("").trim();setAi({loading:false,text:out||"(no response)",err:"",title:title});})
+      .catch(function(e){setAi({loading:false,text:"",err:"AI error: "+(e.message||e),title:title});});
+  }
+  function aiPortfolioReview(){
+    if(!openPositions.length){toast("Add holdings first");return;}
+    var rows=openPositions.map(function(p){var q=quotes[p.symbol];var px=invQPrice(q);var val=px!==null?px*p.netShares*fx(p.ccy):0;var w=portValue>0?(val/portValue*100):0;var prof=profiles[p.symbol]||{};return "- "+p.symbol+" ("+(prof.industry||"?")+"): "+w.toFixed(1)+"% of portfolio, "+(px!==null?invPct(((px-p.avgCost)/p.avgCost)*100):"?")+" unrealized";}).join("\n");
+    var prompt="You are a level-headed portfolio reviewer for a personal dashboard. Base currency "+baseCcy+". Portfolio value "+invMoney(portValue,baseCcy)+", unrealized "+invPct(unrealizedPct)+". Holdings:\n"+rows+"\n\nIn 4-6 short bullets: assess concentration and sector/diversification risk, flag the biggest risks, and note 1-2 things to watch. Plain English. End with: 'Not financial advice.'";
+    askGemini("Portfolio health-check",prompt);
+  }
+  function aiThesisCheck(){
+    if(!selected)return;var q=quotes[selected]||{};var m=metrics[selected]||{};var note=notes[selected]||"";
+    var heads=(news||[]).slice(0,4).map(function(x){return "- "+(x.headline||"");}).join("\n");
+    var prompt="You are a skeptical devil's-advocate analyst. The user's investment thesis for "+selected+" is:\n\""+(note||"(none written)")+"\"\n\nCurrent: price "+invFmt(invQPrice(q))+" ("+invPct(invQPct(q))+" today), P/E "+(m.peTTM!=null?m.peTTM:"?")+", rev growth "+(m.revenueGrowth!=null?m.revenueGrowth+"%":"?")+".\nRecent headlines:\n"+heads+"\n\nIn 4-6 bullets: does the thesis still hold? What would challenge it? What's the strongest bear case? Plain English. End with: 'Not financial advice.'";
+    askGemini("Thesis check — "+selected,prompt);
+  }
+  function aiDailyDigest(){
+    var movers=allSymbols.map(function(s){var q=quotes[s];var pct=invQPct(q);return pct===null?null:{s:s,pct:pct};}).filter(Boolean).sort(function(a,b){return Math.abs(b.pct)-Math.abs(a.pct);}).slice(0,6);
+    if(!movers.length){toast("No data yet");return;}
+    var body=movers.map(function(m){return "- "+m.s+": "+invPct(m.pct)+" today";}).join("\n");
+    var earn=allSymbols.map(function(s){var e=earnings[s];return e&&e.next?("- "+s+" earnings "+e.next.date):null;}).filter(Boolean).join("\n");
+    var prompt="You are a calm morning-briefing writer for a personal investing dashboard. Summarize today's watchlist & holdings in 3-5 short bullets — what moved and any notable context. Keep it low-anxiety, factual.\n\nMovers:\n"+body+(earn?("\n\nUpcoming earnings:\n"+earn):"")+"\n\nEnd with: 'Not financial advice.'";
+    askGemini("Daily digest",prompt);
   }
 
-  var selQuote=selected?quotes[selected]:null;
-  var selProf=selected?profiles[selected]:null;
-  var selCloses=invCloses(candles);
+  // ── derived views ──
+  var selCloses=candleMap[selected]||[];
+  var rangedSel=range&&selCloses.length>range?selCloses.slice(-range):selCloses;
+  var rangedBench=benchCloses&&range&&benchCloses.length>range?benchCloses.slice(-range):benchCloses;
+  var selQuote=selected?quotes[selected]:null;var selProf=selected?profiles[selected]:null;var selM=selected?metrics[selected]:null;
+
+  // portfolio value series for hero sparkline
+  function portfolioSeries(nPts){
+    var lens=openPositions.map(function(p){return (candleMap[p.symbol]||[]).length;}).filter(function(l){return l>1;});
+    if(!lens.length)return [];
+    var n=Math.min.apply(null,lens);if(nPts)n=Math.min(n,nPts);
+    var out=[];
+    for(var i=0;i<n;i++){var sum=0,any=false;openPositions.forEach(function(p){var a=candleMap[p.symbol]||[];if(a.length<2)return;var v=a[a.length-n+i];if(v==null||isNaN(v))return;sum+=v*p.netShares*fx(p.ccy);any=true;});if(any)out.push(sum);}
+    return out;
+  }
+  var heroSeries=portfolioSeries(range||90);
+  var heroDeltaPct=heroSeries.length>1?((heroSeries[heroSeries.length-1]/heroSeries[0])-1)*100:null;
+
+  // allocation slices
+  function allocSlices(){
+    var agg={};
+    openPositions.forEach(function(p){var q=quotes[p.symbol];var px=invQPrice(q);if(px===null)return;var val=px*p.netShares*fx(p.ccy);var key=allocMode==="sector"?((profiles[p.symbol]&&profiles[p.symbol].industry)||"Other"):p.symbol;agg[key]=(agg[key]||0)+val;});
+    var PAL=["#5b8cff","#69f0ae","#ffd166","#ff9a3c","#c58cff","#4dd0e1","#ff6b6b","#9ccc65","#f06292","#7986cb"];
+    return Object.keys(agg).map(function(k,i){return{label:k,value:agg[k],color:PAL[i%PAL.length]};}).sort(function(a,b){return b.value-a.value;});
+  }
+  var slices=allocSlices();var sliceTotal=slices.reduce(function(a,s){return a+s.value;},0);
+
+  var RANGES=[["1M",22],["3M",66],["6M",132],["1Y",252],["ALL",0]];
 
   return (
-    <div>
-      {/* Header + mode badge */}
+    <div style={{fontVariantNumeric:"tabular-nums",fontFeatureSettings:'"tnum"'}}>
+      {/* Header */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:6,flexWrap:"wrap"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <h2 style={{fontSize:20,fontWeight:700,color:T.text,margin:0,letterSpacing:"-0.02em"}}>Invest</h2>
-          <span title={demo?"No Finnhub key — showing demo data":"Live data via Finnhub (15-min delayed)"} style={{fontSize:9.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",padding:"3px 8px",borderRadius:999,border:"0.5px solid "+(demo?"rgba(255,209,102,0.4)":"rgba(105,240,174,0.4)"),background:demo?"rgba(255,209,102,0.12)":"rgba(105,240,174,0.12)",color:demo?T.warn:T.success}}>{demo?"Demo data":"Live · delayed"}</span>
+          <span title={demo?"No keys — demo data":"Live data"} style={{fontSize:9.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",padding:"3px 8px",borderRadius:999,border:"0.5px solid "+(demo?"rgba(255,209,102,0.4)":"rgba(105,240,174,0.4)"),background:demo?"rgba(255,209,102,0.12)":"rgba(105,240,174,0.12)",color:demo?T.warn:T.success}}>{demo?"Demo data":"Live · delayed"}</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <button style={iGhost} onClick={loadQuotes} disabled={loading}>{loading?"Refreshing…":"↻ Refresh"}</button>
-          <button style={iGhost} onClick={function(){setShowKey(!showKey);}}>{demo?"Add live key":"API key"}</button>
+          <div style={segWrap}><button style={segBtn(baseCcy==="AUD")} onClick={function(){setBase("AUD");}}>AUD</button><button style={segBtn(baseCcy==="USD")} onClick={function(){setBase("USD");}}>USD</button></div>
+          <button style={iGhost} onClick={loadQuotes} disabled={loading}>{loading?"…":"↻"}</button>
+          <button style={iGhost} onClick={function(){setShowKey(!showKey);}}>{demo?"Add keys":"Keys"}</button>
         </div>
       </div>
-      <div style={{fontSize:11,color:T.text3,marginBottom:14,lineHeight:1.5}}>
-        Personal decision-support, not financial advice. Prices may be delayed 15+ minutes.{refreshedAt&&" · Updated "+refreshedAt.toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit"})}
+      <div style={{fontSize:11,color:T.text3,marginBottom:14,lineHeight:1.5}}>Personal decision-support, not financial advice. Prices delayed 15+ min.{refreshedAt&&" · Updated "+refreshedAt.toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit"})}</div>
+
+      {/* Keys */}
+      {showKey&&<div style={iCard()}>
+        <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:8}}>API keys (stored only in this browser)</div>
+        <div style={{fontSize:11,color:T.text3,marginBottom:6}}>Finnhub — quotes, fundamentals, ratings, news (finnhub.io, free 60/min)</div>
+        <input style={{...iInp,marginBottom:10}} type="password" placeholder="Finnhub key…" value={finnKey} onChange={function(e){setFinnKey(e.target.value);}}/>
+        <div style={{fontSize:11,color:T.text3,marginBottom:6}}>Twelve Data — price charts & benchmarks (twelvedata.com, free 800/day). Finnhub's chart endpoint is premium, so charts use this.</div>
+        <input style={{...iInp,marginBottom:10}} type="password" placeholder="Twelve Data key…" value={tdKey} onChange={function(e){setTdKey(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")saveKeys();}}/>
+        <div style={{display:"flex",gap:8}}><button style={iBtn} onClick={saveKeys}>Save</button>{!demo&&<button style={iGhost} onClick={clearKeys}>Use demo</button>}</div>
+      </div>}
+
+      {/* HERO */}
+      <div style={iCard({paddingBottom:heroSeries.length>1?8:18})}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10}}>
+          <div>
+            <div style={iStatLabel}>Portfolio value · {baseCcy}</div>
+            <div style={{fontSize:mob?30:38,fontWeight:700,color:T.text,letterSpacing:"-0.03em",lineHeight:1.05,transition:"color .3s"}}>{invMoney(portValue,baseCcy)}</div>
+            <div style={{display:"flex",gap:8,marginTop:6,flexWrap:"wrap"}}>
+              <span style={{fontSize:12,fontWeight:600,padding:"3px 9px",borderRadius:999,background:todayChange>=0?"rgba(105,240,174,0.14)":"rgba(255,107,107,0.14)",color:todayChange>=0?T.success:T.danger}}>{todayChange>=0?"▲":"▼"} {invMoney(Math.abs(todayChange),baseCcy)} ({invPct(todayPct)}) today</span>
+              <span style={{fontSize:12,fontWeight:600,padding:"3px 9px",borderRadius:999,background:"rgba(255,255,255,0.05)",color:unrealized>=0?T.success:T.danger}}>{unrealized>=0?"+":""}{invMoney(unrealized,baseCcy)} ({invPct(unrealizedPct)}) unreal.</span>
+              {realized!==0&&<span style={{fontSize:12,fontWeight:600,padding:"3px 9px",borderRadius:999,background:"rgba(255,255,255,0.05)",color:realized>=0?T.success:T.danger}}>{realized>=0?"+":""}{invMoney(realized,baseCcy)} realized</span>}
+            </div>
+          </div>
+          <div style={segWrap}>{RANGES.map(function(r){return <button key={r[0]} style={segBtn(range===r[1])} onClick={function(){setRange(r[1]);}}>{r[0]}</button>;})}</div>
+        </div>
+        {heroSeries.length>1&&<div style={{marginTop:10,marginLeft:-4,marginRight:-4}}><InvChart closes={heroSeries} h={mob?70:96} accent={heroDeltaPct>=0?"#69f0ae":"#ff6b6b"}/></div>}
+        {!heroSeries.length&&openPositions.length>0&&<div style={{fontSize:10,color:T.text3,marginTop:8}}>Add a Twelve Data key for a live portfolio trend chart.</div>}
       </div>
 
-      {/* API key entry */}
-      {showKey&&<div style={iCard()}>
-        <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:6}}>Finnhub API key</div>
-        <div style={{fontSize:11,color:T.text3,marginBottom:10,lineHeight:1.5}}>Free key from <span style={{color:T.accent}}>finnhub.io/register</span> (60 calls/min). Stored only in this browser. Without it, the tab shows realistic demo data. Note: intraday price charts need a paid Finnhub plan; quotes, fundamentals & news are free.</div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          <input style={{...iInp,flex:1,minWidth:200}} type="password" placeholder="Paste Finnhub key…" value={keyInput} onChange={function(e){setKeyInput(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")saveKey();}}/>
-          <button style={iBtn} onClick={saveKey}>Save</button>
-          {!demo&&<button style={iGhost} onClick={clearKey}>Use demo</button>}
+      {/* Allocation */}
+      {openPositions.length>0&&<div style={iCard()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:600,color:"#cdd5e2"}}>Allocation</div>
+          <div style={segWrap}><button style={segBtn(allocMode==="position")} onClick={function(){setAllocMode("position");}}>Position</button><button style={segBtn(allocMode==="sector")} onClick={function(){setAllocMode("sector");}}>Sector</button></div>
+        </div>
+        <div style={{display:"flex",gap:20,alignItems:"center",flexWrap:mob?"wrap":"nowrap"}}>
+          <InvDonut slices={slices} size={mob?130:150}/>
+          <div style={{flex:1,minWidth:180}}>
+            {slices.slice(0,8).map(function(s,i){var pctv=sliceTotal>0?(s.value/sliceTotal*100):0;return (
+              <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}>
+                <span style={{width:9,height:9,borderRadius:2,background:s.color,flexShrink:0}}/>
+                <span style={{fontSize:12,color:T.text,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.label}</span>
+                <span style={{fontSize:12,color:T.text2,fontWeight:600}}>{pctv.toFixed(1)}%</span>
+                <span style={{fontSize:11,color:T.text3,minWidth:64,textAlign:"right"}}>{invCompact(s.value,baseCcy)}</span>
+              </div>
+            );})}
+          </div>
         </div>
       </div>}
 
-      {/* Portfolio summary */}
+      {/* Portfolio / holdings */}
       <div style={iCard()}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-          <div style={{fontSize:13,fontWeight:600,color:"#cdd5e2"}}>Portfolio</div>
-          <div style={{fontSize:10,color:T.text3}}>{holdings.length} position{holdings.length===1?"":"s"}{holdings.length>priced?" · "+(holdings.length-priced)+" unpriced":""}</div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+          <div style={{fontSize:13,fontWeight:600,color:"#cdd5e2"}}>Holdings</div>
+          <div style={{fontSize:10,color:T.text3}}>{openPositions.length} open{holdings.length>priced&&priced<openPositions.length?" · "+(openPositions.length-priced)+" unpriced":""}</div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr":"1fr 1fr 1fr",gap:12,marginBottom:holdings.length?16:0}}>
-          <div><div style={iStatLabel}>Value</div><div style={{fontSize:22,fontWeight:700,color:T.text,letterSpacing:"-0.02em"}}>${invFmt(portValue)}</div></div>
-          <div><div style={iStatLabel}>Cost basis</div><div style={{fontSize:22,fontWeight:700,color:T.text2,letterSpacing:"-0.02em"}}>${invFmt(portCost)}</div></div>
-          <div><div style={iStatLabel}>Gain / loss</div><div style={{fontSize:22,fontWeight:700,letterSpacing:"-0.02em",color:portGain>=0?T.success:T.danger}}>{portGain>=0?"+":"-"}${invFmt(Math.abs(portGain))} <span style={{fontSize:13,fontWeight:600}}>({invPct(portGainPct)})</span></div></div>
-        </div>
-        {holdings.map(function(h){
-          var q=quotes[h.symbol];var px=invQPrice(q);
-          var val=px!==null?px*h.shares:null;var g=px!==null?(px-h.cost)*h.shares:null;
-          var gp=h.cost>0&&px!==null?((px-h.cost)/h.cost)*100:null;
+        {openPositions.length===0&&<div style={{fontSize:12,color:T.text3,padding:"4px 2px 10px"}}>No holdings yet. Add a lot below — enter each buy separately to track cost basis.</div>}
+        {openPositions.map(function(p){
+          var q=quotes[p.symbol];var px=invQPrice(q);var r=fx(p.ccy);
+          var val=px!==null?px*p.netShares*r:null;var g=px!==null?(px-p.avgCost)*p.netShares*r:null;var gp=p.avgCost>0&&px!==null?((px-p.avgCost)/p.avgCost)*100:null;
+          var open=expanded===p.symbol;var spark=candleMap[p.symbol]||[];
           return (
-            <div key={h.id} onClick={function(){setSelected(h.symbol);}} className="glow-item" style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:12,marginTop:8,cursor:"pointer",background:selected===h.symbol?"rgba(91,140,255,0.10)":"rgba(255,255,255,0.03)",border:"0.5px solid rgba(255,255,255,0.07)"}}>
-              <div style={{minWidth:64}}><div style={{fontSize:13,fontWeight:700,color:T.text}}>{h.symbol}</div><div style={{fontSize:10,color:T.text3}}>{invFmt(h.shares,h.shares%1?4:0)} @ ${invFmt(h.cost)}</div></div>
-              <div style={{flex:1}}/>
-              <div style={{textAlign:"right"}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>{px!==null?"$"+invFmt(val):"—"}</div><div style={{fontSize:11,fontWeight:600,color:g===null?T.text3:(g>=0?T.success:T.danger)}}>{g===null?"—":((g>=0?"+":"-")+"$"+invFmt(Math.abs(g))+" "+(gp!==null?invPct(gp):""))}</div></div>
-              <button onClick={function(e){e.stopPropagation();removeHolding(h.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,lineHeight:1,padding:"0 4px"}}>×</button>
+            <div key={p.symbol} style={{borderRadius:12,marginBottom:8,background:selected===p.symbol?"rgba(91,140,255,0.08)":"rgba(255,255,255,0.03)",border:"0.5px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+              <div className="glow-item" onClick={function(){setSelected(p.symbol);setExpanded(open?null:p.symbol);}} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px",cursor:"pointer"}}>
+                <div style={{minWidth:64}}><div style={{fontSize:13,fontWeight:700,color:T.text}}>{p.symbol}</div><div style={{fontSize:10,color:T.text3}}>{invFmt(p.netShares,p.netShares%1?4:0)} @ {invMoney(p.avgCost,p.ccy==="USD"?"USD":p.ccy)} {p.ccy}</div></div>
+                {!mob&&<InvSpark closes={spark.slice(-40)}/>}
+                <div style={{flex:1}}/>
+                <div style={{textAlign:"right"}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>{val!==null?invMoney(val,baseCcy):"—"}</div><div style={{fontSize:11,fontWeight:600,color:g===null?T.text3:(g>=0?T.success:T.danger)}}>{g===null?"—":((g>=0?"▲ ":"▼ ")+invMoney(Math.abs(g),baseCcy)+" "+(gp!==null?invPct(gp):""))}</div></div>
+                <span style={{color:T.text3,fontSize:12,transform:open?"rotate(90deg)":"none",transition:"transform .2s"}}>›</span>
+              </div>
+              {open&&<div style={{padding:"0 12px 12px",borderTop:"0.5px solid rgba(255,255,255,0.06)"}}>
+                <div style={{fontSize:10,color:T.text3,margin:"10px 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Lots</div>
+                {p.lots.map(function(l){return <div key={l.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:11,color:T.text2,padding:"4px 0"}}><span style={{flex:1}}>{invFmt(l.shares,l.shares%1?4:0)} @ {invMoney(l.cost,l.ccy)} {l.ccy} · {l.date}</span><button onClick={function(e){e.stopPropagation();removeLot(l.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:14}}>×</button></div>;})}
+                {p.sold>0&&<div style={{fontSize:10,color:T.text3,marginTop:4}}>{invFmt(p.sold,0)} shares sold (realized tracked above)</div>}
+                {sellFor===p.symbol?
+                  <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+                    <input style={{...iInp,flex:"1 1 80px"}} type="number" step="any" placeholder="Shares" value={sellForm.shares} onChange={function(e){setSellForm({...sellForm,shares:e.target.value});}}/>
+                    <input style={{...iInp,flex:"1 1 90px"}} type="number" step="any" placeholder={"Price ("+p.ccy+")"} value={sellForm.price} onChange={function(e){setSellForm({...sellForm,price:e.target.value});}}/>
+                    <button style={iBtn} onClick={function(){recordSale(p.symbol);}}>Record sale</button>
+                    <button style={iGhost} onClick={function(){setSellFor(null);}}>Cancel</button>
+                  </div>
+                  :<button style={{...iGhost,marginTop:8}} onClick={function(){setSellFor(p.symbol);setSellForm({shares:"",price:invFmt(px,2)});}}>Record a sale</button>}
+              </div>}
             </div>
           );
         })}
-        <div style={{display:"flex",gap:6,marginTop:holdings.length?12:4,flexWrap:"wrap"}}>
-          <input style={{...iInp,flex:mob?"1 1 100%":"1 1 90px",textTransform:"uppercase"}} placeholder="Ticker" value={holdForm.symbol} onChange={function(e){setHoldForm({...holdForm,symbol:e.target.value});}}/>
-          <input style={{...iInp,flex:"1 1 80px"}} type="number" step="any" placeholder="Shares" value={holdForm.shares} onChange={function(e){setHoldForm({...holdForm,shares:e.target.value});}}/>
-          <input style={{...iInp,flex:"1 1 90px"}} type="number" step="any" placeholder="Avg cost" value={holdForm.cost} onChange={function(e){setHoldForm({...holdForm,cost:e.target.value});}} onKeyDown={function(e){if(e.key==="Enter")addHolding();}}/>
-          <button style={iBtn} onClick={addHolding}>Add</button>
+        {/* Add lot */}
+        <div style={{display:"flex",gap:6,marginTop:openPositions.length?12:4,flexWrap:"wrap"}}>
+          <input style={{...iInp,flex:mob?"1 1 100%":"1 1 80px",textTransform:"uppercase"}} placeholder="Ticker" value={lotForm.symbol} onChange={function(e){setLotForm({...lotForm,symbol:e.target.value});}}/>
+          <input style={{...iInp,flex:"1 1 70px"}} type="number" step="any" placeholder="Shares" value={lotForm.shares} onChange={function(e){setLotForm({...lotForm,shares:e.target.value});}}/>
+          <input style={{...iInp,flex:"1 1 80px"}} type="number" step="any" placeholder="Cost/sh" value={lotForm.cost} onChange={function(e){setLotForm({...lotForm,cost:e.target.value});}}/>
+          <select style={{...iInp,flex:"1 1 70px"}} value={lotForm.ccy} onChange={function(e){setLotForm({...lotForm,ccy:e.target.value});}}><option>USD</option><option>AUD</option><option>EUR</option><option>GBP</option></select>
+          <input style={{...iInp,flex:"1 1 110px"}} type="date" value={lotForm.date} onChange={function(e){setLotForm({...lotForm,date:e.target.value});}}/>
+          <button style={iBtn} onClick={addLot}>Add lot</button>
         </div>
       </div>
 
@@ -1723,73 +1909,107 @@ function InvestSection({data,onUpdate,mob}){
         <div style={{fontSize:13,fontWeight:600,color:"#cdd5e2",marginBottom:12}}>Watchlist</div>
         <div style={{position:"relative",marginBottom:watchlist.length?14:2}}>
           <div style={{display:"flex",gap:6}}>
-            <input style={{...iInp,flex:1,textTransform:"uppercase"}} placeholder="Add ticker (e.g. AAPL) or search…" value={addSym} onChange={function(e){runSearch(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter"){addToWatchlist(addSym);}}}/>
+            <input style={{...iInp,flex:1,textTransform:"uppercase"}} placeholder="Add ticker or search…" value={addSym} onChange={function(e){runSearch(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter"){addToWatchlist(addSym);}}}/>
             <button style={iBtn} onClick={function(){addToWatchlist(addSym);}}>Add</button>
           </div>
           {searchRes.length>0&&<div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:20,marginTop:4,background:"rgba(18,22,42,0.98)",border:"0.5px solid rgba(255,255,255,0.14)",borderRadius:12,overflow:"hidden",boxShadow:cardShadow}}>
-            {searchRes.map(function(r){return (
-              <div key={r.symbol} onClick={function(){addToWatchlist(r.symbol);}} style={{padding:"9px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,borderBottom:"0.5px solid rgba(255,255,255,0.05)"}} onMouseOver={function(e){e.currentTarget.style.background="rgba(91,140,255,0.10)";}} onMouseOut={function(e){e.currentTarget.style.background="transparent";}}>
-                <span style={{fontSize:12,fontWeight:700,color:T.text,minWidth:54}}>{r.symbol}</span>
-                <span style={{fontSize:11,color:T.text3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.description||r.name||""}</span>
-              </div>
-            );})}
+            {searchRes.map(function(rr){return <div key={rr.symbol} onClick={function(){addToWatchlist(rr.symbol);}} style={{padding:"9px 12px",cursor:"pointer",display:"flex",gap:8}} onMouseOver={function(e){e.currentTarget.style.background="rgba(91,140,255,0.10)";}} onMouseOut={function(e){e.currentTarget.style.background="transparent";}}><span style={{fontSize:12,fontWeight:700,color:T.text,minWidth:54}}>{rr.symbol}</span><span style={{fontSize:11,color:T.text3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{rr.description||""}</span></div>;})}
           </div>}
           {searching&&<div style={{fontSize:10,color:T.text3,marginTop:4}}>Searching…</div>}
         </div>
         {watchlist.length===0&&<div style={{fontSize:12,color:T.text3,padding:"6px 2px"}}>No tickers yet. Add one above to start tracking.</div>}
         {watchlist.map(function(w){
-          var q=quotes[w.symbol];var px=invQPrice(q);var pct=invQPct(q);
+          var q=quotes[w.symbol];var px=invQPrice(q);var pct=invQPct(q);var spark=candleMap[w.symbol]||[];
           return (
             <div key={w.symbol} onClick={function(){setSelected(w.symbol);}} className="glow-item" style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px",borderRadius:12,marginBottom:7,cursor:"pointer",background:selected===w.symbol?"rgba(91,140,255,0.10)":"rgba(255,255,255,0.03)",border:"0.5px solid rgba(255,255,255,0.07)"}}>
-              <div style={{minWidth:60}}><div style={{fontSize:14,fontWeight:700,color:T.text}}>{w.symbol}</div><div style={{fontSize:10,color:T.text3,maxWidth:mob?110:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(profiles[w.symbol]&&profiles[w.symbol].name)||""}</div></div>
+              <div style={{minWidth:58}}><div style={{fontSize:14,fontWeight:700,color:T.text}}>{w.symbol}</div><div style={{fontSize:10,color:T.text3,maxWidth:mob?90:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(profiles[w.symbol]&&profiles[w.symbol].name)||""}</div></div>
+              {!mob&&<InvSpark closes={spark.slice(-40)}/>}
               <div style={{flex:1}}/>
-              <div style={{textAlign:"right"}}>
-                <div style={{fontSize:14,fontWeight:600,color:T.text}}>{px!==null?"$"+invFmt(px):(loading?"…":"—")}</div>
-                <div style={{fontSize:11,fontWeight:600,color:pct===null?T.text3:(pct>=0?T.success:T.danger)}}>{invPct(pct)}</div>
-              </div>
-              <button onClick={function(e){e.stopPropagation();removeFromWatchlist(w.symbol);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,lineHeight:1,padding:"0 4px"}}>×</button>
+              <div style={{textAlign:"right"}}><div style={{fontSize:14,fontWeight:600,color:T.text}}>{px!==null?"$"+invFmt(px):(loading?"…":"—")}</div><div style={{fontSize:11,fontWeight:600,color:pct===null?T.text3:(pct>=0?T.success:T.danger)}}>{pct!==null?(pct>=0?"▲ ":"▼ ")+invPct(pct).replace("+",""):"—"}</div></div>
+              <button onClick={function(e){e.stopPropagation();removeFromWatchlist(w.symbol);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,padding:"0 4px"}}>×</button>
             </div>
           );
         })}
       </div>
 
-      {/* Detail: chart + AI for selected symbol */}
+      {/* Detail */}
       {selected&&<div style={iCard()}>
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,marginBottom:12,flexWrap:"wrap"}}>
           <div>
-            <div style={{display:"flex",alignItems:"center",gap:9}}>
-              <span style={{fontSize:18,fontWeight:700,color:T.text}}>{selected}</span>
-              {selProf&&selProf.name&&<span style={{fontSize:12,color:T.text3}}>{selProf.name}</span>}
-            </div>
-            <div style={{display:"flex",alignItems:"baseline",gap:10,marginTop:3}}>
-              <span style={{fontSize:24,fontWeight:700,color:T.text,letterSpacing:"-0.02em"}}>{invQPrice(selQuote)!==null?"$"+invFmt(invQPrice(selQuote)):"—"}</span>
-              <span style={{fontSize:13,fontWeight:600,color:invQPct(selQuote)===null?T.text3:(invQPct(selQuote)>=0?T.success:T.danger)}}>{invQChg(selQuote)!==null?((invQChg(selQuote)>=0?"+":"")+invFmt(invQChg(selQuote))):""} {invPct(invQPct(selQuote))}</span>
-            </div>
+            <div style={{display:"flex",alignItems:"center",gap:9}}><span style={{fontSize:18,fontWeight:700,color:T.text}}>{selected}</span>{selProf&&selProf.name&&<span style={{fontSize:12,color:T.text3}}>{selProf.name}</span>}</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:10,marginTop:3}}><span style={{fontSize:24,fontWeight:700,color:T.text,letterSpacing:"-0.02em"}}>{invQPrice(selQuote)!==null?"$"+invFmt(invQPrice(selQuote)):"—"}</span><span style={{fontSize:13,fontWeight:600,color:invQPct(selQuote)===null?T.text3:(invQPct(selQuote)>=0?T.success:T.danger)}}>{invQChg(selQuote)!==null?((invQChg(selQuote)>=0?"+":"")+invFmt(invQChg(selQuote))):""} {invPct(invQPct(selQuote))}</span></div>
           </div>
-          <button style={{...iBtn,display:"flex",alignItems:"center",gap:6}} onClick={explainSelected} disabled={ai.loading}><UIcon name={ai.loading?"clock":"sparkle"} size={13}/>{ai.loading?"Thinking…":"Explain with AI"}</button>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <button style={{...iGhost,display:"flex",alignItems:"center",gap:5}} onClick={aiThesisCheck} disabled={ai.loading}><UIcon name="sparkle" size={12}/>Thesis check</button>
+            <button style={{...iBtn,display:"flex",alignItems:"center",gap:6}} onClick={function(){askGemini("Explain — "+selected,"Explain "+selected+" ("+((selProf&&selProf.name)||selected)+") to a long-term retail investor in 4-6 short bullets: what it does, what the price move & headlines suggest, and what to watch. End with 'Not financial advice.'");}} disabled={ai.loading}><UIcon name={ai.loading?"clock":"sparkle"} size={13}/>{ai.loading?"…":"Explain"}</button>
+          </div>
         </div>
-        <div style={{margin:"4px -4px 0"}}><InvChart closes={selCloses} h={mob?150:200}/></div>
-        <div style={{fontSize:10,color:T.text3,textAlign:"right",marginTop:2}}>{selCloses.length>1?"~"+selCloses.length+" sessions"+(demo?" (demo)":""):(demo?"":"Intraday charts require a paid Finnhub plan")}</div>
 
-        {(ai.text||ai.err)&&<div style={{marginTop:14,padding:"14px 16px",borderRadius:14,background:"rgba(91,140,255,0.06)",border:"0.5px solid rgba(91,140,255,0.20)"}}>
-          <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:T.accent,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><UIcon name="sparkle" size={12}/>AI summary</div>
+        {/* chart + benchmark */}
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+          <div style={segWrap}>{RANGES.map(function(r){return <button key={r[0]} style={segBtn(range===r[1])} onClick={function(){setRange(r[1]);}}>{r[0]}</button>;})}</div>
+          <span style={{fontSize:10,color:T.text3}}>vs</span>
+          <input style={{...iInp,width:78,padding:"5px 8px",textTransform:"uppercase"}} value={bench} onChange={function(e){setBench(e.target.value.toUpperCase());}}/>
+        </div>
+        {rangedSel.length>1?
+          <InvChart series={[{closes:rangedSel,color:"#5b8cff",name:selected,label:"primary"},{closes:rangedBench&&rangedBench.length>1?rangedBench:null,color:"#8f97a6",name:bench,label:"benchmark"}].filter(function(s){return s.closes;})} h={mob?160:210} mob={mob}/>
+          :<div style={{height:mob?160:210,display:"flex",alignItems:"center",justifyContent:"center",color:T.text3,fontSize:12,textAlign:"center"}}>No chart data. {demo?"":"Add a Twelve Data key for live charts."}</div>}
+
+        {/* valuation snapshot */}
+        {selM&&<div style={{marginTop:14}}>
+          <div style={{fontSize:11,fontWeight:600,color:"#cdd5e2",marginBottom:8}}>Valuation</div>
+          <div style={{display:"grid",gridTemplateColumns:mob?"1fr 1fr 1fr":"repeat(4,1fr)",gap:10}}>
+            {[["P/E",selM.peTTM],["P/S",selM.ps],["Net margin",selM.netMargin!=null?selM.netMargin+"%":null],["ROE",selM.roe!=null?selM.roe+"%":null],["Beta",selM.beta],["Rev growth",selM.revenueGrowth!=null?selM.revenueGrowth+"%":null],["Div yield",selM.dividendYield!=null?selM.dividendYield+"%":null],["EPS",selM.eps]].map(function(kv,i){return <div key={i}><div style={iStatLabel}>{kv[0]}</div><div style={{fontSize:15,fontWeight:600,color:T.text}}>{kv[1]==null||kv[1]===""?"—":(typeof kv[1]==="number"?invFmt(kv[1]):kv[1])}</div></div>;})}
+          </div>
+          {selM.week52Low!=null&&selM.week52High!=null&&invQPrice(selQuote)!==null&&(function(){var lo=selM.week52Low,hi=selM.week52High,cur=invQPrice(selQuote);var pos=Math.max(0,Math.min(100,((cur-lo)/((hi-lo)||1))*100));return (
+            <div style={{marginTop:12}}><div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:T.text3,marginBottom:4}}><span>52wk low ${invFmt(lo)}</span><span>52wk high ${invFmt(hi)}</span></div><div style={{position:"relative",height:6,borderRadius:3,background:"rgba(255,255,255,0.08)"}}><div style={{position:"absolute",left:pos+"%",top:-3,width:3,height:12,borderRadius:2,background:T.accent,transform:"translateX(-50%)"}}/></div></div>
+          );})()}
+        </div>}
+
+        {/* analyst ratings + price target */}
+        {(rec[selected]||ptarget[selected])&&<div style={{marginTop:16,display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:16}}>
+          {rec[selected]&&<div><div style={{fontSize:11,fontWeight:600,color:"#cdd5e2",marginBottom:8}}>Analyst ratings</div><InvRatingBar rec={rec[selected]}/></div>}
+          {ptarget[selected]&&ptarget[selected].targetMean!=null&&(function(){var t=ptarget[selected];var cur=invQPrice(selQuote);var up=cur!==null&&t.targetMean?((t.targetMean-cur)/cur*100):null;return (
+            <div><div style={{fontSize:11,fontWeight:600,color:"#cdd5e2",marginBottom:8}}>Price target</div><div style={{fontSize:20,fontWeight:700,color:T.text}}>${invFmt(t.targetMean)} <span style={{fontSize:12,fontWeight:600,color:up==null?T.text3:(up>=0?T.success:T.danger)}}>{up!=null?"("+invPct(up)+")":""}</span></div><div style={{fontSize:10,color:T.text3,marginTop:2}}>Range ${invFmt(t.targetLow)} – ${invFmt(t.targetHigh)}</div></div>
+          );})()}
+        </div>}
+
+        {/* earnings */}
+        {earnings[selected]&&(earnings[selected].next||(earnings[selected].recent&&earnings[selected].recent.length))&&<div style={{marginTop:16}}>
+          <div style={{fontSize:11,fontWeight:600,color:"#cdd5e2",marginBottom:8}}>Earnings{earnings[selected].next?" · next "+earnings[selected].next.date:""}</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{(earnings[selected].recent||[]).map(function(e,i){var beat=e.surprisePercent!=null&&e.surprisePercent>=0;return <span key={i} style={{fontSize:10,padding:"4px 8px",borderRadius:8,background:e.surprisePercent==null?"rgba(255,255,255,0.05)":(beat?"rgba(105,240,174,0.12)":"rgba(255,107,107,0.12)"),color:e.surprisePercent==null?T.text3:(beat?T.success:T.danger)}}>{e.period||"Q"} {e.surprisePercent!=null?(e.surprisePercent>=0?"+":"")+e.surprisePercent+"%":""}</span>;})}</div>
+        </div>}
+
+        {/* thesis note */}
+        <div style={{marginTop:16}}>
+          <div style={{fontSize:11,fontWeight:600,color:"#cdd5e2",marginBottom:8}}>My thesis</div>
+          {noteDraft!==null?
+            <div><textarea style={{...iInp,minHeight:60,resize:"vertical",fontFamily:"inherit"}} value={noteDraft} onChange={function(e){setNoteDraft(e.target.value);}} placeholder="Why do you own / watch this? What would change your mind?"/><div style={{display:"flex",gap:6,marginTop:6}}><button style={iBtn} onClick={function(){saveNote(selected,noteDraft);}}>Save</button><button style={iGhost} onClick={function(){setNoteDraft(null);}}>Cancel</button></div></div>
+            :<div onClick={function(){setNoteDraft(notes[selected]||"");}} style={{fontSize:12,color:notes[selected]?T.text2:T.text3,lineHeight:1.5,cursor:"pointer",padding:"8px 10px",borderRadius:8,background:"rgba(255,255,255,0.03)",border:"0.5px dashed rgba(255,255,255,0.12)"}}>{notes[selected]||"Add your investment thesis…"}</div>}
+        </div>
+
+        {/* AI output */}
+        {(ai.text||ai.err)&&<div style={{marginTop:16,padding:"14px 16px",borderRadius:14,background:"rgba(91,140,255,0.06)",border:"0.5px solid rgba(91,140,255,0.20)"}}>
+          <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:T.accent,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><UIcon name="sparkle" size={12}/>{ai.title||"AI"}</div>
           {ai.err?<div style={{fontSize:12,color:T.warn}}>{ai.err}</div>:<div style={{fontSize:12.5,color:T.text2,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{ai.text}</div>}
         </div>}
 
+        {/* news */}
         {news.length>0&&<div style={{marginTop:16}}>
           <div style={{fontSize:11,fontWeight:600,color:"#cdd5e2",marginBottom:8}}>Recent news</div>
-          {news.map(function(a,i){return (
-            <a key={i} href={a.url||"#"} target="_blank" rel="noopener noreferrer" style={{display:"block",padding:"9px 0",borderTop:i?"0.5px solid rgba(255,255,255,0.06)":"none",textDecoration:"none"}}>
-              <div style={{fontSize:12,color:T.text,lineHeight:1.4}}>{a.headline||a.title||"(untitled)"}</div>
-              <div style={{fontSize:10,color:T.text3,marginTop:2}}>{a.source||""}</div>
-            </a>
-          );})}
+          {news.map(function(a,i){return <a key={i} href={a.url||"#"} target="_blank" rel="noopener noreferrer" style={{display:"block",padding:"9px 0",borderTop:i?"0.5px solid rgba(255,255,255,0.06)":"none",textDecoration:"none"}}><div style={{fontSize:12,color:T.text,lineHeight:1.4}}>{a.headline||"(untitled)"}</div><div style={{fontSize:10,color:T.text3,marginTop:2}}>{a.source||""}</div></a>;})}
         </div>}
       </div>}
 
-      <div style={{fontSize:10,color:T.text3,textAlign:"center",padding:"6px 0 20px",lineHeight:1.5}}>
-        Data {demo?"is simulated (demo mode)":"via Finnhub, delayed ≥15 min"}. For personal, informational use only — not investment advice.
+      {/* AI toolbar */}
+      <div style={iCard({display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"})}>
+        <span style={{fontSize:11,fontWeight:600,color:"#cdd5e2",marginRight:4}}>AI</span>
+        <button style={{...iGhost,display:"flex",alignItems:"center",gap:5}} onClick={aiPortfolioReview} disabled={ai.loading}><UIcon name="sparkle" size={12}/>Portfolio health-check</button>
+        <button style={{...iGhost,display:"flex",alignItems:"center",gap:5}} onClick={aiDailyDigest} disabled={ai.loading}><UIcon name="sparkle" size={12}/>Daily digest</button>
+        <span style={{fontSize:10,color:T.text3}}>Uses your Gemini key · grounded in your data</span>
       </div>
+
+      <div style={{fontSize:10,color:T.text3,textAlign:"center",padding:"6px 0 20px",lineHeight:1.5}}>Data {demo?"is simulated (demo mode)":"via Finnhub + Twelve Data, delayed ≥15 min"}. Realized P&L uses average-cost basis. Personal, informational use only — not investment advice.</div>
     </div>
   );
 }

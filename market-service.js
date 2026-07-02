@@ -99,6 +99,21 @@
   function hasKey() { return getKey().length > 0; }
   function isDemo() { return !hasKey(); }
 
+  // Twelve Data key (free EOD historical candles — used because Finnhub's candle
+  // endpoint is premium). Separate free key from finnhub.io / twelvedata.com.
+  var TD_KEY_STORAGE = '__twelvedata_key__';
+  function getTdKey() {
+    try { var k = window.localStorage.getItem(TD_KEY_STORAGE); return k ? String(k).trim() : ''; }
+    catch (e) { return ''; }
+  }
+  function setTdKey(k) {
+    try {
+      if (k == null || String(k).trim() === '') window.localStorage.removeItem(TD_KEY_STORAGE);
+      else window.localStorage.setItem(TD_KEY_STORAGE, String(k).trim());
+    } catch (e) {}
+  }
+  function hasTdKey() { return getTdKey().length > 0; }
+
   // ---- Cache + in-flight de-dupe ----
   var cache = new Map();
   var inflight = new Map();
@@ -372,11 +387,47 @@
     } catch (e) { return Promise.reject(e instanceof Error ? e : new Error(String(e))); }
   }
 
+  // Twelve Data EOD history (free tier, CORS-friendly). Returns the normalized
+  // candle shape or throws. Newest-first from the API, reversed to ascending.
+  function getCandlesTwelveData(symbol, from, to) {
+    var days = 180;
+    if (isFinite(from) && isFinite(to) && to > from) {
+      var span = Math.round((to - from) / 86400);
+      if (span > 1 && span < 5000) days = span;
+    }
+    var out = Math.min(Math.max(days, 30), 5000);
+    var url = 'https://api.twelvedata.com/time_series?symbol=' + encodeURIComponent(symbol) +
+      '&interval=1day&outputsize=' + out + '&apikey=' + encodeURIComponent(getTdKey());
+    var cached = cacheGet(url);
+    if (cached !== undefined) return Promise.resolve(cached);
+    if (inflight.has(url)) return inflight.get(url);
+    var p = fetch(url, { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { if (!r.ok) throw new Error('Twelve Data HTTP ' + r.status); return r.json(); })
+      .then(function (j) {
+        if (!j || j.status === 'error' || !Array.isArray(j.values)) {
+          throw new Error('Twelve Data: ' + ((j && j.message) || 'no data'));
+        }
+        var vals = j.values.slice().reverse();
+        var candles = vals.map(function (v) {
+          return { time: Date.parse(v.datetime), open: num(v.open), high: num(v.high), low: num(v.low), close: num(v.close), volume: num(v.volume) };
+        });
+        var res = { symbol: symbol, resolution: 'D', candles: candles, demo: false };
+        cacheSet(url, res, TTL.candles);
+        return res;
+      })
+      .finally(function () { inflight.delete(url); });
+    inflight.set(url, p);
+    return p;
+  }
+
   function getCandles(symbol, resolution, from, to) {
     try {
       symbol = String(symbol || '').trim().toUpperCase();
       if (!symbol) return Promise.reject(new Error('getCandles: symbol is required.'));
       resolution = resolution || 'D';
+      // Prefer Twelve Data (free EOD) when a key is set — Finnhub candles are premium.
+      if (hasTdKey()) return getCandlesTwelveData(symbol, from, to);
+      // No Twelve Data key: demo unless a (paid) Finnhub key happens to serve candles.
       if (isDemo()) return Promise.resolve(demoCandles(symbol, resolution, from, to));
 
       var nowSec = Math.floor(Date.now() / 1000);
@@ -386,6 +437,7 @@
       return fetchJson(buildUrl('/stock/candle', { symbol: symbol, resolution: resolution, from: fromSec, to: toSec }), TTL.candles)
         .then(function (raw) { return normalizeCandles(symbol, resolution, raw); })
         .catch(function (err) {
+          // Premium/no-access → null so the UI shows an honest "no chart data" note.
           if (err && (err.status === 403 || err.status === 401)) return null;
           if (err && /premium|access to this resource/i.test(err.message || '')) return null;
           throw err;
@@ -417,9 +469,129 @@
     } catch (e) { return Promise.reject(e instanceof Error ? e : new Error(String(e))); }
   }
 
+  // ---- FX (Frankfurter / ECB — free, no key, CORS-friendly). Base-currency support. ----
+  var DEMO_FX = { USD_AUD: 1.52, AUD_USD: 0.658, EUR_AUD: 1.63, GBP_AUD: 1.92, USD_EUR: 0.92, USD_GBP: 0.79 };
+  function demoFxRate(from, to) {
+    if (from === to) return 1;
+    var k = from + '_' + to; if (DEMO_FX[k]) return DEMO_FX[k];
+    var inv = to + '_' + from; if (DEMO_FX[inv]) return Math.round((1 / DEMO_FX[inv]) * 10000) / 10000;
+    return 0.5 + (hashString(from + to) % 200) / 100;
+  }
+  // getFxRate always tries the live (free) ECB feed, even in Finnhub demo mode.
+  function getFxRate(from, to) {
+    try {
+      from = String(from || 'USD').trim().toUpperCase();
+      to = String(to || 'AUD').trim().toUpperCase();
+      if (from === to) return Promise.resolve(1);
+      var url = 'https://api.frankfurter.dev/v1/latest?base=' + from + '&symbols=' + to;
+      var cached = cacheGet(url);
+      if (cached !== undefined) return Promise.resolve(cached);
+      if (inflight.has(url)) return inflight.get(url);
+      var p = fetch(url, { headers: { 'Accept': 'application/json' } })
+        .then(function (r) { if (!r.ok) throw new Error('FX HTTP ' + r.status); return r.json(); })
+        .then(function (j) { var rate = j && j.rates && j.rates[to]; if (!rate) throw new Error('FX: no rate'); cacheSet(url, rate, TTL.profile); return rate; })
+        .catch(function () { return demoFxRate(from, to); })
+        .finally(function () { inflight.delete(url); });
+      inflight.set(url, p);
+      return p;
+    } catch (e) { return Promise.resolve(demoFxRate(String(from).toUpperCase(), String(to).toUpperCase())); }
+  }
+
+  // ---- Valuation metrics (Finnhub /stock/metric — FREE). ----
+  function demoMetrics(symbol) {
+    var r = seededRng(hashString(symbol + '|metric'));
+    var base = demoBasePrice(symbol);
+    return {
+      symbol: symbol, peTTM: round2(8 + r() * 40), ps: round2(1 + r() * 12), pb: round2(1 + r() * 15),
+      netMargin: round2(-5 + r() * 35), roe: round2(r() * 45), beta: round2(0.4 + r() * 1.6),
+      week52High: round2(base * (1.05 + r() * 0.5)), week52Low: round2(base * (0.4 + r() * 0.3)),
+      revenueGrowth: round2(-10 + r() * 45), dividendYield: round2(r() * 4), eps: round2(base / (8 + r() * 30)), demo: true
+    };
+  }
+  function normalizeMetrics(symbol, raw) {
+    var m = (raw && raw.metric) || {};
+    return {
+      symbol: symbol, peTTM: numOrNull(m.peTTM), ps: numOrNull(m.psTTM), pb: numOrNull(m.pbAnnual != null ? m.pbAnnual : m.pbQuarterly),
+      netMargin: numOrNull(m.netProfitMarginTTM), roe: numOrNull(m.roeTTM), beta: numOrNull(m.beta),
+      week52High: numOrNull(m['52WeekHigh']), week52Low: numOrNull(m['52WeekLow']),
+      revenueGrowth: numOrNull(m.revenueGrowthTTMYoy), dividendYield: numOrNull(m.currentDividendYieldTTM), eps: numOrNull(m.epsTTM), demo: false
+    };
+  }
+  function getMetrics(symbol) {
+    try {
+      symbol = String(symbol || '').trim().toUpperCase();
+      if (!symbol) return Promise.reject(new Error('getMetrics: symbol required'));
+      if (isDemo()) return Promise.resolve(demoMetrics(symbol));
+      return fetchJson(buildUrl('/stock/metric', { symbol: symbol, metric: 'all' }), TTL.profile).then(function (raw) { return normalizeMetrics(symbol, raw); });
+    } catch (e) { return Promise.reject(e instanceof Error ? e : new Error(String(e))); }
+  }
+
+  // ---- Analyst ratings (Finnhub /recommendation-trends — FREE). ----
+  function demoRecommendation(symbol) {
+    var r = seededRng(hashString(symbol + '|rec'));
+    return { symbol: symbol, strongBuy: Math.floor(r() * 12), buy: Math.floor(r() * 18), hold: Math.floor(r() * 14), sell: Math.floor(r() * 6), strongSell: Math.floor(r() * 3), period: 'demo', demo: true };
+  }
+  function getRecommendation(symbol) {
+    try {
+      symbol = String(symbol || '').trim().toUpperCase();
+      if (!symbol) return Promise.reject(new Error('getRecommendation: symbol required'));
+      if (isDemo()) return Promise.resolve(demoRecommendation(symbol));
+      return fetchJson(buildUrl('/stock/recommendation', { symbol: symbol }), TTL.profile).then(function (raw) {
+        var t = Array.isArray(raw) && raw.length ? raw[0] : {};
+        return { symbol: symbol, strongBuy: num(t.strongBuy), buy: num(t.buy), hold: num(t.hold), sell: num(t.sell), strongSell: num(t.strongSell), period: t.period || '', demo: false };
+      });
+    } catch (e) { return Promise.reject(e instanceof Error ? e : new Error(String(e))); }
+  }
+
+  // ---- Price target (Finnhub /price-target — FREE). ----
+  function demoPriceTarget(symbol) {
+    var r = seededRng(hashString(symbol + '|pt')); var base = demoBasePrice(symbol);
+    return { symbol: symbol, targetMean: round2(base * (0.9 + r() * 0.5)), targetHigh: round2(base * (1.2 + r() * 0.5)), targetLow: round2(base * (0.6 + r() * 0.2)), demo: true };
+  }
+  function getPriceTarget(symbol) {
+    try {
+      symbol = String(symbol || '').trim().toUpperCase();
+      if (!symbol) return Promise.reject(new Error('getPriceTarget: symbol required'));
+      if (isDemo()) return Promise.resolve(demoPriceTarget(symbol));
+      return fetchJson(buildUrl('/price-target', { symbol: symbol }), TTL.profile).then(function (raw) {
+        raw = raw || {};
+        return { symbol: symbol, targetMean: numOrNull(raw.targetMean), targetHigh: numOrNull(raw.targetHigh), targetLow: numOrNull(raw.targetLow), demo: false };
+      });
+    } catch (e) { return Promise.reject(e instanceof Error ? e : new Error(String(e))); }
+  }
+
+  // ---- Earnings surprises + next date (Finnhub /stock/earnings + /calendar/earnings — FREE). ----
+  function demoEarnings(symbol) {
+    var r = seededRng(hashString(symbol + '|earn')); var recent = [];
+    for (var i = 0; i < 4; i++) { var est = round2(0.5 + r() * 3); var act = round2(est * (0.85 + r() * 0.35)); recent.push({ period: 'Q' + (4 - i), estimate: est, actual: act, surprisePercent: round2(((act - est) / est) * 100) }); }
+    var d = new Date(Date.now() + (10 + Math.floor(r() * 60)) * 86400000);
+    return { symbol: symbol, next: { date: ymd(d), epsEstimate: round2(0.5 + r() * 3) }, recent: recent, demo: true };
+  }
+  function getEarnings(symbol) {
+    try {
+      symbol = String(symbol || '').trim().toUpperCase();
+      if (!symbol) return Promise.reject(new Error('getEarnings: symbol required'));
+      if (isDemo()) return Promise.resolve(demoEarnings(symbol));
+      var recentP = fetchJson(buildUrl('/stock/earnings', { symbol: symbol }), TTL.profile).then(function (raw) {
+        return (Array.isArray(raw) ? raw : []).slice(0, 4).map(function (e) { return { period: e.period || '', estimate: numOrNull(e.estimate), actual: numOrNull(e.actual), surprisePercent: numOrNull(e.surprisePercent) }; });
+      }).catch(function () { return []; });
+      var to = new Date(Date.now() + 120 * 86400000), from = new Date();
+      var nextP = fetchJson(buildUrl('/calendar/earnings', { symbol: symbol, from: ymd(from), to: ymd(to) }), TTL.news).then(function (raw) {
+        var arr = (raw && raw.earningsCalendar) || []; var e = arr[0];
+        return e ? { date: e.date, epsEstimate: numOrNull(e.epsEstimate) } : null;
+      }).catch(function () { return null; });
+      return Promise.all([nextP, recentP]).then(function (a) { return { symbol: symbol, next: a[0], recent: a[1], demo: false }; });
+    } catch (e) { return Promise.reject(e instanceof Error ? e : new Error(String(e))); }
+  }
+
+  function numOrNull(v) { var n = Number(v); return isFinite(n) ? n : null; }
+
   window.MarketService = {
     setKey: setKey, hasKey: hasKey, isDemo: isDemo, clearCache: clearCache,
+    setTdKey: setTdKey, hasTdKey: hasTdKey,
     getQuote: getQuote, getProfile: getProfile, getCandles: getCandles,
-    getNews: getNews, searchSymbols: searchSymbols
+    getNews: getNews, searchSymbols: searchSymbols,
+    getFxRate: getFxRate, getMetrics: getMetrics, getRecommendation: getRecommendation,
+    getPriceTarget: getPriceTarget, getEarnings: getEarnings
   };
 })();
