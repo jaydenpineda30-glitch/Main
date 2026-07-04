@@ -160,6 +160,9 @@ const INIT={
     watchlist:[{symbol:"AAPL"},{symbol:"MSFT"},{symbol:"NVDA"}],
     holdings:[]
   },
+  jarvis:{
+    messages:[] // {role:"user"|"jarvis", text, at} — capped at JARVIS_CHAT_CAP on write
+  },
   work:{
     hourlyRate:0,
     payCycleDay:1,
@@ -217,6 +220,7 @@ function mergeWithDefaults(cloud){
     },
     work:(function(){var w=cloud.work||{};return{...INIT.work,...w,hourlyRate:Number(w.hourlyRate||(cloud.finance&&cloud.finance.hourlyRate)||0),payCycleDay:Number(w.payCycleDay||cloud.payCycleDay||1),goals:Array.isArray(w.goals)?w.goals:INIT.work.goals,shiftLogs:(w.shiftLogs&&typeof w.shiftLogs==="object")?w.shiftLogs:{},progressiveSince:w.progressiveSince||"",attendanceMigrated:!!w.attendanceMigrated,taskLog:Array.isArray(w.taskLog)?w.taskLog:[],focusGoals:Array.isArray(w.focusGoals)?w.focusGoals:[]};}()),
     reflections:(Array.isArray(cloud.reflections)&&cloud.reflections.length>0)?cloud.reflections:SEED_REFL,
+    jarvis:(function(){var j=cloud.jarvis||{};return{...INIT.jarvis,...j,messages:Array.isArray(j.messages)?j.messages:[]};}()),
   };
 }
 // Returns true if `d` looks like a freshly-seeded state with no user-generated content.
@@ -233,6 +237,7 @@ function isLikelySeedState(d){
       && n(d.gym&&d.gym.bodyWeight)===0
       && n(d.finance&&d.finance.expenses)===0
       && n(d.uni&&d.uni.completedEvents)===0
+      && n(d.jarvis&&d.jarvis.messages)===0
       && n(d.docs)===0;
 }
 function localDateStr(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
@@ -479,6 +484,135 @@ function financeShiftsSource(ctx){
 }
 SIGNAL_SOURCES.push(financeShiftsSource);
 
+// Tasks: overdue and urgent items from personal.tasks (same urgency lens as taskUrg).
+function tasksSource(ctx){
+  const tasks=((ctx.data.personal||{}).tasks||[]).filter(function(t){return !t.done;});
+  if(!tasks.length)return[];
+  const overdue=tasks.filter(function(t){return t.due&&daysBetween(t.due)<0;})
+    .sort(function(a,b){return daysBetween(a.due)-daysBetween(b.due);}); // most overdue first
+  const dueSoon=tasks.filter(function(t){return t.due&&daysBetween(t.due)>=0&&daysBetween(t.due)<=1;});
+  const urgent=tasks.filter(function(t){return t.priority==="urgent";});
+  if(!overdue.length&&!dueSoon.length&&!urgent.length)return[];
+  const worstDays=overdue.length?-daysBetween(overdue[0].due):0;
+  const severity=worstDays>3||overdue.length>=3?"alert":(overdue.length||urgent.length)?"watch":"info";
+  const score=severity==="alert"?85:severity==="watch"?55:35;
+  const name=function(t){return(t.name||"").trim().slice(0,40);};
+  let template;
+  if(overdue.length){
+    template=overdue.length+" task"+(overdue.length!==1?"s":"")+" overdue — oldest "+worstDays+"d: “"+name(overdue[0])+"”."+(dueSoon.length?" "+dueSoon.length+" more due by tomorrow.":"");
+  }else if(dueSoon.length){
+    template=dueSoon.length+" task"+(dueSoon.length!==1?"s":"")+" due by tomorrow — next: “"+name(dueSoon[0])+"”.";
+  }else{
+    template="Urgent task open: “"+name(urgent[0])+"” — no due date set.";
+  }
+  return[{
+    id:"tasks.attention",domain:"tasks",score:score,severity:severity,
+    facts:{overdueCount:overdue.length,worstOverdueDays:worstDays,oldest:overdue.length?name(overdue[0]):"",dueSoonCount:dueSoon.length,urgentCount:urgent.length},
+    template:template,cta:{label:"Tasks",page:"Personal"},
+    fingerprint:[overdue.length,worstDays,dueSoon.length,urgent.length].join("|"),
+    computedAt:ctx.today
+  }];
+}
+SIGNAL_SOURCES.push(tasksSource);
+
+// Uni: assessments overdue or due within 14 days.
+function uniSource(ctx){
+  const upcoming=((ctx.data.uni||{}).assessments||[]).filter(function(a){return !a.done&&a.date;})
+    .map(function(a){return{...a,inDays:daysBetween(a.date)};})
+    .filter(function(a){return a.inDays<=14;})
+    .sort(function(a,b){return a.inDays-b.inDays;});
+  if(!upcoming.length)return[];
+  const next=upcoming[0];
+  const severity=next.inDays<0||next.inDays<=3?"alert":next.inDays<=7?"watch":"info";
+  const score=severity==="alert"?88:severity==="watch"?58:32;
+  const when=next.inDays<0?(-next.inDays)+"d overdue":next.inDays===0?"due today":next.inDays===1?"due tomorrow":"due in "+next.inDays+" days ("+fmtDate(next.date)+")";
+  const rest=upcoming.length-1;
+  return[{
+    id:"uni.assessments",domain:"uni",score:score,severity:severity,
+    facts:{next:next.name+" ("+next.subject+")",inDays:next.inDays,date:next.date,within14d:upcoming.length},
+    template:next.name+" ("+next.subject+") "+when+"."+(rest>0?" "+rest+" more in the next fortnight.":""),
+    cta:{label:"Uni",page:"Uni"},
+    fingerprint:[next.subject,next.date,upcoming.length].join("|"),
+    computedAt:ctx.today
+  }];
+}
+SIGNAL_SOURCES.push(uniSource);
+
+// Calendar: non-work events today and tomorrow (work shifts are the finance rule's job).
+function calendarSource(ctx){
+  const evs=(ctx.gcalEvents||[]).filter(function(ev){
+    if(isGoTabEvent(ev))return false;
+    const d=daysBetween(ev.date);return d===0||d===1;
+  }).sort(function(a,b){return(a.date+(a.time||"")).localeCompare(b.date+(b.time||""));});
+  if(!evs.length)return[];
+  const today=evs.filter(function(ev){return daysBetween(ev.date)===0;});
+  const label=function(ev){return(ev.title||"event").trim().slice(0,30)+(ev.allDay||!ev.time?"":" "+ev.time.split(/[–-]/)[0]);};
+  const list=(today.length?today:evs).slice(0,3).map(label).join(", ");
+  return[{
+    id:"calendar.upcoming",domain:"calendar",score:today.length?45:25,severity:"info",
+    facts:{todayCount:today.length,tomorrowCount:evs.length-today.length,next:label(evs[0])},
+    template:today.length
+      ?("Today: "+today.length+" event"+(today.length!==1?"s":"")+" — "+list+".")
+      :("Tomorrow: "+evs.length+" event"+(evs.length!==1?"s":"")+" — "+list+"."),
+    cta:null,
+    fingerprint:evs.map(function(ev){return ev.date+"|"+(ev.time||"");}).join(","),
+    computedAt:ctx.today
+  }];
+}
+SIGNAL_SOURCES.push(calendarSource);
+
+// Gym: nudge when the rotation has sat idle; silent when training is on track.
+function gymSource(ctx){
+  const gym=ctx.data.gym||{};
+  const workouts=gym.workouts||[];
+  if(!workouts.length)return[]; // never trained → not a nudge candidate yet
+  let last="";workouts.forEach(function(w){if(w.date&&w.date>last)last=w.date;});
+  if(!last)return[];
+  const idle=-daysBetween(last);
+  if(idle<4)return[]; // on track → silence
+  const rot=gym.rotation||[];
+  const next=rot.length?rot[(gym.rotIdx||0)%rot.length]:null;
+  const severity=idle>=7?"alert":"watch";
+  return[{
+    id:"gym.idle",domain:"gym",score:severity==="alert"?70:48,severity:severity,
+    facts:{idleDays:idle,lastDate:last,nextFocus:next?next.focus:""},
+    template:"No gym session in "+idle+" days"+(next?" — next up: "+next.focus+".":"."),
+    cta:{label:"Gym",page:"Gym"},
+    fingerprint:[last,idle>=7?"7+":"4+"].join("|"),
+    computedAt:ctx.today
+  }];
+}
+SIGNAL_SOURCES.push(gymSource);
+
+// ── Jarvis conversation context ───────────────────────────────────────────
+// Compact, pre-digested facts handed to JarvisService.chat — the model never
+// sees raw dashData. Keep this small: it rides along on every chat turn.
+const JARVIS_CHAT_CAP=40; // messages kept in dashData.jarvis.messages
+function buildJarvisContext(data,gcalEvents,signals){
+  const evs=gcalEvents||[];
+  const week=evs.filter(function(ev){const d=daysBetween(ev.date);return d>=0&&d<=7;})
+    .sort(function(a,b){return(a.date+(a.time||"")).localeCompare(b.date+(b.time||""));})
+    .slice(0,15).map(function(ev){return{date:ev.date,time:ev.allDay?"all day":(ev.time||""),title:(ev.title||"").slice(0,40),isWorkShift:isGoTabEvent(ev)};});
+  const tasks=((data.personal||{}).tasks||[]).filter(function(t){return !t.done;})
+    .slice(0,12).map(function(t){return{name:(t.name||"").trim().slice(0,50),due:t.due||null,priority:t.priority||"normal"};});
+  const assessments=((data.uni||{}).assessments||[]).filter(function(a){return !a.done;})
+    .slice(0,8).map(function(a){return{name:a.name,subject:a.subject,date:a.date};});
+  const gym=data.gym||{};
+  const recentWorkouts=(gym.workouts||[]).slice(-3).map(function(w){return{date:w.date,name:w.name};});
+  const rot=gym.rotation||[];
+  const fin=data.finance||{},work=data.work||{};
+  return{
+    today:todayStr(),
+    signals:signals.map(function(s){return{domain:s.domain,summary:s.template,facts:s.facts};}),
+    calendarNext7d:week,
+    openTasks:tasks,
+    pendingAssessments:assessments,
+    gym:{recentWorkouts:recentWorkouts,nextFocus:rot.length?(rot[(gym.rotIdx||0)%rot.length]||{}).focus:""},
+    finance:{savingsGoal:fin.savingsGoal||null,hourlyRate:Number(work.hourlyRate||0),payCycleDay:Number(work.payCycleDay||1)},
+    northStar:(data.boardroom&&data.boardroom.northStar)||""
+  };
+}
+
 // ── Rule-based check-in (fallback) ────────────────────────────────────────
 function generateCheckinFallback(data){
   const blocks=[];
@@ -623,6 +757,68 @@ function JarvisBriefing(props){
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── Ask Jarvis: conversation surface ──────────────────────────────────────
+// A slim input under the briefing strip; expands into the recent exchange.
+// onUpdate takes an updater fn (prev jarvis → next jarvis) so rapid sends
+// can't clobber each other via stale props.
+function JarvisChat(props){
+  const jarvis=props.jarvis||{messages:[]},mob=props.mob||false,onUpdate=props.onUpdate,getContext=props.getContext;
+  const msgs=jarvis.messages||[];
+  const [q,setQ]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [open,setOpen]=useState(false);
+  const listRef=useRef(null);
+  const aliveRef=useRef(true);
+  useEffect(function(){aliveRef.current=true;return function(){aliveRef.current=false;};},[]);
+  useEffect(function(){if(listRef.current)listRef.current.scrollTop=listRef.current.scrollHeight;},[msgs.length,busy,open]);
+  function send(){
+    const text=q.trim();
+    if(!text||busy)return;
+    const userMsg={role:"user",text:text,at:new Date().toISOString()};
+    onUpdate(function(j){return{...j,messages:((j&&j.messages)||[]).concat([userMsg]).slice(-JARVIS_CHAT_CAP)};});
+    setQ("");setOpen(true);setBusy(true);
+    const svc=window.JarvisService;
+    const history=msgs.slice(-8);
+    (svc&&svc.chat?svc.chat(text,getContext(),history):Promise.resolve(null)).then(function(reply){
+      if(aliveRef.current)setBusy(false);
+      const jm={role:"jarvis",at:new Date().toISOString(),
+        text:reply||"I can’t reach an AI provider right now — check the Gemini key in settings, or try again later.",
+        offline:!reply};
+      onUpdate(function(j){return{...j,messages:((j&&j.messages)||[]).concat([jm]).slice(-JARVIS_CHAT_CAP)};});
+    });
+  }
+  const shown=open?msgs.slice(-12):[];
+  return(
+    <div className="card-rim" style={{background:cardBg,boxShadow:cardShadowSoft,borderRadius:14,padding:"10px 14px",marginBottom:18}}>
+      {shown.length>0&&(
+        <div ref={listRef} style={{maxHeight:280,overflowY:"auto",display:"flex",flexDirection:"column",gap:8,padding:"4px 2px 10px"}}>
+          {shown.map(function(m,i){
+            const user=m.role==="user";
+            return(
+              <div key={(m.at||"")+i} style={{alignSelf:user?"flex-end":"flex-start",maxWidth:"85%",padding:"7px 12px",borderRadius:12,fontSize:13,lineHeight:1.5,
+                background:user?"rgba(91,140,255,0.16)":"rgba(255,255,255,0.045)",
+                border:user?"1px solid rgba(91,140,255,0.28)":"1px solid rgba(255,255,255,0.07)",
+                color:m.offline?T.text3:T.text,fontStyle:m.offline?"italic":"normal"}}>
+                {m.text}
+              </div>
+            );
+          })}
+          {busy&&<div style={{alignSelf:"flex-start",fontSize:12,color:T.text3,padding:"4px 2px"}}>Jarvis is thinking…</div>}
+        </div>
+      )}
+      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <input value={q} onChange={function(ev){setQ(ev.target.value);}}
+          onKeyDown={function(ev){if(ev.key==="Enter")send();}}
+          onFocus={function(){if(msgs.length)setOpen(true);}}
+          placeholder="Ask Jarvis — shifts, bills, deadlines, your week…"
+          style={{flex:1,minWidth:0,appearance:"none",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"9px 12px",fontSize:13,color:T.text,outline:"none"}}/>
+        {msgs.length>0&&<button onClick={function(){setOpen(!open);}} style={{...btnGlass,padding:"6px 10px",fontSize:10,opacity:0.8}}>{open?"Hide":"History"}</button>}
+        <button onClick={send} disabled={busy||!q.trim()} style={{...btnGlassP,padding:"7px 14px",fontSize:12,opacity:busy||!q.trim()?0.45:1,cursor:busy||!q.trim()?"default":"pointer"}}>Ask</button>
+      </div>
     </div>
   );
 }
@@ -2974,6 +3170,31 @@ function App(){
     });
     return function(){alive=false;};
   },[jarvisFingerprint]);
+  // Morning brief: generated once per day (per device), the first time signals exist.
+  // No LLM → no brief card; the signal cards already carry the facts.
+  const [morningBrief,setMorningBrief]=useState(function(){
+    try{const b=JSON.parse(localStorage.getItem("__jarvis_brief__")||"null");return(b&&b.date===todayStr())?b:null;}catch(_){return null;}
+  });
+  useEffect(function(){
+    if(morningBrief&&morningBrief.date===todayStr())return; // already have today's
+    if(!jarvisSignals.length||!window.JarvisService)return;
+    let alive=true;
+    JarvisService.brief(buildJarvisContext(data,dedupeEvents(gcalEvents),jarvisSignals)).then(function(text){
+      if(!alive||!text)return;
+      const b={date:todayStr(),text:text,dismissed:false};
+      try{localStorage.setItem("__jarvis_brief__",JSON.stringify(b));}catch(_){}
+      setMorningBrief(b);
+    });
+    return function(){alive=false;};
+  },[jarvisFingerprint]);
+  function dismissBrief(){
+    setMorningBrief(function(b){
+      if(!b)return b;
+      const next={...b,dismissed:true};
+      try{localStorage.setItem("__jarvis_brief__",JSON.stringify(next));}catch(_){}
+      return next;
+    });
+  }
   const visibleGcalEvents=dedupedEvents.filter(function(ev){
     if(gcalExcludedIds.indexOf(ev.calId)!==-1)return false;
     if(gcalSelectedIds.length===0)return true;
@@ -3608,6 +3829,9 @@ function App(){
   }
   function updateFinance(fin){setData(function(p){return{...p,finance:fin};});}
   function updateInvest(inv){setData(function(p){return{...p,invest:inv};});}
+  // Updater-fn form: chat appends from async callbacks, so it must compose with
+  // the latest state rather than a possibly-stale prop snapshot.
+  function updateJarvis(updater){setData(function(p){return{...p,jarvis:typeof updater==="function"?updater(p.jarvis||{messages:[]}):updater};});}
   function updateWork(w){setData(function(p){return{...p,work:w};});}
   function requestImmediateSave(){_flushNow.current=true;} // bypass the 2s debounce on the next data save
   function submitRefl(){
@@ -3870,11 +4094,23 @@ function App(){
             <div style={{fontSize:mob?20:24,fontWeight:800,letterSpacing:"-0.02em",color:"#eef3fb"}}>{(function(){var h=new Date().getHours();return h<12?"Good morning":h<18?"Good afternoon":"Good evening";})()}, Ashley</div>
             <div style={{fontSize:13,color:"#7a85a0",marginTop:4}}>{new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
           </div>
+          {/* Morning brief — once a day, dismissible; only exists when the LLM phrased one */}
+          {morningBrief&&!morningBrief.dismissed&&morningBrief.text&&(
+            <div className="card-rim brief-card" style={{"--i":0,background:cardBg,boxShadow:cardShadow,borderRadius:14,borderLeft:"3px solid "+T.accent,padding:"14px 18px",marginBottom:12,display:"flex",gap:12,alignItems:"flex-start"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:T.accent,marginBottom:5}}>Morning brief</div>
+                <div style={{fontSize:mob?13:14,lineHeight:1.55,color:T.text}}>{morningBrief.text}</div>
+              </div>
+              <button onClick={dismissBrief} title="Dismiss" style={{appearance:"none",background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:14,lineHeight:1,padding:2}}>×</button>
+            </div>
+          )}
           {/* Jarvis briefing — ambient, renders nothing when there's nothing to say */}
           <JarvisBriefing mob={mob} onOpen={setPage} cards={jarvisSignals.map(function(s){
             const ph=(jarvisCards||[]).find(function(c){return c.id===s.id;});
             return{signal:s,text:(ph&&ph.text)||s.template};
           })}/>
+          <JarvisChat mob={mob} jarvis={data.jarvis} onUpdate={updateJarvis}
+            getContext={function(){return buildJarvisContext(data,dedupedEvents,jarvisSignals);}}/>
           {/* Bento masonry — cards pack by height, no dead gaps */}
           <div style={{columnCount:mob?1:3,columnGap:18}}>
             <div className="card-rim" style={card({columnSpan:"all",breakInside:"avoid",padding:"16px 20px"})}>

@@ -23,14 +23,17 @@
       available: function () {
         try { return !!(localStorage.getItem('__gemini_key__') || '').trim(); } catch (_) { return false; }
       },
-      generate: function (prompt) {
+      generate: function (prompt, opts) {
+        opts = opts || {};
         var key = (localStorage.getItem('__gemini_key__') || '').trim();
+        var gen = { temperature: 0.4, maxOutputTokens: opts.maxTokens || 400 };
+        if (opts.json !== false) gen.responseMimeType = 'application/json';
         return fetch(GEMINI_URL + '?key=' + key, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.4, maxOutputTokens: 400, responseMimeType: 'application/json' }
+            generationConfig: gen
           })
         }).then(function (r) {
           if (!r.ok) return r.json().then(function (e) { throw new Error('Gemini ' + r.status + ': ' + ((e.error && e.error.message) || r.statusText)); });
@@ -43,15 +46,15 @@
     }
   ];
 
-  function route(prompt, i) {
+  function route(prompt, opts, i) {
     i = i || 0;
     if (i >= providers.length) return Promise.resolve(null);
     var p = providers[i];
-    if (!p.available()) return route(prompt, i + 1);
-    return p.generate(prompt).catch(function (e) {
+    if (!p.available()) return route(prompt, opts, i + 1);
+    return p.generate(prompt, opts).catch(function (e) {
       if (window.ErrorHandler && ErrorHandler.warn) ErrorHandler.warn('Jarvis ' + p.name + ' failed: ' + e.message, 'jarvis-service');
       else console.warn('[Jarvis]', p.name, 'failed:', e.message);
-      return route(prompt, i + 1);
+      return route(prompt, opts, i + 1);
     });
   }
 
@@ -71,7 +74,7 @@
       'numbers are bad.\n' +
       'Respond ONLY with a JSON array, no markdown: [{"id":"...","text":"..."}]\n\n' +
       JSON.stringify(payload);
-    return route(prompt).then(function (text) {
+    return route(prompt, { json: true }).then(function (text) {
       if (!text) return null;
       var arr;
       try { arr = JSON.parse((text.match(/\[[\s\S]*\]/) || [text])[0]); } catch (_) { return null; }
@@ -82,6 +85,52 @@
         return c && ids[c.id] && typeof c.text === 'string' && c.text.length > 0 && c.text.length < 160;
       }).map(function (c) { return { id: c.id, text: c.text }; });
       return out.length ? out : null;
+    });
+  }
+
+  /**
+   * Conversational reply grounded in the briefing context.
+   * context: compact pre-digested facts object built by the app (never raw dashData).
+   * history: [{role:'user'|'jarvis', text}] — recent turns only (caller slices).
+   * Resolves to a plain-text reply, or null when no provider is available/working.
+   */
+  function chat(question, context, history) {
+    var convo = (history || []).slice(-8).map(function (m) {
+      return (m.role === 'user' ? 'User: ' : 'Jarvis: ') + m.text;
+    }).join('\n');
+    var prompt =
+      'You are Jarvis, Ashley’s calm personal chief-of-staff inside her life dashboard (Athena). ' +
+      'Answer from the CONTEXT facts below — they are her real, current data. Be specific with numbers and dates. ' +
+      'If the context doesn’t contain what’s needed, say so briefly rather than guessing. ' +
+      'No exclamation marks, no emoji, no flattery. Max 100 words, plain text only.\n\n' +
+      'CONTEXT (JSON):\n' + JSON.stringify(context) + '\n\n' +
+      (convo ? 'RECENT CONVERSATION:\n' + convo + '\n\n' : '') +
+      'User: ' + question + '\nJarvis:';
+    return route(prompt, { json: false, maxTokens: 300 }).then(function (text) {
+      if (!text || typeof text !== 'string') return null;
+      var t = text.trim();
+      if (!t || t.length > 1200) return null;
+      return t;
+    });
+  }
+
+  /**
+   * Morning brief: 2–3 sentences over the whole day's context.
+   * Resolves to plain text or null — the app shows no brief card on null
+   * (the signal cards already carry the facts; a templated brief would
+   * just repeat them).
+   */
+  function brief(context) {
+    var prompt =
+      'You are Jarvis, Ashley’s calm personal chief-of-staff. Compose her morning brief from the ' +
+      'CONTEXT below: 2–3 sentences, max 60 words, most important thing first, specific numbers and ' +
+      'dates, no exclamation marks, no emoji. Start with “Morning —”. Plain text only.\n\n' +
+      'CONTEXT (JSON):\n' + JSON.stringify(context);
+    return route(prompt, { json: false, maxTokens: 200 }).then(function (text) {
+      if (!text || typeof text !== 'string') return null;
+      var t = text.trim();
+      if (!t || t.length > 500) return null;
+      return t;
     });
   }
 
@@ -98,6 +147,6 @@
     } catch (_) {}
   }
 
-  window.JarvisService = { phrase: phrase, getCached: getCached, setCached: setCached, _providers: providers };
+  window.JarvisService = { phrase: phrase, chat: chat, brief: brief, getCached: getCached, setCached: setCached, _providers: providers };
 
 }());
