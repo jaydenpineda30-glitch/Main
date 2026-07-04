@@ -112,7 +112,7 @@ var T = {
 // DAYS, TASK_CATS, SUBJECTS, SC, SYLLABUS_ASSESSMENTS, REFL_QS, REFL_LABELS, WX_MAP, WX_DAYS → data.js
 
 // ── Navigation glyphs — consistent stroke-based line icons (replaces emoji) ──
-var NAV_PAGES = ["Dashboard", "Uni", "Work", "Gym", "Personal", "Finance", "Invest", "Journal", "Boardroom"];
+var NAV_PAGES = ["Dashboard", "Uni", "Work", "Gym", "Personal", "Finance", "Invest", "Journal", "Boardroom", "Projects", "Shopping"];
 function NavGlyph(props) {
   var n = props.name;
   var s = props.size || 18;
@@ -203,6 +203,22 @@ function NavGlyph(props) {
       r: "9"
     }), /*#__PURE__*/React.createElement("path", {
       d: "m15.5 8.5-2 5.5-5.5 2 2-5.5 5.5-2Z"
+    })),
+    Projects: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+      d: "M4 5h13a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4Z"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M8 4.5v3M8 12l1.6 1.6L12.5 10M8 17h6"
+    })),
+    Shopping: /*#__PURE__*/React.createElement("g", null, /*#__PURE__*/React.createElement("path", {
+      d: "M4 4h2l2.2 11.2a1.5 1.5 0 0 0 1.5 1.2h7.3a1.5 1.5 0 0 0 1.5-1.2L21 8H7"
+    }), /*#__PURE__*/React.createElement("circle", {
+      cx: "10",
+      cy: "20",
+      r: "1.2"
+    }), /*#__PURE__*/React.createElement("circle", {
+      cx: "18",
+      cy: "20",
+      r: "1.2"
     }))
   };
   return /*#__PURE__*/React.createElement("svg", a, g[n] || null);
@@ -648,7 +664,9 @@ var INIT = {
     attendanceMigrated: false,
     taskLog: [],
     focusGoals: []
-  }
+  },
+  projects: [],
+  shopping: []
 };
 
 // Recursively remove undefined values — Firestore rejects any undefined in the document
@@ -724,7 +742,9 @@ function mergeWithDefaults(cloud) {
         focusGoals: Array.isArray(w.focusGoals) ? w.focusGoals : []
       });
     }(),
-    reflections: Array.isArray(cloud.reflections) && cloud.reflections.length > 0 ? cloud.reflections : SEED_REFL
+    reflections: Array.isArray(cloud.reflections) && cloud.reflections.length > 0 ? cloud.reflections : SEED_REFL,
+    projects: Array.isArray(cloud.projects) ? cloud.projects : [],
+    shopping: Array.isArray(cloud.shopping) ? cloud.shopping : []
   });
 }
 // Returns true if `d` looks like a freshly-seeded state with no user-generated content.
@@ -735,7 +755,7 @@ function isLikelySeedState(d) {
   var n = function n(arr) {
     return Array.isArray(arr) ? arr.length : 0;
   };
-  return n(d.reflections) === 0 && n(d.personal && d.personal.tasks) === 0 && n(d.personal && d.personal.archived) === 0 && n(d.gym && d.gym.exercises) === 0 && n(d.gym && d.gym.workouts) === 0 && n(d.gym && d.gym.bodyWeight) === 0 && n(d.finance && d.finance.expenses) === 0 && n(d.uni && d.uni.completedEvents) === 0 && n(d.docs) === 0;
+  return n(d.reflections) === 0 && n(d.personal && d.personal.tasks) === 0 && n(d.personal && d.personal.archived) === 0 && n(d.gym && d.gym.exercises) === 0 && n(d.gym && d.gym.workouts) === 0 && n(d.gym && d.gym.bodyWeight) === 0 && n(d.finance && d.finance.expenses) === 0 && n(d.uni && d.uni.completedEvents) === 0 && n(d.projects) === 0 && n(d.shopping) === 0 && n(d.docs) === 0;
 }
 function localDateStr(d) {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
@@ -9558,12 +9578,1042 @@ function WorkSection(_ref3) {
     }));
   }))));
 }
-function App() {
-  var _useState131 = useState("Dashboard"),
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Projects (baby-steps goal breakdowns) + Shopping list
+// ─────────────────────────────────────────────────────────────────────────────
+function nid(pref) {
+  return (pref || "i") + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+var PCARD = {
+  position: "relative",
+  background: cardBg,
+  backdropFilter: "blur(24px) saturate(1.4)",
+  WebkitBackdropFilter: "blur(24px) saturate(1.4)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  borderRadius: 20,
+  padding: "18px 20px",
+  marginBottom: 12,
+  boxShadow: cardShadow
+};
+var PINP = {
+  width: "100%",
+  padding: "9px 12px",
+  borderRadius: 10,
+  border: "0.5px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.05)",
+  color: T.text,
+  fontSize: 13,
+  boxSizing: "border-box",
+  outline: "none"
+};
+var MONO = "ui-monospace,Menlo,Consolas,monospace";
+
+// Pull a leading emoji off a title string ("🔑 Anime Keychain" -> {emoji,title}).
+// Detect astral emoji (surrogate pairs) or common BMP symbol/dingbat ranges via \u escapes.
+function leadEmoji(t) {
+  t = (t || "").trim();
+  var sp = t.indexOf(" ");
+  if (sp < 1) return {
+    emoji: "",
+    title: t
+  };
+  var head = t.slice(0, sp);
+  var isEmo = /[\uD800-\uDBFF]/.test(head) || /[←-⯿☀-➿️⃣⬀-⯿]/.test(head);
+  if (!/[A-Za-z0-9]/.test(head) && isEmo) return {
+    emoji: head,
+    title: t.slice(sp + 1).trim()
+  };
+  return {
+    emoji: "",
+    title: t
+  };
+}
+
+// Parse the paste-in block into a project object. Returns null if there's no title or no steps.
+// Format: "# Title" · "## Stage — subtitle" · "- step | where: .. | search: .. | price: .. | skip"
+function parseProjectImport(text) {
+  var lines = (text || "").split(/\r?\n/);
+  var title = "",
+    emoji = "",
+    stages = [],
+    stage = null;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line) continue;
+    if (/^##\s+/.test(line)) {
+      var body = line.replace(/^##\s+/, "");
+      var sp2 = body.split(/\s+[—–-]\s+/);
+      stage = {
+        id: nid("st"),
+        title: sp2[0].trim(),
+        subtitle: sp2.slice(1).join(" — ").trim(),
+        steps: []
+      };
+      stages.push(stage);
+      continue;
+    }
+    if (/^#\s+/.test(line)) {
+      var le = leadEmoji(line.replace(/^#\s+/, ""));
+      emoji = le.emoji;
+      title = le.title;
+      continue;
+    }
+    if (/^[-*]\s+/.test(line)) {
+      if (!stage) {
+        stage = {
+          id: nid("st"),
+          title: "",
+          subtitle: "",
+          steps: []
+        };
+        stages.push(stage);
+      }
+      var seg = line.replace(/^[-*]\s+/, "").split("|").map(function (x) {
+        return x.trim();
+      });
+      var t0 = seg[0];
+      var meta = {};
+      var skip = false;
+      if (/^skip:/i.test(t0)) {
+        skip = true;
+        t0 = t0.replace(/^skip:\s*/i, "");
+      }
+      for (var j = 1; j < seg.length; j++) {
+        var kv = seg[j];
+        if (!kv) continue;
+        if (/^skip$/i.test(kv)) {
+          skip = true;
+          continue;
+        }
+        var mi = kv.indexOf(":");
+        if (mi > 0) {
+          var k = kv.slice(0, mi).trim().toLowerCase();
+          var v = kv.slice(mi + 1).trim();
+          if (k === "where" || k === "search" || k === "price") meta[k] = v;else if (k === "desc" || k === "note") meta.desc = v;
+        } else {
+          meta.desc = (meta.desc ? meta.desc + " " : "") + kv;
+        }
+      }
+      stage.steps.push({
+        id: nid("sp"),
+        title: t0,
+        desc: meta.desc || "",
+        done: false,
+        meta: {
+          where: meta.where || "",
+          search: meta.search || "",
+          price: meta.price || "",
+          skip: !!skip
+        }
+      });
+    }
+  }
+  var hasSteps = stages.some(function (s) {
+    return s.steps.length > 0;
+  });
+  if (!title || !hasSteps) return null;
+  return {
+    id: nid("prj"),
+    title: title,
+    emoji: emoji || "📋",
+    createdAt: todayStr(),
+    archived: false,
+    stages: stages
+  };
+}
+function projStats(p) {
+  var total = 0,
+    done = 0,
+    current = null;
+  (p.stages || []).forEach(function (st) {
+    (st.steps || []).forEach(function (s) {
+      total++;
+      if (s.done) done++;else if (!current) current = s;
+    });
+  });
+  return {
+    total: total,
+    done: done,
+    pct: total ? Math.round(done / total * 100) : 0,
+    current: current
+  };
+}
+function ProgressBar(props) {
+  var pct = props.pct || 0;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: props.h || 8,
+      borderRadius: 20,
+      background: "rgba(255,255,255,0.08)",
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: "100%",
+      width: pct + "%",
+      borderRadius: 20,
+      background: "linear-gradient(90deg,#5b8cff,#8fb0ff)",
+      boxShadow: pct > 0 ? "0 0 10px rgba(91,140,255,0.5)" : "none",
+      transition: "width .45s cubic-bezier(.22,1,.36,1)"
+    }
+  }));
+}
+function TickCircle(props) {
+  var done = props.done;
+  var size = props.size || 26;
+  return /*#__PURE__*/React.createElement("button", {
+    onClick: props.onClick,
+    "aria-label": done ? "Mark not done" : "Mark done",
+    style: {
+      flexShrink: 0,
+      width: size,
+      height: size,
+      borderRadius: "50%",
+      border: "2px solid " + (done ? T.success : props.accent || "rgba(255,255,255,0.28)"),
+      background: done ? T.success : "transparent",
+      cursor: "pointer",
+      display: "grid",
+      placeItems: "center",
+      padding: 0,
+      transition: "all .18s"
+    }
+  }, done && /*#__PURE__*/React.createElement("svg", {
+    width: size * 0.5,
+    height: size * 0.5,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "#0a0a0a",
+    strokeWidth: "3.4",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M4 12.5l5 5L20 6.5"
+  })));
+}
+function ProjectsSection(_ref4) {
+  var data = _ref4.data,
+    onUpdate = _ref4.onUpdate,
+    onAddShopping = _ref4.onAddShopping,
+    mob = _ref4.mob;
+  var projects = Array.isArray(data) ? data : [];
+  var _useState131 = useState(null),
     _useState132 = _slicedToArray(_useState131, 2),
-    page = _useState132[0],
-    setPage = _useState132[1];
-  var _useState133 = useState(function () {
+    openId = _useState132[0],
+    setOpenId = _useState132[1];
+  var _useState133 = useState(false),
+    _useState134 = _slicedToArray(_useState133, 2),
+    showImport = _useState134[0],
+    setShowImport = _useState134[1];
+  var _useState135 = useState(""),
+    _useState136 = _slicedToArray(_useState135, 2),
+    txt = _useState136[0],
+    setTxt = _useState136[1];
+  function toast(m, t) {
+    if (window.showToast) window.showToast(m, t);
+  }
+  function doImport() {
+    var p = parseProjectImport(txt);
+    if (!p) {
+      toast("Couldn't read that — needs a '# Title' line and at least one '- step'.", "error");
+      return;
+    }
+    onUpdate(projects.concat([p]));
+    setTxt("");
+    setShowImport(false);
+    setOpenId(p.id);
+    toast("Project added — " + p.title, "success");
+  }
+  function toggleStep(pid, sid) {
+    onUpdate(projects.map(function (p) {
+      return p.id !== pid ? p : _objectSpread(_objectSpread({}, p), {}, {
+        stages: p.stages.map(function (st) {
+          return _objectSpread(_objectSpread({}, st), {}, {
+            steps: st.steps.map(function (s) {
+              return s.id !== sid ? s : _objectSpread(_objectSpread({}, s), {}, {
+                done: !s.done
+              });
+            })
+          });
+        })
+      });
+    }));
+  }
+  function removeProject(pid) {
+    onUpdate(projects.filter(function (p) {
+      return p.id !== pid;
+    }));
+    setOpenId(null);
+    toast("Project removed", "success");
+  }
+  function addStepToShopping(p, s) {
+    if (!onAddShopping) return;
+    var name = s.meta && s.meta.search ? s.meta.search : s.title.replace(/^\s*buy\s+(the\s+|a\s+|an\s+)?/i, "");
+    var det = [s.meta && s.meta.where, s.meta && s.meta.price].filter(Boolean).join(" · ");
+    onAddShopping({
+      id: nid("shp"),
+      key: "proj:" + p.id + ":" + s.id,
+      text: name,
+      detail: det,
+      source: p.title,
+      done: false,
+      addedAt: todayStr()
+    });
+    toast("Added to shopping", "success");
+  }
+  var open = openId ? projects.filter(function (p) {
+    return p.id === openId;
+  })[0] : null;
+  if (open) {
+    var stt = projStats(open);
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        setOpenId(null);
+      },
+      style: _objectSpread(_objectSpread({}, editPill), {}, {
+        marginBottom: 14
+      })
+    }, "\u2190 All projects"), /*#__PURE__*/React.createElement("div", {
+      className: "card-rim",
+      style: PCARD
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        marginBottom: 14
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 26,
+        lineHeight: 1
+      }
+    }, open.emoji), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 17,
+        fontWeight: 800,
+        letterSpacing: "-0.02em",
+        color: "#eef3fb"
+      }
+    }, open.title), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: T.text3,
+        marginTop: 2
+      }
+    }, stt.done, " of ", stt.total, " steps done", stt.total ? " · " + stt.pct + "%" : ""))), /*#__PURE__*/React.createElement(ProgressBar, {
+      pct: stt.pct
+    }), stt.current && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 12,
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        fontSize: 12,
+        color: T.accent,
+        background: T.accentBg,
+        border: "0.5px solid rgba(91,140,255,0.35)",
+        padding: "8px 11px",
+        borderRadius: 10
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 7,
+        height: 7,
+        borderRadius: "50%",
+        background: T.accent,
+        flexShrink: 0,
+        animation: "pulse 1.6s ease-in-out infinite"
+      }
+    }), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", {
+      style: {
+        fontWeight: 700
+      }
+    }, "Do next:"), " ", stt.current.title)), !stt.current && stt.total > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 12,
+        fontSize: 12.5,
+        color: T.success,
+        fontWeight: 600
+      }
+    }, "\uD83C\uDF89 Every step done \u2014 nice work.")), open.stages.map(function (st, si) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: st.id,
+        className: "card-rim",
+        style: PCARD
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          marginBottom: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 9,
+          fontWeight: 700,
+          color: T.text3,
+          textTransform: "uppercase",
+          letterSpacing: 0.6
+        }
+      }, "Stage ", si + 1), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 14,
+          fontWeight: 700,
+          color: T.text,
+          marginTop: 2
+        }
+      }, st.title), st.subtitle && /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11.5,
+          color: T.text2,
+          marginTop: 2
+        }
+      }, st.subtitle)), st.steps.map(function (s) {
+        var isCur = stt.current && stt.current.id === s.id;
+        var sk = s.meta && s.meta.skip;
+        return /*#__PURE__*/React.createElement("div", {
+          key: s.id,
+          style: {
+            display: "flex",
+            gap: 11,
+            alignItems: "flex-start",
+            padding: "11px 12px",
+            marginBottom: 8,
+            borderRadius: 12,
+            background: sk ? "rgba(105,240,174,0.06)" : isCur ? T.accentBg : "rgba(225,234,255,0.04)",
+            border: "1px solid " + (isCur ? "rgba(91,140,255,0.5)" : sk ? "rgba(105,240,174,0.25)" : "rgba(255,255,255,0.07)"),
+            boxShadow: isCur ? "0 0 0 3px rgba(91,140,255,0.12)" : "none"
+          }
+        }, /*#__PURE__*/React.createElement(TickCircle, {
+          done: s.done,
+          onClick: function onClick() {
+            toggleStep(open.id, s.id);
+          }
+        }), /*#__PURE__*/React.createElement("div", {
+          style: {
+            flex: 1,
+            minWidth: 0
+          }
+        }, /*#__PURE__*/React.createElement("div", {
+          style: {
+            fontSize: 13,
+            fontWeight: 600,
+            color: s.done ? T.text3 : T.text,
+            textDecoration: s.done ? "line-through" : "none",
+            lineHeight: 1.35
+          }
+        }, s.title), s.desc && /*#__PURE__*/React.createElement("div", {
+          style: {
+            fontSize: 11.5,
+            color: T.text2,
+            marginTop: 3,
+            lineHeight: 1.5,
+            opacity: s.done ? 0.5 : 1
+          }
+        }, s.desc), s.meta && (s.meta.where || s.meta.search || s.meta.price) && /*#__PURE__*/React.createElement("div", {
+          style: {
+            marginTop: 7,
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 6,
+            alignItems: "center"
+          }
+        }, s.meta.where && /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontSize: 10.5,
+            color: T.text2
+          }
+        }, "\uD83D\uDED2 ", s.meta.where), s.meta.search && /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontSize: 10,
+            fontFamily: MONO,
+            background: "rgba(255,255,255,0.06)",
+            padding: "1px 7px",
+            borderRadius: 5,
+            color: T.text
+          }
+        }, s.meta.search), s.meta.price && /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontSize: 10.5,
+            fontWeight: 600,
+            color: T.accent
+          }
+        }, s.meta.price), !s.done && !sk && onAddShopping && /*#__PURE__*/React.createElement("button", {
+          onClick: function onClick() {
+            addStepToShopping(open, s);
+          },
+          style: _objectSpread(_objectSpread({}, editPill), {}, {
+            fontSize: 10,
+            padding: "2px 9px"
+          })
+        }, "+ Shopping")), sk && /*#__PURE__*/React.createElement("div", {
+          style: {
+            marginTop: 5,
+            fontSize: 10,
+            color: T.success,
+            fontWeight: 600
+          }
+        }, "Skip this \u2014 just tick to acknowledge")));
+      }));
+    }), /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        removeProject(open.id);
+      },
+      style: _objectSpread(_objectSpread({}, editPill), {}, {
+        color: T.danger,
+        borderColor: "rgba(255,107,107,0.4)",
+        marginTop: 4
+      })
+    }, "Delete project"));
+  }
+  var active = projects.filter(function (p) {
+    return !p.archived;
+  });
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 16,
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: mob ? 20 : 23,
+      fontWeight: 800,
+      letterSpacing: "-0.02em",
+      color: "#eef3fb"
+    }
+  }, "Projects"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: T.text3,
+      marginTop: 2
+    }
+  }, "Big goals, broken into tiny steps.")), /*#__PURE__*/React.createElement("button", {
+    style: btnGlassP,
+    onClick: function onClick() {
+      setShowImport(function (v) {
+        return !v;
+      });
+    }
+  }, showImport ? "Close" : "+ New project")), showImport && /*#__PURE__*/React.createElement("div", {
+    className: "card-rim",
+    style: PCARD
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: T.text2,
+      marginBottom: 8,
+      lineHeight: 1.5
+    }
+  }, "Paste the breakdown block (Claude hands you one). Format: ", /*#__PURE__*/React.createElement("code", {
+    style: {
+      fontFamily: MONO,
+      fontSize: 11
+    }
+  }, "# Title"), " \xB7 ", /*#__PURE__*/React.createElement("code", {
+    style: {
+      fontFamily: MONO,
+      fontSize: 11
+    }
+  }, "## Stage"), " \xB7 ", /*#__PURE__*/React.createElement("code", {
+    style: {
+      fontFamily: MONO,
+      fontSize: 11
+    }
+  }, "- step"), "."), /*#__PURE__*/React.createElement("textarea", {
+    value: txt,
+    onChange: function onChange(e) {
+      setTxt(e.target.value);
+    },
+    rows: mob ? 7 : 9,
+    placeholder: "# 🔑 Anime Keychain\n## Stage 1 — Buy 4 things\n- Buy the main board | where: Amazon.com.au | price: ~$40",
+    style: _objectSpread(_objectSpread({}, PINP), {}, {
+      resize: "vertical",
+      fontFamily: MONO,
+      fontSize: 12,
+      lineHeight: 1.5
+    })
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "flex-end",
+      gap: 8,
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: editPill,
+    onClick: function onClick() {
+      setTxt("");
+      setShowImport(false);
+    }
+  }, "Cancel"), /*#__PURE__*/React.createElement("button", {
+    style: btnGlassP,
+    onClick: doImport
+  }, "Import project"))), active.length === 0 && !showImport && /*#__PURE__*/React.createElement("div", {
+    className: "card-rim",
+    style: _objectSpread(_objectSpread({}, PCARD), {}, {
+      textAlign: "center",
+      padding: "34px 20px"
+    })
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 30,
+      marginBottom: 8
+    }
+  }, "\uD83D\uDDC2\uFE0F"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 14,
+      fontWeight: 700,
+      color: T.text,
+      marginBottom: 4
+    }
+  }, "No projects yet"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: T.text2,
+      marginBottom: 16,
+      maxWidth: 340,
+      marginLeft: "auto",
+      marginRight: "auto",
+      lineHeight: 1.6
+    }
+  }, "Ask Claude to break a goal into baby-steps, then tap \"+ New project\" and paste it here."), /*#__PURE__*/React.createElement("button", {
+    style: btnGlassP,
+    onClick: function onClick() {
+      setShowImport(true);
+    }
+  }, "+ New project")), active.map(function (p) {
+    var s = projStats(p);
+    return /*#__PURE__*/React.createElement("div", {
+      key: p.id,
+      className: "card-rim",
+      onClick: function onClick() {
+        setOpenId(p.id);
+      },
+      style: _objectSpread(_objectSpread({}, PCARD), {}, {
+        cursor: "pointer"
+      })
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 11,
+        marginBottom: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 22,
+        lineHeight: 1
+      }
+    }, p.emoji), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 15,
+        fontWeight: 700,
+        color: "#eef3fb",
+        letterSpacing: "-0.01em"
+      }
+    }, p.title), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: T.text3,
+        marginTop: 1
+      }
+    }, s.done, "/", s.total, " done \xB7 ", s.pct, "%")), /*#__PURE__*/React.createElement("div", {
+      style: _objectSpread(_objectSpread({}, editPill), {}, {
+        pointerEvents: "none"
+      })
+    }, "Open \u2192")), /*#__PURE__*/React.createElement(ProgressBar, {
+      pct: s.pct
+    }), s.current && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 10,
+        fontSize: 12,
+        color: T.text2,
+        display: "flex",
+        alignItems: "center",
+        gap: 7
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 6,
+        height: 6,
+        borderRadius: "50%",
+        background: T.accent,
+        flexShrink: 0
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        minWidth: 0,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }
+    }, "Next: ", s.current.title)), !s.current && s.total > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 10,
+        fontSize: 12,
+        color: T.success,
+        fontWeight: 600
+      }
+    }, "\u2713 All done"));
+  }));
+}
+function ShopRow(props) {
+  var x = props.item;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 11,
+      alignItems: "center",
+      padding: "9px 2px"
+    }
+  }, /*#__PURE__*/React.createElement(TickCircle, {
+    done: x.done,
+    size: 22,
+    onClick: props.onToggle
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 500,
+      color: x.done ? T.text3 : T.text,
+      textDecoration: x.done ? "line-through" : "none"
+    }
+  }, x.text), (x.detail || x.source) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: T.text3,
+      marginTop: 1,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, x.detail, x.detail && x.source ? " · " : "", x.source ? "from " + x.source : "")), /*#__PURE__*/React.createElement("button", {
+    onClick: props.onRemove,
+    "aria-label": "Remove",
+    style: {
+      background: "none",
+      border: "none",
+      color: T.text3,
+      cursor: "pointer",
+      fontSize: 18,
+      lineHeight: 1,
+      padding: "0 4px",
+      flexShrink: 0
+    }
+  }, "\xD7"));
+}
+function ShoppingSection(_ref5) {
+  var data = _ref5.data,
+    onUpdate = _ref5.onUpdate,
+    mob = _ref5.mob;
+  var items = Array.isArray(data) ? data : [];
+  var _useState137 = useState(""),
+    _useState138 = _slicedToArray(_useState137, 2),
+    inp = _useState138[0],
+    setInp = _useState138[1];
+  function toast(m, t) {
+    if (window.showToast) window.showToast(m, t);
+  }
+  function add() {
+    var v = inp.trim();
+    if (!v) return;
+    onUpdate(items.concat([{
+      id: nid("shp"),
+      key: null,
+      text: v,
+      detail: "",
+      source: "",
+      done: false,
+      addedAt: todayStr()
+    }]));
+    setInp("");
+  }
+  function toggle(id) {
+    onUpdate(items.map(function (x) {
+      return x.id !== id ? x : _objectSpread(_objectSpread({}, x), {}, {
+        done: !x.done
+      });
+    }));
+  }
+  function remove(id) {
+    onUpdate(items.filter(function (x) {
+      return x.id !== id;
+    }));
+  }
+  function clearBought() {
+    onUpdate(items.filter(function (x) {
+      return !x.done;
+    }));
+    toast("Cleared bought items", "success");
+  }
+  var todo = items.filter(function (x) {
+    return !x.done;
+  });
+  var bought = items.filter(function (x) {
+    return x.done;
+  });
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 16,
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: mob ? 20 : 23,
+      fontWeight: 800,
+      letterSpacing: "-0.02em",
+      color: "#eef3fb"
+    }
+  }, "Shopping"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: T.text3,
+      marginTop: 2
+    }
+  }, todo.length, " to buy", bought.length ? " · " + bought.length + " in cart" : "")), bought.length > 0 && /*#__PURE__*/React.createElement("button", {
+    style: editPill,
+    onClick: clearBought
+  }, "Clear bought")), /*#__PURE__*/React.createElement("div", {
+    className: "card-rim",
+    style: PCARD
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginBottom: todo.length || bought.length ? 14 : 0
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    value: inp,
+    onChange: function onChange(e) {
+      setInp(e.target.value);
+    },
+    onKeyDown: function onKeyDown(e) {
+      if (e.key === "Enter") add();
+    },
+    placeholder: "Add an item\u2026",
+    style: PINP
+  }), /*#__PURE__*/React.createElement("button", {
+    style: btnGlassP,
+    onClick: add
+  }, "Add")), todo.length === 0 && bought.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: T.text2,
+      paddingTop: 2
+    }
+  }, "Nothing on the list yet."), todo.map(function (x) {
+    return /*#__PURE__*/React.createElement(ShopRow, {
+      key: x.id,
+      item: x,
+      onToggle: function onToggle() {
+        toggle(x.id);
+      },
+      onRemove: function onRemove() {
+        remove(x.id);
+      }
+    });
+  }), bought.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 14,
+      paddingTop: 12,
+      borderTop: "0.5px solid " + T.border
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9,
+      fontWeight: 700,
+      color: T.text3,
+      textTransform: "uppercase",
+      letterSpacing: 0.6,
+      marginBottom: 8
+    }
+  }, "In cart"), bought.map(function (x) {
+    return /*#__PURE__*/React.createElement(ShopRow, {
+      key: x.id,
+      item: x,
+      onToggle: function onToggle() {
+        toggle(x.id);
+      },
+      onRemove: function onRemove() {
+        remove(x.id);
+      }
+    });
+  }))));
+}
+function ShoppingHomeCard(_ref6) {
+  var items = _ref6.items,
+    onUpdate = _ref6.onUpdate,
+    onOpen = _ref6.onOpen,
+    cardStyle = _ref6.cardStyle,
+    mob = _ref6.mob;
+  var list = Array.isArray(items) ? items : [];
+  var _useState139 = useState(""),
+    _useState140 = _slicedToArray(_useState139, 2),
+    inp = _useState140[0],
+    setInp = _useState140[1];
+  var todo = list.filter(function (x) {
+    return !x.done;
+  });
+  function add() {
+    var v = inp.trim();
+    if (!v) return;
+    onUpdate(list.concat([{
+      id: nid("shp"),
+      key: null,
+      text: v,
+      detail: "",
+      source: "",
+      done: false,
+      addedAt: todayStr()
+    }]));
+    setInp("");
+  }
+  function toggle(id) {
+    onUpdate(list.map(function (x) {
+      return x.id !== id ? x : _objectSpread(_objectSpread({}, x), {}, {
+        done: !x.done
+      });
+    }));
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    className: "card-rim",
+    style: _objectSpread(_objectSpread({}, cardStyle || PCARD), {}, {
+      breakInside: "avoid"
+    })
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 7
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: T.accent,
+      display: "flex"
+    }
+  }, /*#__PURE__*/React.createElement(NavGlyph, {
+    name: "Shopping",
+    size: 15
+  })), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      fontWeight: 700,
+      color: "#eef3fb",
+      letterSpacing: 0.2
+    }
+  }, "Shopping"), todo.length > 0 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      fontWeight: 700,
+      color: T.accent,
+      background: T.accentBg,
+      borderRadius: 99,
+      padding: "1px 8px"
+    }
+  }, todo.length)), /*#__PURE__*/React.createElement("button", {
+    style: editPill,
+    onClick: onOpen
+  }, "Open \u2192")), todo.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: T.text2,
+      marginBottom: 10
+    }
+  }, "Nothing to buy right now."), todo.slice(0, 5).map(function (x) {
+    return /*#__PURE__*/React.createElement("div", {
+      key: x.id,
+      style: {
+        display: "flex",
+        gap: 9,
+        alignItems: "center",
+        padding: "6px 0"
+      }
+    }, /*#__PURE__*/React.createElement(TickCircle, {
+      done: false,
+      size: 20,
+      onClick: function onClick() {
+        toggle(x.id);
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0,
+        fontSize: 12.5,
+        color: T.text,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }
+    }, x.text, x.detail ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: T.text3,
+        fontSize: 10.5
+      }
+    }, " \xB7 ", x.detail) : null));
+  }), todo.length > 5 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: T.text3,
+      margin: "4px 0 8px",
+      paddingLeft: 29
+    }
+  }, "+", todo.length - 5, " more"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 7,
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    value: inp,
+    onChange: function onChange(e) {
+      setInp(e.target.value);
+    },
+    onKeyDown: function onKeyDown(e) {
+      if (e.key === "Enter") add();
+    },
+    placeholder: "Quick add\u2026",
+    style: _objectSpread(_objectSpread({}, PINP), {}, {
+      padding: "7px 10px",
+      fontSize: 12
+    })
+  }), /*#__PURE__*/React.createElement("button", {
+    style: _objectSpread(_objectSpread({}, btnGlassP), {}, {
+      padding: "6px 12px"
+    }),
+    onClick: add
+  }, "Add")));
+}
+function App() {
+  var _useState141 = useState("Dashboard"),
+    _useState142 = _slicedToArray(_useState141, 2),
+    page = _useState142[0],
+    setPage = _useState142[1];
+  var _useState143 = useState(function () {
       try {
         var s = localStorage.getItem("dash_v1");
         if (!s) return mergeWithDefaults(_objectSpread(_objectSpread({}, INIT), {}, {
@@ -9584,26 +10634,26 @@ function App() {
         }));
       }
     }),
-    _useState134 = _slicedToArray(_useState133, 2),
-    data = _useState134[0],
-    setData = _useState134[1];
-  var _useState135 = useState(0),
-    _useState136 = _slicedToArray(_useState135, 2),
-    wkOff = _useState136[0],
-    setWkOff = _useState136[1];
-  var _useState137 = useState(todayStr()),
-    _useState138 = _slicedToArray(_useState137, 2),
-    activeDay = _useState138[0],
-    setActiveDay = _useState138[1];
-  var _useState139 = useState([]),
-    _useState140 = _slicedToArray(_useState139, 2),
-    checkinBlocks = _useState140[0],
-    setCheckinBlocks = _useState140[1];
-  var _useState141 = useState(false),
-    _useState142 = _slicedToArray(_useState141, 2),
-    checkinOpen = _useState142[0],
-    setCheckinOpen = _useState142[1];
-  var _useState143 = useState([{
+    _useState144 = _slicedToArray(_useState143, 2),
+    data = _useState144[0],
+    setData = _useState144[1];
+  var _useState145 = useState(0),
+    _useState146 = _slicedToArray(_useState145, 2),
+    wkOff = _useState146[0],
+    setWkOff = _useState146[1];
+  var _useState147 = useState(todayStr()),
+    _useState148 = _slicedToArray(_useState147, 2),
+    activeDay = _useState148[0],
+    setActiveDay = _useState148[1];
+  var _useState149 = useState([]),
+    _useState150 = _slicedToArray(_useState149, 2),
+    checkinBlocks = _useState150[0],
+    setCheckinBlocks = _useState150[1];
+  var _useState151 = useState(false),
+    _useState152 = _slicedToArray(_useState151, 2),
+    checkinOpen = _useState152[0],
+    setCheckinOpen = _useState152[1];
+  var _useState153 = useState([{
       id: 1,
       exercise: "",
       sets: "",
@@ -9622,9 +10672,9 @@ function App() {
       reps: "",
       weight: ""
     }]),
-    _useState144 = _slicedToArray(_useState143, 2),
-    nxtRows = _useState144[0],
-    setNxtRows = _useState144[1];
+    _useState154 = _slicedToArray(_useState153, 2),
+    nxtRows = _useState154[0],
+    setNxtRows = _useState154[1];
   // Pre-fill nxtRows — check for a saved draft first, then fall back to rotation template
   useEffect(function () {
     var gr = data.gym.rotation || [];
@@ -9677,221 +10727,221 @@ function App() {
       }));
     } catch (_) {}
   }, [nxtRows]);
-  var _useState145 = useState(""),
-    _useState146 = _slicedToArray(_useState145, 2),
-    bwIn = _useState146[0],
-    setBwIn = _useState146[1];
-  var _useState147 = useState(todayStr()),
-    _useState148 = _slicedToArray(_useState147, 2),
-    bwDate = _useState148[0],
-    setBwDate = _useState148[1];
-  var _useState149 = useState(false),
-    _useState150 = _slicedToArray(_useState149, 2),
-    bwEditing = _useState150[0],
-    setBwEditing = _useState150[1];
-  var _useState151 = useState(false),
-    _useState152 = _slicedToArray(_useState151, 2),
-    showCapture = _useState152[0],
-    setShowCapture = _useState152[1];
-  var _useState153 = useState(""),
-    _useState154 = _slicedToArray(_useState153, 2),
-    captureText = _useState154[0],
-    setCaptureText = _useState154[1];
-  var _useState155 = useState(false),
+  var _useState155 = useState(""),
     _useState156 = _slicedToArray(_useState155, 2),
-    captureLoading = _useState156[0],
-    setCaptureLoading = _useState156[1];
-  var _useState157 = useState(null),
+    bwIn = _useState156[0],
+    setBwIn = _useState156[1];
+  var _useState157 = useState(todayStr()),
     _useState158 = _slicedToArray(_useState157, 2),
-    captureResult = _useState158[0],
-    setCaptureResult = _useState158[1];
+    bwDate = _useState158[0],
+    setBwDate = _useState158[1];
   var _useState159 = useState(false),
     _useState160 = _slicedToArray(_useState159, 2),
-    showBoardroom = _useState160[0],
-    setShowBoardroom = _useState160[1];
-  var _useState161 = useState([]),
+    bwEditing = _useState160[0],
+    setBwEditing = _useState160[1];
+  var _useState161 = useState(false),
     _useState162 = _slicedToArray(_useState161, 2),
-    brMessages = _useState162[0],
-    setBrMessages = _useState162[1];
+    showCapture = _useState162[0],
+    setShowCapture = _useState162[1];
   var _useState163 = useState(""),
     _useState164 = _slicedToArray(_useState163, 2),
-    brInput = _useState164[0],
-    setBrInput = _useState164[1];
+    captureText = _useState164[0],
+    setCaptureText = _useState164[1];
   var _useState165 = useState(false),
     _useState166 = _slicedToArray(_useState165, 2),
-    brLoading = _useState166[0],
-    setBrLoading = _useState166[1];
+    captureLoading = _useState166[0],
+    setCaptureLoading = _useState166[1];
   var _useState167 = useState(null),
     _useState168 = _slicedToArray(_useState167, 2),
-    brLastSpeaker = _useState168[0],
-    setBrLastSpeaker = _useState168[1]; // kept for Firestore compat only
-  var _useState169 = useState([]),
+    captureResult = _useState168[0],
+    setCaptureResult = _useState168[1];
+  var _useState169 = useState(false),
     _useState170 = _slicedToArray(_useState169, 2),
-    brGoalProposals = _useState170[0],
-    setBrGoalProposals = _useState170[1];
+    showBoardroom = _useState170[0],
+    setShowBoardroom = _useState170[1];
   var _useState171 = useState([]),
     _useState172 = _slicedToArray(_useState171, 2),
-    brTaskProposals = _useState172[0],
-    setBrTaskProposals = _useState172[1]; // commitments from the last session, addable as real tasks
-  var _useState173 = useState(false),
+    brMessages = _useState172[0],
+    setBrMessages = _useState172[1];
+  var _useState173 = useState(""),
     _useState174 = _slicedToArray(_useState173, 2),
-    brClosing = _useState174[0],
-    setBrClosing = _useState174[1];
-  var _useState175 = useState(null),
+    brInput = _useState174[0],
+    setBrInput = _useState174[1];
+  var _useState175 = useState(false),
     _useState176 = _slicedToArray(_useState175, 2),
-    brIntentMode = _useState176[0],
-    setBrIntentMode = _useState176[1]; // 'howto' | 'direction' — for header badge / loading copy
+    brLoading = _useState176[0],
+    setBrLoading = _useState176[1];
   var _useState177 = useState(null),
     _useState178 = _slicedToArray(_useState177, 2),
-    brPendingIntent = _useState178[0],
-    setBrPendingIntent = _useState178[1]; // {text, reconfirmed} awaiting a one-tap mode choice
-  var _useState179 = useState(false),
+    brLastSpeaker = _useState178[0],
+    setBrLastSpeaker = _useState178[1]; // kept for Firestore compat only
+  var _useState179 = useState([]),
     _useState180 = _slicedToArray(_useState179, 2),
-    brShowProjCtx = _useState180[0],
-    setBrShowProjCtx = _useState180[1]; // project-context panel open/closed
-  var brMigrationRef = React.useRef(false);
+    brGoalProposals = _useState180[0],
+    setBrGoalProposals = _useState180[1];
   var _useState181 = useState([]),
     _useState182 = _slicedToArray(_useState181, 2),
-    capturesData = _useState182[0],
-    setCapturesData = _useState182[1];
+    brTaskProposals = _useState182[0],
+    setBrTaskProposals = _useState182[1]; // commitments from the last session, addable as real tasks
   var _useState183 = useState(false),
     _useState184 = _slicedToArray(_useState183, 2),
-    capturesLoading = _useState184[0],
-    setCapturesLoading = _useState184[1];
-  var _useState185 = useState("all"),
+    brClosing = _useState184[0],
+    setBrClosing = _useState184[1];
+  var _useState185 = useState(null),
     _useState186 = _slicedToArray(_useState185, 2),
-    capturesFilter = _useState186[0],
-    setCapturesFilter = _useState186[1];
-  var _useState187 = useState("captures"),
+    brIntentMode = _useState186[0],
+    setBrIntentMode = _useState186[1]; // 'howto' | 'direction' — for header badge / loading copy
+  var _useState187 = useState(null),
     _useState188 = _slicedToArray(_useState187, 2),
-    journalTab = _useState188[0],
-    setJournalTab = _useState188[1];
-  var _useState189 = useState(""),
+    brPendingIntent = _useState188[0],
+    setBrPendingIntent = _useState188[1]; // {text, reconfirmed} awaiting a one-tap mode choice
+  var _useState189 = useState(false),
     _useState190 = _slicedToArray(_useState189, 2),
-    capturesSearch = _useState190[0],
-    setCapturesSearch = _useState190[1];
-  var _useState191 = useState(null),
+    brShowProjCtx = _useState190[0],
+    setBrShowProjCtx = _useState190[1]; // project-context panel open/closed
+  var brMigrationRef = React.useRef(false);
+  var _useState191 = useState([]),
     _useState192 = _slicedToArray(_useState191, 2),
-    expandedCapture = _useState192[0],
-    setExpandedCapture = _useState192[1];
-  var _useState193 = useState(null),
+    capturesData = _useState192[0],
+    setCapturesData = _useState192[1];
+  var _useState193 = useState(false),
     _useState194 = _slicedToArray(_useState193, 2),
-    expandedRefl = _useState194[0],
-    setExpandedRefl = _useState194[1];
-  var _useState195 = useState(null),
+    capturesLoading = _useState194[0],
+    setCapturesLoading = _useState194[1];
+  var _useState195 = useState("all"),
     _useState196 = _slicedToArray(_useState195, 2),
-    editCaptureData = _useState196[0],
-    setEditCaptureData = _useState196[1];
-  var _useState197 = useState(""),
+    capturesFilter = _useState196[0],
+    setCapturesFilter = _useState196[1];
+  var _useState197 = useState("captures"),
     _useState198 = _slicedToArray(_useState197, 2),
-    editCaptureTagStr = _useState198[0],
-    setEditCaptureTagStr = _useState198[1];
-  var _useState199 = useState(null),
+    journalTab = _useState198[0],
+    setJournalTab = _useState198[1];
+  var _useState199 = useState(""),
     _useState200 = _slicedToArray(_useState199, 2),
-    appVersion = _useState200[0],
-    setAppVersion = _useState200[1];
+    capturesSearch = _useState200[0],
+    setCapturesSearch = _useState200[1];
   var _useState201 = useState(null),
     _useState202 = _slicedToArray(_useState201, 2),
-    editTaskId = _useState202[0],
-    setEditTaskId = _useState202[1];
-  var _useState203 = useState({}),
+    expandedCapture = _useState202[0],
+    setExpandedCapture = _useState202[1];
+  var _useState203 = useState(null),
     _useState204 = _slicedToArray(_useState203, 2),
-    editTaskForm = _useState204[0],
-    setEditTaskForm = _useState204[1];
-  var _useState205 = useState(false),
+    expandedRefl = _useState204[0],
+    setExpandedRefl = _useState204[1];
+  var _useState205 = useState(null),
     _useState206 = _slicedToArray(_useState205, 2),
-    gymDraftBanner = _useState206[0],
-    setGymDraftBanner = _useState206[1];
-  var _useState207 = useState(null),
+    editCaptureData = _useState206[0],
+    setEditCaptureData = _useState206[1];
+  var _useState207 = useState(""),
     _useState208 = _slicedToArray(_useState207, 2),
-    scheduleTaskId = _useState208[0],
-    setScheduleTaskId = _useState208[1];
+    editCaptureTagStr = _useState208[0],
+    setEditCaptureTagStr = _useState208[1];
   var _useState209 = useState(null),
     _useState210 = _slicedToArray(_useState209, 2),
-    scheduleForDay = _useState210[0],
-    setScheduleForDay = _useState210[1];
-  var _useState211 = useState("09:00"),
+    appVersion = _useState210[0],
+    setAppVersion = _useState210[1];
+  var _useState211 = useState(null),
     _useState212 = _slicedToArray(_useState211, 2),
-    scheduleTime = _useState212[0],
-    setScheduleTime = _useState212[1];
-  var _useState213 = useState(60),
+    editTaskId = _useState212[0],
+    setEditTaskId = _useState212[1];
+  var _useState213 = useState({}),
     _useState214 = _slicedToArray(_useState213, 2),
-    scheduleDuration = _useState214[0],
-    setScheduleDuration = _useState214[1];
+    editTaskForm = _useState214[0],
+    setEditTaskForm = _useState214[1];
   var _useState215 = useState(false),
     _useState216 = _slicedToArray(_useState215, 2),
-    showTimePicker = _useState216[0],
-    setShowTimePicker = _useState216[1];
-  var _useState217 = useState(false),
+    gymDraftBanner = _useState216[0],
+    setGymDraftBanner = _useState216[1];
+  var _useState217 = useState(null),
     _useState218 = _slicedToArray(_useState217, 2),
-    showArch = _useState218[0],
-    setShowArch = _useState218[1];
-  var _useState219 = useState(0),
+    scheduleTaskId = _useState218[0],
+    setScheduleTaskId = _useState218[1];
+  var _useState219 = useState(null),
     _useState220 = _slicedToArray(_useState219, 2),
-    reflStep = _useState220[0],
-    setReflStep = _useState220[1];
-  var _useState221 = useState([]),
+    scheduleForDay = _useState220[0],
+    setScheduleForDay = _useState220[1];
+  var _useState221 = useState("09:00"),
     _useState222 = _slicedToArray(_useState221, 2),
-    reflAns = _useState222[0],
-    setReflAns = _useState222[1];
-  var _useState223 = useState(""),
+    scheduleTime = _useState222[0],
+    setScheduleTime = _useState222[1];
+  var _useState223 = useState(60),
     _useState224 = _slicedToArray(_useState223, 2),
-    reflIn = _useState224[0],
-    setReflIn = _useState224[1];
-  var _useState225 = useState(null),
+    scheduleDuration = _useState224[0],
+    setScheduleDuration = _useState224[1];
+  var _useState225 = useState(false),
     _useState226 = _slicedToArray(_useState225, 2),
-    reflAnalysis = _useState226[0],
-    setReflAnalysis = _useState226[1];
-  var _useState227 = useState(null),
+    showTimePicker = _useState226[0],
+    setShowTimePicker = _useState226[1];
+  var _useState227 = useState(false),
     _useState228 = _slicedToArray(_useState227, 2),
-    modal = _useState228[0],
-    setModal = _useState228[1];
-  var _useState229 = useState({}),
+    showArch = _useState228[0],
+    setShowArch = _useState228[1];
+  var _useState229 = useState(0),
     _useState230 = _slicedToArray(_useState229, 2),
-    mForm = _useState230[0],
-    setMForm = _useState230[1];
-  var _useState231 = useState("loading"),
+    reflStep = _useState230[0],
+    setReflStep = _useState230[1];
+  var _useState231 = useState([]),
     _useState232 = _slicedToArray(_useState231, 2),
-    syncStatus = _useState232[0],
-    setSyncStatus = _useState232[1];
-  var _useState233 = useState("idle"),
+    reflAns = _useState232[0],
+    setReflAns = _useState232[1];
+  var _useState233 = useState(""),
     _useState234 = _slicedToArray(_useState233, 2),
-    obsExportStatus = _useState234[0],
-    setObsExportStatus = _useState234[1]; // idle | running | done | error
+    reflIn = _useState234[0],
+    setReflIn = _useState234[1];
   var _useState235 = useState(null),
     _useState236 = _slicedToArray(_useState235, 2),
-    authUser = _useState236[0],
-    setAuthUser = _useState236[1];
-  var _useState237 = useState(true),
+    reflAnalysis = _useState236[0],
+    setReflAnalysis = _useState236[1];
+  var _useState237 = useState(null),
     _useState238 = _slicedToArray(_useState237, 2),
-    authLoading = _useState238[0],
-    setAuthLoading = _useState238[1];
+    modal = _useState238[0],
+    setModal = _useState238[1];
+  var _useState239 = useState({}),
+    _useState240 = _slicedToArray(_useState239, 2),
+    mForm = _useState240[0],
+    setMForm = _useState240[1];
+  var _useState241 = useState("loading"),
+    _useState242 = _slicedToArray(_useState241, 2),
+    syncStatus = _useState242[0],
+    setSyncStatus = _useState242[1];
+  var _useState243 = useState("idle"),
+    _useState244 = _slicedToArray(_useState243, 2),
+    obsExportStatus = _useState244[0],
+    setObsExportStatus = _useState244[1]; // idle | running | done | error
+  var _useState245 = useState(null),
+    _useState246 = _slicedToArray(_useState245, 2),
+    authUser = _useState246[0],
+    setAuthUser = _useState246[1];
+  var _useState247 = useState(true),
+    _useState248 = _slicedToArray(_useState247, 2),
+    authLoading = _useState248[0],
+    setAuthLoading = _useState248[1];
   var _fbReady = useRef(false);
   var _dataLoaded = useRef(false); // only true after we've confirmed Firebase state
   var _saveTimer = useRef(null);
   var _flushNow = useRef(false); // set to skip the 2s debounce for discrete saves (e.g. shift logs)
-  var _useState239 = useState({
+  var _useState249 = useState({
       title: "",
       tags: "",
       content: ""
     }),
-    _useState240 = _slicedToArray(_useState239, 2),
-    docIn = _useState240[0],
-    setDocIn = _useState240[1];
-  var _useState241 = useState(false),
-    _useState242 = _slicedToArray(_useState241, 2),
-    forceMob = _useState242[0],
-    setForceMob = _useState242[1];
-  var _useState243 = useState(function () {
+    _useState250 = _slicedToArray(_useState249, 2),
+    docIn = _useState250[0],
+    setDocIn = _useState250[1];
+  var _useState251 = useState(false),
+    _useState252 = _slicedToArray(_useState251, 2),
+    forceMob = _useState252[0],
+    setForceMob = _useState252[1];
+  var _useState253 = useState(function () {
       try {
         return localStorage.getItem("nav_collapsed") === "1";
       } catch (_) {
         return false;
       }
     }),
-    _useState244 = _slicedToArray(_useState243, 2),
-    navCollapsed = _useState244[0],
-    setNavCollapsed = _useState244[1];
+    _useState254 = _slicedToArray(_useState253, 2),
+    navCollapsed = _useState254[0],
+    setNavCollapsed = _useState254[1];
   function toggleNav() {
     setNavCollapsed(function (c) {
       var nv = !c;
@@ -9903,32 +10953,32 @@ function App() {
   }
   var rawMob = useIsMob();
   var mob = forceMob || rawMob;
-  var _useState245 = useState(false),
-    _useState246 = _slicedToArray(_useState245, 2),
-    checkinLoading = _useState246[0],
-    setCheckinLoading = _useState246[1];
-  var _useState247 = useState(false),
-    _useState248 = _slicedToArray(_useState247, 2),
-    reflAnalysisLoading = _useState248[0],
-    setReflAnalysisLoading = _useState248[1];
-  var _useState249 = useState(false),
-    _useState250 = _slicedToArray(_useState249, 2),
-    showMonitor = _useState250[0],
-    setShowMonitor = _useState250[1];
-  var _useState251 = useState(null),
-    _useState252 = _slicedToArray(_useState251, 2),
-    toast = _useState252[0],
-    setToast = _useState252[1]; // {msg,type:'error'|'success'|'warn'}
-  var _useState253 = useState([]),
-    _useState254 = _slicedToArray(_useState253, 2),
-    errLog = _useState254[0],
-    setErrLog = _useState254[1];
   var _useState255 = useState(false),
     _useState256 = _slicedToArray(_useState255, 2),
-    showErrPanel = _useState256[0],
-    setShowErrPanel = _useState256[1];
+    checkinLoading = _useState256[0],
+    setCheckinLoading = _useState256[1];
+  var _useState257 = useState(false),
+    _useState258 = _slicedToArray(_useState257, 2),
+    reflAnalysisLoading = _useState258[0],
+    setReflAnalysisLoading = _useState258[1];
+  var _useState259 = useState(false),
+    _useState260 = _slicedToArray(_useState259, 2),
+    showMonitor = _useState260[0],
+    setShowMonitor = _useState260[1];
+  var _useState261 = useState(null),
+    _useState262 = _slicedToArray(_useState261, 2),
+    toast = _useState262[0],
+    setToast = _useState262[1]; // {msg,type:'error'|'success'|'warn'}
+  var _useState263 = useState([]),
+    _useState264 = _slicedToArray(_useState263, 2),
+    errLog = _useState264[0],
+    setErrLog = _useState264[1];
+  var _useState265 = useState(false),
+    _useState266 = _slicedToArray(_useState265, 2),
+    showErrPanel = _useState266[0],
+    setShowErrPanel = _useState266[1];
   // Google Calendar sync state
-  var _useState257 = useState(function () {
+  var _useState267 = useState(function () {
       try {
         var c = localStorage.getItem('__gcal_events__');
         return c ? JSON.parse(c) : [];
@@ -9936,18 +10986,18 @@ function App() {
         return [];
       }
     }),
-    _useState258 = _slicedToArray(_useState257, 2),
-    gcalEvents = _useState258[0],
-    setGcalEvents = _useState258[1];
-  var _useState259 = useState(false),
-    _useState260 = _slicedToArray(_useState259, 2),
-    gcalConnected = _useState260[0],
-    setGcalConnected = _useState260[1];
-  var _useState261 = useState([]),
-    _useState262 = _slicedToArray(_useState261, 2),
-    gcalCalendars = _useState262[0],
-    setGcalCalendars = _useState262[1];
-  var _useState263 = useState(function () {
+    _useState268 = _slicedToArray(_useState267, 2),
+    gcalEvents = _useState268[0],
+    setGcalEvents = _useState268[1];
+  var _useState269 = useState(false),
+    _useState270 = _slicedToArray(_useState269, 2),
+    gcalConnected = _useState270[0],
+    setGcalConnected = _useState270[1];
+  var _useState271 = useState([]),
+    _useState272 = _slicedToArray(_useState271, 2),
+    gcalCalendars = _useState272[0],
+    setGcalCalendars = _useState272[1];
+  var _useState273 = useState(function () {
       try {
         var s = localStorage.getItem('__gcal_selected__');
         return s ? JSON.parse(s) : [];
@@ -9955,72 +11005,72 @@ function App() {
         return [];
       }
     }),
-    _useState264 = _slicedToArray(_useState263, 2),
-    gcalSelectedIds = _useState264[0],
-    setGcalSelectedIds = _useState264[1];
-  var _useState265 = useState(false),
-    _useState266 = _slicedToArray(_useState265, 2),
-    gcalReady = _useState266[0],
-    setGcalReady = _useState266[1];
-  var _useState267 = useState(false),
-    _useState268 = _slicedToArray(_useState267, 2),
-    showCalPicker = _useState268[0],
-    setShowCalPicker = _useState268[1];
-  // Syllabus / assessment hub state
-  var _useState269 = useState(false),
-    _useState270 = _slicedToArray(_useState269, 2),
-    showSyllabusImport = _useState270[0],
-    setShowSyllabusImport = _useState270[1];
-  var _useState271 = useState(""),
-    _useState272 = _slicedToArray(_useState271, 2),
-    syllabusText = _useState272[0],
-    setSyllabusText = _useState272[1];
-  var _useState273 = useState("2026-04-20"),
     _useState274 = _slicedToArray(_useState273, 2),
-    syllabusStart = _useState274[0],
-    setSyllabusStart = _useState274[1];
-  var _useState275 = useState(function () {
+    gcalSelectedIds = _useState274[0],
+    setGcalSelectedIds = _useState274[1];
+  var _useState275 = useState(false),
+    _useState276 = _slicedToArray(_useState275, 2),
+    gcalReady = _useState276[0],
+    setGcalReady = _useState276[1];
+  var _useState277 = useState(false),
+    _useState278 = _slicedToArray(_useState277, 2),
+    showCalPicker = _useState278[0],
+    setShowCalPicker = _useState278[1];
+  // Syllabus / assessment hub state
+  var _useState279 = useState(false),
+    _useState280 = _slicedToArray(_useState279, 2),
+    showSyllabusImport = _useState280[0],
+    setShowSyllabusImport = _useState280[1];
+  var _useState281 = useState(""),
+    _useState282 = _slicedToArray(_useState281, 2),
+    syllabusText = _useState282[0],
+    setSyllabusText = _useState282[1];
+  var _useState283 = useState("2026-04-20"),
+    _useState284 = _slicedToArray(_useState283, 2),
+    syllabusStart = _useState284[0],
+    setSyllabusStart = _useState284[1];
+  var _useState285 = useState(function () {
       try {
         return localStorage.getItem('__gemini_key__') || "";
       } catch (_) {
         return "";
       }
     }),
-    _useState276 = _slicedToArray(_useState275, 2),
-    geminiKey = _useState276[0],
-    setGeminiKey = _useState276[1];
-  var _useState277 = useState(function () {
+    _useState286 = _slicedToArray(_useState285, 2),
+    geminiKey = _useState286[0],
+    setGeminiKey = _useState286[1];
+  var _useState287 = useState(function () {
       try {
         return localStorage.getItem('__groq_key__') || "";
       } catch (_) {
         return "";
       }
     }),
-    _useState278 = _slicedToArray(_useState277, 2),
-    groqKey = _useState278[0],
-    setGroqKey = _useState278[1];
-  var _useState279 = useState(false),
-    _useState280 = _slicedToArray(_useState279, 2),
-    geminiLoading = _useState280[0],
-    setGeminiLoading = _useState280[1];
-  var _useState281 = useState(null),
-    _useState282 = _slicedToArray(_useState281, 2),
-    geminiPreview = _useState282[0],
-    setGeminiPreview = _useState282[1];
-  var _useState283 = useState(false),
-    _useState284 = _slicedToArray(_useState283, 2),
-    showAddAssess = _useState284[0],
-    setShowAddAssess = _useState284[1];
-  var _useState285 = useState({
+    _useState288 = _slicedToArray(_useState287, 2),
+    groqKey = _useState288[0],
+    setGroqKey = _useState288[1];
+  var _useState289 = useState(false),
+    _useState290 = _slicedToArray(_useState289, 2),
+    geminiLoading = _useState290[0],
+    setGeminiLoading = _useState290[1];
+  var _useState291 = useState(null),
+    _useState292 = _slicedToArray(_useState291, 2),
+    geminiPreview = _useState292[0],
+    setGeminiPreview = _useState292[1];
+  var _useState293 = useState(false),
+    _useState294 = _slicedToArray(_useState293, 2),
+    showAddAssess = _useState294[0],
+    setShowAddAssess = _useState294[1];
+  var _useState295 = useState({
       subject: "WIA&B",
       name: "",
       type: "SUBMISSION",
       date: todayStr()
     }),
-    _useState286 = _slicedToArray(_useState285, 2),
-    addAssessForm = _useState286[0],
-    setAddAssessForm = _useState286[1];
-  var _useState287 = useState(function () {
+    _useState296 = _slicedToArray(_useState295, 2),
+    addAssessForm = _useState296[0],
+    setAddAssessForm = _useState296[1];
+  var _useState297 = useState(function () {
       try {
         var x = localStorage.getItem('__gcal_excluded__');
         return x ? JSON.parse(x) : [];
@@ -10028,9 +11078,9 @@ function App() {
         return [];
       }
     }),
-    _useState288 = _slicedToArray(_useState287, 2),
-    gcalExcludedIds = _useState288[0],
-    setGcalExcludedIds = _useState288[1];
+    _useState298 = _slicedToArray(_useState297, 2),
+    gcalExcludedIds = _useState298[0],
+    setGcalExcludedIds = _useState298[1];
 
   // Call this anywhere in App to show a brief auto-dismissing notification.
   // Child components can call window.showToast() which is wired up below.
@@ -12039,6 +13089,32 @@ function App() {
       });
     });
   }
+  function updateProjects(pr) {
+    setData(function (p) {
+      return _objectSpread(_objectSpread({}, p), {}, {
+        projects: pr
+      });
+    });
+  }
+  function updateShopping(sh) {
+    setData(function (p) {
+      return _objectSpread(_objectSpread({}, p), {}, {
+        shopping: sh
+      });
+    });
+  }
+  // Append one item to the shopping list (used by the "+ Add to shopping" button on project buy-steps).
+  function addToShopping(item) {
+    setData(function (p) {
+      var cur = Array.isArray(p.shopping) ? p.shopping : [];
+      if (item.key && cur.some(function (x) {
+        return x.key === item.key && !x.done;
+      })) return p;
+      return _objectSpread(_objectSpread({}, p), {}, {
+        shopping: cur.concat([item])
+      });
+    });
+  }
   function requestImmediateSave() {
     _flushNow.current = true;
   } // bypass the 2s debounce on the next data save
@@ -13568,7 +14644,19 @@ function App() {
         color: T.text3
       }
     }, cal.summary));
-  }))), /*#__PURE__*/React.createElement("div", {
+  }))), /*#__PURE__*/React.createElement(ErrorBoundary, {
+    name: "ShoppingHome"
+  }, /*#__PURE__*/React.createElement(ShoppingHomeCard, {
+    items: data.shopping || [],
+    onUpdate: updateShopping,
+    onOpen: function onOpen() {
+      setPage("Shopping");
+    },
+    cardStyle: card({
+      breakInside: "avoid"
+    }),
+    mob: mob
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       breakInside: "avoid",
       marginBottom: 12
@@ -15522,6 +16610,27 @@ function App() {
     mob: mob,
     data: data.invest || {},
     onUpdate: updateInvest
+  }))), page === "Projects" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: mob ? undefined : 760
+    }
+  }, /*#__PURE__*/React.createElement(ErrorBoundary, {
+    name: "Projects"
+  }, /*#__PURE__*/React.createElement(ProjectsSection, {
+    mob: mob,
+    data: data.projects || [],
+    onUpdate: updateProjects,
+    onAddShopping: addToShopping
+  }))), page === "Shopping" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: mob ? undefined : 640
+    }
+  }, /*#__PURE__*/React.createElement(ErrorBoundary, {
+    name: "Shopping"
+  }, /*#__PURE__*/React.createElement(ShoppingSection, {
+    mob: mob,
+    data: data.shopping || [],
+    onUpdate: updateShopping
   }))), page === "Journal" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",

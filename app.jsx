@@ -31,7 +31,7 @@ const T={bg:"#0a0a0a",bg2:"rgba(225,234,255,0.07)",bg3:"rgba(225,234,255,0.04)",
 // DAYS, TASK_CATS, SUBJECTS, SC, SYLLABUS_ASSESSMENTS, REFL_QS, REFL_LABELS, WX_MAP, WX_DAYS → data.js
 
 // ── Navigation glyphs — consistent stroke-based line icons (replaces emoji) ──
-const NAV_PAGES=["Dashboard","Uni","Work","Gym","Personal","Finance","Invest","Journal","Boardroom"];
+const NAV_PAGES=["Dashboard","Uni","Work","Gym","Personal","Finance","Invest","Journal","Boardroom","Projects","Shopping"];
 function NavGlyph(props){
   const n=props.name;const s=props.size||18;
   const a={width:s,height:s,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:props.sw||1.7,strokeLinecap:"round",strokeLinejoin:"round"};
@@ -44,7 +44,9 @@ function NavGlyph(props){
     Finance:<g><circle cx="12" cy="12" r="9"/><path d="M14.5 9.2c-.5-1-1.5-1.5-2.7-1.5-1.6 0-2.8.9-2.8 2.2 0 1.4 1.2 1.9 2.8 2.3 1.6.4 2.8.9 2.8 2.3 0 1.3-1.2 2.2-2.8 2.2-1.3 0-2.3-.6-2.8-1.6M12 6v1.7M12 16.3V18"/></g>,
     Invest:<g><path d="M3 17l5-5 3 3 7-7"/><path d="M15 8h5v5"/><path d="M3 21h18"/></g>,
     Journal:<g><path d="M5 4h11a2 2 0 0 1 2 2v14l-4-2.2L10 20l-4-2.2V6a2 2 0 0 1 2-2Z"/><path d="M9 8h6M9 11.5h6"/></g>,
-    Boardroom:<g><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5.5-5.5 2 2-5.5 5.5-2Z"/></g>
+    Boardroom:<g><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5.5-5.5 2 2-5.5 5.5-2Z"/></g>,
+    Projects:<g><path d="M4 5h13a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4Z"/><path d="M8 4.5v3M8 12l1.6 1.6L12.5 10M8 17h6"/></g>,
+    Shopping:<g><path d="M4 4h2l2.2 11.2a1.5 1.5 0 0 0 1.5 1.2h7.3a1.5 1.5 0 0 0 1.5-1.2L21 8H7"/><circle cx="10" cy="20" r="1.2"/><circle cx="18" cy="20" r="1.2"/></g>
   };
   return <svg {...a}>{g[n]||null}</svg>;
 }
@@ -173,6 +175,8 @@ const INIT={
     taskLog:[],
     focusGoals:[]
   },
+  projects:[],
+  shopping:[],
 };
 
 // Recursively remove undefined values — Firestore rejects any undefined in the document
@@ -217,6 +221,8 @@ function mergeWithDefaults(cloud){
     },
     work:(function(){var w=cloud.work||{};return{...INIT.work,...w,hourlyRate:Number(w.hourlyRate||(cloud.finance&&cloud.finance.hourlyRate)||0),payCycleDay:Number(w.payCycleDay||cloud.payCycleDay||1),goals:Array.isArray(w.goals)?w.goals:INIT.work.goals,shiftLogs:(w.shiftLogs&&typeof w.shiftLogs==="object")?w.shiftLogs:{},progressiveSince:w.progressiveSince||"",attendanceMigrated:!!w.attendanceMigrated,taskLog:Array.isArray(w.taskLog)?w.taskLog:[],focusGoals:Array.isArray(w.focusGoals)?w.focusGoals:[]};}()),
     reflections:(Array.isArray(cloud.reflections)&&cloud.reflections.length>0)?cloud.reflections:SEED_REFL,
+    projects:Array.isArray(cloud.projects)?cloud.projects:[],
+    shopping:Array.isArray(cloud.shopping)?cloud.shopping:[],
   };
 }
 // Returns true if `d` looks like a freshly-seeded state with no user-generated content.
@@ -233,6 +239,8 @@ function isLikelySeedState(d){
       && n(d.gym&&d.gym.bodyWeight)===0
       && n(d.finance&&d.finance.expenses)===0
       && n(d.uni&&d.uni.completedEvents)===0
+      && n(d.projects)===0
+      && n(d.shopping)===0
       && n(d.docs)===0;
 }
 function localDateStr(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
@@ -2394,6 +2402,265 @@ function WorkSection({data,mob,onUpdate,onFlush,gcalEvents}){
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Projects (baby-steps goal breakdowns) + Shopping list
+// ─────────────────────────────────────────────────────────────────────────────
+function nid(pref){return (pref||"i")+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+const PCARD={position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow};
+const PINP={width:"100%",padding:"9px 12px",borderRadius:10,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:13,boxSizing:"border-box",outline:"none"};
+const MONO="ui-monospace,Menlo,Consolas,monospace";
+
+// Pull a leading emoji off a title string ("🔑 Anime Keychain" -> {emoji,title}).
+// Detect astral emoji (surrogate pairs) or common BMP symbol/dingbat ranges via \u escapes.
+function leadEmoji(t){t=(t||"").trim();var sp=t.indexOf(" ");if(sp<1)return{emoji:"",title:t};var head=t.slice(0,sp);var isEmo=/[\uD800-\uDBFF]/.test(head)||/[←-⯿☀-➿️⃣⬀-⯿]/.test(head);if(!/[A-Za-z0-9]/.test(head)&&isEmo)return{emoji:head,title:t.slice(sp+1).trim()};return{emoji:"",title:t};}
+
+// Parse the paste-in block into a project object. Returns null if there's no title or no steps.
+// Format: "# Title" · "## Stage — subtitle" · "- step | where: .. | search: .. | price: .. | skip"
+function parseProjectImport(text){
+  var lines=(text||"").split(/\r?\n/);
+  var title="",emoji="",stages=[],stage=null;
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i].trim();
+    if(!line)continue;
+    if(/^##\s+/.test(line)){
+      var body=line.replace(/^##\s+/,"");
+      var sp2=body.split(/\s+[—–-]\s+/);
+      stage={id:nid("st"),title:sp2[0].trim(),subtitle:sp2.slice(1).join(" — ").trim(),steps:[]};
+      stages.push(stage);continue;
+    }
+    if(/^#\s+/.test(line)){
+      var le=leadEmoji(line.replace(/^#\s+/,""));emoji=le.emoji;title=le.title;continue;
+    }
+    if(/^[-*]\s+/.test(line)){
+      if(!stage){stage={id:nid("st"),title:"",subtitle:"",steps:[]};stages.push(stage);}
+      var seg=line.replace(/^[-*]\s+/,"").split("|").map(function(x){return x.trim();});
+      var t0=seg[0];var meta={};var skip=false;
+      if(/^skip:/i.test(t0)){skip=true;t0=t0.replace(/^skip:\s*/i,"");}
+      for(var j=1;j<seg.length;j++){
+        var kv=seg[j];if(!kv)continue;
+        if(/^skip$/i.test(kv)){skip=true;continue;}
+        var mi=kv.indexOf(":");
+        if(mi>0){var k=kv.slice(0,mi).trim().toLowerCase();var v=kv.slice(mi+1).trim();if(k==="where"||k==="search"||k==="price")meta[k]=v;else if(k==="desc"||k==="note")meta.desc=v;}
+        else{meta.desc=(meta.desc?meta.desc+" ":"")+kv;}
+      }
+      stage.steps.push({id:nid("sp"),title:t0,desc:meta.desc||"",done:false,meta:{where:meta.where||"",search:meta.search||"",price:meta.price||"",skip:!!skip}});
+    }
+  }
+  var hasSteps=stages.some(function(s){return s.steps.length>0;});
+  if(!title||!hasSteps)return null;
+  return {id:nid("prj"),title:title,emoji:emoji||"📋",createdAt:todayStr(),archived:false,stages:stages};
+}
+
+function projStats(p){
+  var total=0,done=0,current=null;
+  (p.stages||[]).forEach(function(st){(st.steps||[]).forEach(function(s){total++;if(s.done)done++;else if(!current)current=s;});});
+  return {total:total,done:done,pct:total?Math.round(done/total*100):0,current:current};
+}
+
+function ProgressBar(props){
+  var pct=props.pct||0;
+  return <div style={{height:props.h||8,borderRadius:20,background:"rgba(255,255,255,0.08)",overflow:"hidden"}}>
+    <div style={{height:"100%",width:pct+"%",borderRadius:20,background:"linear-gradient(90deg,#5b8cff,#8fb0ff)",boxShadow:pct>0?"0 0 10px rgba(91,140,255,0.5)":"none",transition:"width .45s cubic-bezier(.22,1,.36,1)"}}/>
+  </div>;
+}
+
+function TickCircle(props){
+  var done=props.done;var size=props.size||26;
+  return <button onClick={props.onClick} aria-label={done?"Mark not done":"Mark done"} style={{flexShrink:0,width:size,height:size,borderRadius:"50%",border:"2px solid "+(done?T.success:props.accent||"rgba(255,255,255,0.28)"),background:done?T.success:"transparent",cursor:"pointer",display:"grid",placeItems:"center",padding:0,transition:"all .18s"}}>
+    {done&&<svg width={size*0.5} height={size*0.5} viewBox="0 0 24 24" fill="none" stroke="#0a0a0a" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>}
+  </button>;
+}
+
+function ProjectsSection({data,onUpdate,onAddShopping,mob}){
+  var projects=Array.isArray(data)?data:[];
+  var [openId,setOpenId]=useState(null);
+  var [showImport,setShowImport]=useState(false);
+  var [txt,setTxt]=useState("");
+  function toast(m,t){if(window.showToast)window.showToast(m,t);}
+  function doImport(){
+    var p=parseProjectImport(txt);
+    if(!p){toast("Couldn't read that — needs a '# Title' line and at least one '- step'.","error");return;}
+    onUpdate(projects.concat([p]));setTxt("");setShowImport(false);setOpenId(p.id);
+    toast("Project added — "+p.title,"success");
+  }
+  function toggleStep(pid,sid){
+    onUpdate(projects.map(function(p){return p.id!==pid?p:{...p,stages:p.stages.map(function(st){return{...st,steps:st.steps.map(function(s){return s.id!==sid?s:{...s,done:!s.done};})};})};}));
+  }
+  function removeProject(pid){onUpdate(projects.filter(function(p){return p.id!==pid;}));setOpenId(null);toast("Project removed","success");}
+  function addStepToShopping(p,s){
+    if(!onAddShopping)return;
+    var name=(s.meta&&s.meta.search)?s.meta.search:s.title.replace(/^\s*buy\s+(the\s+|a\s+|an\s+)?/i,"");
+    var det=[s.meta&&s.meta.where,s.meta&&s.meta.price].filter(Boolean).join(" · ");
+    onAddShopping({id:nid("shp"),key:"proj:"+p.id+":"+s.id,text:name,detail:det,source:p.title,done:false,addedAt:todayStr()});
+    toast("Added to shopping","success");
+  }
+  var open=openId?projects.filter(function(p){return p.id===openId;})[0]:null;
+
+  if(open){
+    var stt=projStats(open);
+    return <div>
+      <button onClick={function(){setOpenId(null);}} style={{...editPill,marginBottom:14}}>← All projects</button>
+      <div className="card-rim" style={PCARD}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+          <div style={{fontSize:26,lineHeight:1}}>{open.emoji}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:17,fontWeight:800,letterSpacing:"-0.02em",color:"#eef3fb"}}>{open.title}</div>
+            <div style={{fontSize:11,color:T.text3,marginTop:2}}>{stt.done} of {stt.total} steps done{stt.total?" · "+stt.pct+"%":""}</div>
+          </div>
+        </div>
+        <ProgressBar pct={stt.pct}/>
+        {stt.current&&<div style={{marginTop:12,display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.accent,background:T.accentBg,border:"0.5px solid rgba(91,140,255,0.35)",padding:"8px 11px",borderRadius:10}}>
+          <span style={{width:7,height:7,borderRadius:"50%",background:T.accent,flexShrink:0,animation:"pulse 1.6s ease-in-out infinite"}}/>
+          <span><b style={{fontWeight:700}}>Do next:</b> {stt.current.title}</span>
+        </div>}
+        {!stt.current&&stt.total>0&&<div style={{marginTop:12,fontSize:12.5,color:T.success,fontWeight:600}}>🎉 Every step done — nice work.</div>}
+      </div>
+      {open.stages.map(function(st,si){return <div key={st.id} className="card-rim" style={PCARD}>
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:9,fontWeight:700,color:T.text3,textTransform:"uppercase",letterSpacing:0.6}}>Stage {si+1}</div>
+          <div style={{fontSize:14,fontWeight:700,color:T.text,marginTop:2}}>{st.title}</div>
+          {st.subtitle&&<div style={{fontSize:11.5,color:T.text2,marginTop:2}}>{st.subtitle}</div>}
+        </div>
+        {st.steps.map(function(s){
+          var isCur=stt.current&&stt.current.id===s.id;var sk=s.meta&&s.meta.skip;
+          return <div key={s.id} style={{display:"flex",gap:11,alignItems:"flex-start",padding:"11px 12px",marginBottom:8,borderRadius:12,background:sk?"rgba(105,240,174,0.06)":isCur?T.accentBg:"rgba(225,234,255,0.04)",border:"1px solid "+(isCur?"rgba(91,140,255,0.5)":sk?"rgba(105,240,174,0.25)":"rgba(255,255,255,0.07)"),boxShadow:isCur?"0 0 0 3px rgba(91,140,255,0.12)":"none"}}>
+            <TickCircle done={s.done} onClick={function(){toggleStep(open.id,s.id);}}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:600,color:s.done?T.text3:T.text,textDecoration:s.done?"line-through":"none",lineHeight:1.35}}>{s.title}</div>
+              {s.desc&&<div style={{fontSize:11.5,color:T.text2,marginTop:3,lineHeight:1.5,opacity:s.done?0.5:1}}>{s.desc}</div>}
+              {(s.meta&&(s.meta.where||s.meta.search||s.meta.price))&&<div style={{marginTop:7,display:"flex",flexWrap:"wrap",gap:6,alignItems:"center"}}>
+                {s.meta.where&&<span style={{fontSize:10.5,color:T.text2}}>🛒 {s.meta.where}</span>}
+                {s.meta.search&&<span style={{fontSize:10,fontFamily:MONO,background:"rgba(255,255,255,0.06)",padding:"1px 7px",borderRadius:5,color:T.text}}>{s.meta.search}</span>}
+                {s.meta.price&&<span style={{fontSize:10.5,fontWeight:600,color:T.accent}}>{s.meta.price}</span>}
+                {!s.done&&!sk&&onAddShopping&&<button onClick={function(){addStepToShopping(open,s);}} style={{...editPill,fontSize:10,padding:"2px 9px"}}>+ Shopping</button>}
+              </div>}
+              {sk&&<div style={{marginTop:5,fontSize:10,color:T.success,fontWeight:600}}>Skip this — just tick to acknowledge</div>}
+            </div>
+          </div>;
+        })}
+      </div>;})}
+      <button onClick={function(){removeProject(open.id);}} style={{...editPill,color:T.danger,borderColor:"rgba(255,107,107,0.4)",marginTop:4}}>Delete project</button>
+    </div>;
+  }
+
+  var active=projects.filter(function(p){return !p.archived;});
+  return <div>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,gap:10}}>
+      <div>
+        <div style={{fontSize:mob?20:23,fontWeight:800,letterSpacing:"-0.02em",color:"#eef3fb"}}>Projects</div>
+        <div style={{fontSize:12,color:T.text3,marginTop:2}}>Big goals, broken into tiny steps.</div>
+      </div>
+      <button style={btnGlassP} onClick={function(){setShowImport(function(v){return !v;});}}>{showImport?"Close":"+ New project"}</button>
+    </div>
+    {showImport&&<div className="card-rim" style={PCARD}>
+      <div style={{fontSize:12,color:T.text2,marginBottom:8,lineHeight:1.5}}>Paste the breakdown block (Claude hands you one). Format: <code style={{fontFamily:MONO,fontSize:11}}># Title</code> · <code style={{fontFamily:MONO,fontSize:11}}>## Stage</code> · <code style={{fontFamily:MONO,fontSize:11}}>- step</code>.</div>
+      <textarea value={txt} onChange={function(e){setTxt(e.target.value);}} rows={mob?7:9} placeholder={"# 🔑 Anime Keychain\n## Stage 1 — Buy 4 things\n- Buy the main board | where: Amazon.com.au | price: ~$40"} style={{...PINP,resize:"vertical",fontFamily:MONO,fontSize:12,lineHeight:1.5}}/>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
+        <button style={editPill} onClick={function(){setTxt("");setShowImport(false);}}>Cancel</button>
+        <button style={btnGlassP} onClick={doImport}>Import project</button>
+      </div>
+    </div>}
+    {active.length===0&&!showImport&&<div className="card-rim" style={{...PCARD,textAlign:"center",padding:"34px 20px"}}>
+      <div style={{fontSize:30,marginBottom:8}}>🗂️</div>
+      <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:4}}>No projects yet</div>
+      <div style={{fontSize:12,color:T.text2,marginBottom:16,maxWidth:340,marginLeft:"auto",marginRight:"auto",lineHeight:1.6}}>Ask Claude to break a goal into baby-steps, then tap "+ New project" and paste it here.</div>
+      <button style={btnGlassP} onClick={function(){setShowImport(true);}}>+ New project</button>
+    </div>}
+    {active.map(function(p){
+      var s=projStats(p);
+      return <div key={p.id} className="card-rim" onClick={function(){setOpenId(p.id);}} style={{...PCARD,cursor:"pointer"}}>
+        <div style={{display:"flex",alignItems:"center",gap:11,marginBottom:12}}>
+          <div style={{fontSize:22,lineHeight:1}}>{p.emoji}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:15,fontWeight:700,color:"#eef3fb",letterSpacing:"-0.01em"}}>{p.title}</div>
+            <div style={{fontSize:11,color:T.text3,marginTop:1}}>{s.done}/{s.total} done · {s.pct}%</div>
+          </div>
+          <div style={{...editPill,pointerEvents:"none"}}>Open →</div>
+        </div>
+        <ProgressBar pct={s.pct}/>
+        {s.current&&<div style={{marginTop:10,fontSize:12,color:T.text2,display:"flex",alignItems:"center",gap:7}}>
+          <span style={{width:6,height:6,borderRadius:"50%",background:T.accent,flexShrink:0}}/>
+          <span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>Next: {s.current.title}</span>
+        </div>}
+        {!s.current&&s.total>0&&<div style={{marginTop:10,fontSize:12,color:T.success,fontWeight:600}}>✓ All done</div>}
+      </div>;
+    })}
+  </div>;
+}
+
+function ShopRow(props){
+  var x=props.item;
+  return <div style={{display:"flex",gap:11,alignItems:"center",padding:"9px 2px"}}>
+    <TickCircle done={x.done} size={22} onClick={props.onToggle}/>
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{fontSize:13,fontWeight:500,color:x.done?T.text3:T.text,textDecoration:x.done?"line-through":"none"}}>{x.text}</div>
+      {(x.detail||x.source)&&<div style={{fontSize:10.5,color:T.text3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.detail}{x.detail&&x.source?" · ":""}{x.source?"from "+x.source:""}</div>}
+    </div>
+    <button onClick={props.onRemove} aria-label="Remove" style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:18,lineHeight:1,padding:"0 4px",flexShrink:0}}>×</button>
+  </div>;
+}
+
+function ShoppingSection({data,onUpdate,mob}){
+  var items=Array.isArray(data)?data:[];
+  var [inp,setInp]=useState("");
+  function toast(m,t){if(window.showToast)window.showToast(m,t);}
+  function add(){var v=inp.trim();if(!v)return;onUpdate(items.concat([{id:nid("shp"),key:null,text:v,detail:"",source:"",done:false,addedAt:todayStr()}]));setInp("");}
+  function toggle(id){onUpdate(items.map(function(x){return x.id!==id?x:{...x,done:!x.done};}));}
+  function remove(id){onUpdate(items.filter(function(x){return x.id!==id;}));}
+  function clearBought(){onUpdate(items.filter(function(x){return !x.done;}));toast("Cleared bought items","success");}
+  var todo=items.filter(function(x){return !x.done;});
+  var bought=items.filter(function(x){return x.done;});
+  return <div>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,gap:10}}>
+      <div>
+        <div style={{fontSize:mob?20:23,fontWeight:800,letterSpacing:"-0.02em",color:"#eef3fb"}}>Shopping</div>
+        <div style={{fontSize:12,color:T.text3,marginTop:2}}>{todo.length} to buy{bought.length?" · "+bought.length+" in cart":""}</div>
+      </div>
+      {bought.length>0&&<button style={editPill} onClick={clearBought}>Clear bought</button>}
+    </div>
+    <div className="card-rim" style={PCARD}>
+      <div style={{display:"flex",gap:8,marginBottom:(todo.length||bought.length)?14:0}}>
+        <input value={inp} onChange={function(e){setInp(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")add();}} placeholder="Add an item…" style={PINP}/>
+        <button style={btnGlassP} onClick={add}>Add</button>
+      </div>
+      {todo.length===0&&bought.length===0&&<div style={{fontSize:12,color:T.text2,paddingTop:2}}>Nothing on the list yet.</div>}
+      {todo.map(function(x){return <ShopRow key={x.id} item={x} onToggle={function(){toggle(x.id);}} onRemove={function(){remove(x.id);}}/>;})}
+      {bought.length>0&&<div style={{marginTop:14,paddingTop:12,borderTop:"0.5px solid "+T.border}}>
+        <div style={{fontSize:9,fontWeight:700,color:T.text3,textTransform:"uppercase",letterSpacing:0.6,marginBottom:8}}>In cart</div>
+        {bought.map(function(x){return <ShopRow key={x.id} item={x} onToggle={function(){toggle(x.id);}} onRemove={function(){remove(x.id);}}/>;})}
+      </div>}
+    </div>
+  </div>;
+}
+
+function ShoppingHomeCard({items,onUpdate,onOpen,cardStyle,mob}){
+  var list=Array.isArray(items)?items:[];
+  var [inp,setInp]=useState("");
+  var todo=list.filter(function(x){return !x.done;});
+  function add(){var v=inp.trim();if(!v)return;onUpdate(list.concat([{id:nid("shp"),key:null,text:v,detail:"",source:"",done:false,addedAt:todayStr()}]));setInp("");}
+  function toggle(id){onUpdate(list.map(function(x){return x.id!==id?x:{...x,done:!x.done};}));}
+  return <div className="card-rim" style={{...(cardStyle||PCARD),breakInside:"avoid"}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+      <div style={{display:"flex",alignItems:"center",gap:7}}>
+        <span style={{color:T.accent,display:"flex"}}><NavGlyph name="Shopping" size={15}/></span>
+        <span style={{fontSize:12,fontWeight:700,color:"#eef3fb",letterSpacing:0.2}}>Shopping</span>
+        {todo.length>0&&<span style={{fontSize:10,fontWeight:700,color:T.accent,background:T.accentBg,borderRadius:99,padding:"1px 8px"}}>{todo.length}</span>}
+      </div>
+      <button style={editPill} onClick={onOpen}>Open →</button>
+    </div>
+    {todo.length===0&&<div style={{fontSize:11.5,color:T.text2,marginBottom:10}}>Nothing to buy right now.</div>}
+    {todo.slice(0,5).map(function(x){return <div key={x.id} style={{display:"flex",gap:9,alignItems:"center",padding:"6px 0"}}>
+      <TickCircle done={false} size={20} onClick={function(){toggle(x.id);}}/>
+      <div style={{flex:1,minWidth:0,fontSize:12.5,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.text}{x.detail?<span style={{color:T.text3,fontSize:10.5}}> · {x.detail}</span>:null}</div>
+    </div>;})}
+    {todo.length>5&&<div style={{fontSize:10.5,color:T.text3,margin:"4px 0 8px",paddingLeft:29}}>+{todo.length-5} more</div>}
+    <div style={{display:"flex",gap:7,marginTop:10}}>
+      <input value={inp} onChange={function(e){setInp(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")add();}} placeholder="Quick add…" style={{...PINP,padding:"7px 10px",fontSize:12}}/>
+      <button style={{...btnGlassP,padding:"6px 12px"}} onClick={add}>Add</button>
+    </div>
+  </div>;
+}
+
 function App(){
   const [page,setPage]=useState("Dashboard");
   const [data,setData]=useState(function(){try{const s=localStorage.getItem("dash_v1");if(!s)return mergeWithDefaults({...INIT,reflections:SEED_REFL});const saved=JSON.parse(s);const fin=saved.finance||{};let out=saved;if(!fin.financeVersion||fin.financeVersion<2){out={...out,finance:INIT.finance};}return mergeWithDefaults(out);}catch(_){return mergeWithDefaults({...INIT,reflections:SEED_REFL});}});
@@ -3481,6 +3748,10 @@ function App(){
   function updateFinance(fin){setData(function(p){return{...p,finance:fin};});}
   function updateInvest(inv){setData(function(p){return{...p,invest:inv};});}
   function updateWork(w){setData(function(p){return{...p,work:w};});}
+  function updateProjects(pr){setData(function(p){return{...p,projects:pr};});}
+  function updateShopping(sh){setData(function(p){return{...p,shopping:sh};});}
+  // Append one item to the shopping list (used by the "+ Add to shopping" button on project buy-steps).
+  function addToShopping(item){setData(function(p){var cur=Array.isArray(p.shopping)?p.shopping:[];if(item.key&&cur.some(function(x){return x.key===item.key&&!x.done;}))return p;return{...p,shopping:cur.concat([item])};});}
   function requestImmediateSave(){_flushNow.current=true;} // bypass the 2s debounce on the next data save
   function submitRefl(){
     if(!reflIn.trim()){showToast("Write something before continuing.");return;}
@@ -3763,6 +4034,7 @@ function App(){
                 {gcalCalendars.slice(0,6).map(function(cal){return<div key={cal.id} style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:6,height:6,borderRadius:2,background:cal.backgroundColor||"#4285F4"}}/><span style={{fontSize:9,color:T.text3}}>{cal.summary}</span></div>;})}
               </div>}
             </div>
+            <ErrorBoundary name="ShoppingHome"><ShoppingHomeCard items={data.shopping||[]} onUpdate={updateShopping} onOpen={function(){setPage("Shopping");}} cardStyle={card({breakInside:"avoid"})} mob={mob}/></ErrorBoundary>
             <div style={{breakInside:"avoid",marginBottom:12}}><WeatherWidget mob={mob}/></div>
             {nextRot&&<div className="card-rim" style={{...card({breakInside:"avoid"}),padding:"14px 16px"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
@@ -4006,6 +4278,8 @@ function App(){
 
         {page==="Finance"&&<div style={{maxWidth:mob?undefined:900}}><ErrorBoundary name="Finance"><FinanceSection mob={mob} data={data.finance||{}} onUpdate={updateFinance} gcalEvents={visibleGcalEvents} work={data.work||{}}/></ErrorBoundary></div>}
         {page==="Invest"&&<div style={{maxWidth:mob?undefined:900}}><ErrorBoundary name="Invest"><InvestSection mob={mob} data={data.invest||{}} onUpdate={updateInvest}/></ErrorBoundary></div>}
+        {page==="Projects"&&<div style={{maxWidth:mob?undefined:760}}><ErrorBoundary name="Projects"><ProjectsSection mob={mob} data={data.projects||[]} onUpdate={updateProjects} onAddShopping={addToShopping}/></ErrorBoundary></div>}
+        {page==="Shopping"&&<div style={{maxWidth:mob?undefined:640}}><ErrorBoundary name="Shopping"><ShoppingSection mob={mob} data={data.shopping||[]} onUpdate={updateShopping}/></ErrorBoundary></div>}
 
         {page==="Journal"&&<div style={{display:"flex",gap:6,marginBottom:14}}>
           {[{key:"captures",label:"Captures",icon:"bolt"},{key:"reflection",label:"Reflection",icon:"target"}].map(function(t){const active=journalTab===t.key;return(<button key={t.key} onClick={function(){setJournalTab(t.key);}} style={{padding:"6px 14px",borderRadius:99,fontSize:12,cursor:"pointer",border:active?"1px solid "+T.accent:"0.5px solid "+T.border,background:active?T.accentBg:"transparent",color:active?T.accent:T.text2,fontWeight:active?600:400,display:"flex",alignItems:"center",gap:6}}><span style={{display:"flex"}}><UIcon name={t.icon} size={13}/></span>{t.label}</button>);})}
