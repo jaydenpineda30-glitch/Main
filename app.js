@@ -562,7 +562,7 @@ var btnGlassP = {
   whiteSpace: "nowrap"
 };
 // ── Card surface: soft white "aurora" bloom from the TOP-RIGHT corner + elevated shadow so cards pop ──
-var cardBg = "radial-gradient(ellipse 108% 72px at 0% 0%,rgba(255,255,255,0.22) 0%,rgba(255,255,255,0.06) 40%,transparent 65%),radial-gradient(ellipse 108% 60px at 100% 100%,rgba(255,255,255,0.09) 0%,rgba(255,255,255,0.02) 40%,transparent 65%),rgba(18,22,42,0.82)";
+var cardBg = "radial-gradient(ellipse 108% 72px at 0% 0%,rgba(255,255,255,0.22) 0%,rgba(255,255,255,0.06) 40%,transparent 65%),radial-gradient(ellipse 108% 60px at 100% 100%,rgba(255,255,255,0.09) 0%,rgba(255,255,255,0.02) 40%,transparent 65%),rgba(16,14,26,0.74)";
 var cardShadow = "0 18px 46px rgba(0,0,0,0.52),0 6px 16px rgba(0,0,0,0.34),inset 0 1px 0 rgba(255,255,255,0.22)";
 var cardShadowSoft = "0 10px 26px rgba(0,0,0,0.44),inset 0 1px 0 rgba(255,255,255,0.18)";
 var INIT = {
@@ -11196,18 +11196,38 @@ function App() {
         c.cy = lerp(c.cy, t.ty, 0.10);
         el.style.setProperty('--mouse-x', c.cx.toFixed(2) + '%');
         el.style.setProperty('--mouse-y', c.cy.toFixed(2) + '%');
+        // BorderGlow (React Bits): directional edge glow — angle from element center
+        // and edge proximity (0 = center, 100 = at the edge), fed to CSS as vars.
+        var px = c.cx / 100 * t.w - t.w / 2,
+          py = c.cy / 100 * t.h - t.h / 2;
+        var kx = px !== 0 ? t.w / 2 / Math.abs(px) : Infinity,
+          ky = py !== 0 ? t.h / 2 / Math.abs(py) : Infinity;
+        var prox = Math.min(Math.max(1 / Math.min(kx, ky), 0), 1) * 100;
+        var ang = Math.atan2(py, px) * (180 / Math.PI) + 90;
+        if (ang < 0) ang += 360;
+        el.style.setProperty('--edge-proximity', prox.toFixed(2));
+        el.style.setProperty('--cursor-angle', ang.toFixed(2) + 'deg');
         currents.set(el, c);
         if (Math.abs(c.cx - t.tx) > 0.05 || Math.abs(c.cy - t.ty) > 0.05) anyActive = true;
       });
       raf = anyActive ? requestAnimationFrame(tick) : null;
     }
     function onMove(e) {
-      var el = e.target.closest('.card-rim,.glow-item');
-      if (!el) return;
-      var r = el.getBoundingClientRect();
-      targets.set(el, {
-        tx: (e.clientX - r.left) / r.width * 100,
-        ty: (e.clientY - r.top) / r.height * 100
+      // Track the hovered button AND its enclosing card so both glow independently.
+      var els = [];
+      var btn = e.target.closest('button');
+      var card = e.target.closest('.card-rim,.glow-item');
+      if (btn) els.push(btn);
+      if (card) els.push(card);
+      if (!els.length) return;
+      els.forEach(function (el) {
+        var r = el.getBoundingClientRect();
+        targets.set(el, {
+          tx: (e.clientX - r.left) / r.width * 100,
+          ty: (e.clientY - r.top) / r.height * 100,
+          w: r.width,
+          h: r.height
+        });
       });
       if (!raf) raf = requestAnimationFrame(tick);
     }
@@ -13680,7 +13700,7 @@ function App() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "radial-gradient(ellipse 70% 55% at 82% 8%,rgba(40,90,210,0.30) 0%,transparent 60%),radial-gradient(ellipse 65% 60% at 12% 92%,rgba(20,40,120,0.34) 0%,transparent 62%),#0a0a0a",
+        background: "transparent",
         fontFamily: "'Geist',system-ui,sans-serif"
       }
     }, /*#__PURE__*/React.createElement("div", {
@@ -20430,3 +20450,234 @@ function App() {
 }
 var root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(React.createElement(ErrorBoundary, null, React.createElement(App)));
+
+// ───────────────────────────────────────────────────────────────────────────
+// LightPillar (React Bits, adapted) — animated WebGL background pillar.
+// Adapted for this app: no imports (global THREE from CDN), no CSS file,
+// auto quality scaling (phones get 'low'), honours prefers-reduced-motion
+// by rendering a single static frame. Mounted in #bg-root, its own React
+// root, so it can never re-render or crash the main app (try/catch below).
+// ───────────────────────────────────────────────────────────────────────────
+function LightPillar(props) {
+  props = props || {};
+  var topColor = props.topColor || '#5227FF';
+  var bottomColor = props.bottomColor || '#FF9FFC';
+  var intensity = props.intensity != null ? props.intensity : 1.0;
+  var rotationSpeed = props.rotationSpeed != null ? props.rotationSpeed : 0.3;
+  var glowAmount = props.glowAmount != null ? props.glowAmount : 0.005;
+  var pillarWidth = props.pillarWidth != null ? props.pillarWidth : 3.0;
+  var pillarHeight = props.pillarHeight != null ? props.pillarHeight : 0.4;
+  var noiseIntensity = props.noiseIntensity != null ? props.noiseIntensity : 0.5;
+  var pillarRotation = props.pillarRotation != null ? props.pillarRotation : 0;
+  var containerRef = useRef(null);
+  useEffect(function () {
+    if (!containerRef.current || !window.THREE) return;
+    var container = containerRef.current;
+    var width = container.clientWidth,
+      height = container.clientHeight;
+    var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var scene = new THREE.Scene();
+    var camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    var isLowEnd = isMobile || navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4;
+    var q = isMobile ? 'low' : isLowEnd ? 'medium' : 'high';
+    var qualitySettings = {
+      low: {
+        iterations: 24,
+        waveIterations: 1,
+        pixelRatio: 0.5,
+        precision: 'mediump',
+        stepMultiplier: 1.5
+      },
+      medium: {
+        iterations: 40,
+        waveIterations: 2,
+        pixelRatio: 0.65,
+        precision: 'mediump',
+        stepMultiplier: 1.2
+      },
+      high: {
+        iterations: 80,
+        waveIterations: 4,
+        pixelRatio: Math.min(window.devicePixelRatio, 2),
+        precision: 'highp',
+        stepMultiplier: 1.0
+      }
+    };
+    var settings = qualitySettings[q];
+    var renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: false,
+        alpha: true,
+        powerPreference: q === 'high' ? 'high-performance' : 'low-power',
+        precision: settings.precision,
+        stencil: false,
+        depth: false
+      });
+    } catch (err) {
+      return;
+    }
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(settings.pixelRatio);
+    container.appendChild(renderer.domElement);
+    function parseColor(hex) {
+      var c = new THREE.Color(hex);
+      return new THREE.Vector3(c.r, c.g, c.b);
+    }
+    var vertexShader = 'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position,1.0);}';
+    var fragmentShader = 'precision ' + settings.precision + ' float;\n' + 'uniform float uTime;uniform vec2 uResolution;uniform vec3 uTopColor;uniform vec3 uBottomColor;\n' + 'uniform float uIntensity;uniform float uGlowAmount;uniform float uPillarWidth;uniform float uPillarHeight;\n' + 'uniform float uNoiseIntensity;uniform float uRotCos;uniform float uRotSin;\n' + 'uniform float uPillarRotCos;uniform float uPillarRotSin;uniform float uWaveSin;uniform float uWaveCos;\n' + 'varying vec2 vUv;\n' + 'const float STEP_MULT=' + settings.stepMultiplier.toFixed(1) + ';\n' + 'const int MAX_ITER=' + settings.iterations + ';\n' + 'const int WAVE_ITER=' + settings.waveIterations + ';\n' + 'void main(){\n' + '  vec2 uv=(vUv*2.0-1.0)*vec2(uResolution.x/uResolution.y,1.0);\n' + '  uv=vec2(uPillarRotCos*uv.x-uPillarRotSin*uv.y,uPillarRotSin*uv.x+uPillarRotCos*uv.y);\n' + '  vec3 ro=vec3(0.0,0.0,-10.0);\n' + '  vec3 rd=normalize(vec3(uv,1.0));\n' + '  vec3 col=vec3(0.0);\n' + '  float t=0.1;\n' + '  for(int i=0;i<MAX_ITER;i++){\n' + '    vec3 p=ro+rd*t;\n' + '    p.xz=vec2(uRotCos*p.x-uRotSin*p.z,uRotSin*p.x+uRotCos*p.z);\n' + '    vec3 qv=p;\n' + '    qv.y=p.y*uPillarHeight+uTime;\n' + '    float freq=1.0;float amp=1.0;\n' + '    for(int j=0;j<WAVE_ITER;j++){\n' + '      qv.xz=vec2(uWaveCos*qv.x-uWaveSin*qv.z,uWaveSin*qv.x+uWaveCos*qv.z);\n' + '      qv+=cos(qv.zxy*freq-uTime*float(j)*2.0)*amp;\n' + '      freq*=2.0;amp*=0.5;\n' + '    }\n' + '    float d=length(cos(qv.xz))-0.2;\n' + '    float bound=length(p.xz)-uPillarWidth;\n' + '    float k=4.0;\n' + '    float h=max(k-abs(d-bound),0.0);\n' + '    d=max(d,bound)+h*h*0.0625/k;\n' + '    d=abs(d)*0.15+0.01;\n' + '    float grad=clamp((15.0-p.y)/30.0,0.0,1.0);\n' + '    col+=mix(uBottomColor,uTopColor,grad)/d;\n' + '    t+=d*STEP_MULT;\n' + '    if(t>50.0)break;\n' + '  }\n' + '  float widthNorm=uPillarWidth/3.0;\n' + '  col=tanh(col*uGlowAmount/widthNorm);\n' + '  col-=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)/15.0*uNoiseIntensity;\n' + '  gl_FragColor=vec4(col*uIntensity,1.0);\n' + '}';
+    var pillarRotRad = pillarRotation * Math.PI / 180;
+    var material = new THREE.ShaderMaterial({
+      vertexShader: vertexShader,
+      fragmentShader: fragmentShader,
+      uniforms: {
+        uTime: {
+          value: 0
+        },
+        uResolution: {
+          value: new THREE.Vector2(width, height)
+        },
+        uTopColor: {
+          value: parseColor(topColor)
+        },
+        uBottomColor: {
+          value: parseColor(bottomColor)
+        },
+        uIntensity: {
+          value: intensity
+        },
+        uGlowAmount: {
+          value: glowAmount
+        },
+        uPillarWidth: {
+          value: pillarWidth
+        },
+        uPillarHeight: {
+          value: pillarHeight
+        },
+        uNoiseIntensity: {
+          value: noiseIntensity
+        },
+        uRotCos: {
+          value: 1.0
+        },
+        uRotSin: {
+          value: 0.0
+        },
+        uPillarRotCos: {
+          value: Math.cos(pillarRotRad)
+        },
+        uPillarRotSin: {
+          value: Math.sin(pillarRotRad)
+        },
+        uWaveSin: {
+          value: Math.sin(0.4)
+        },
+        uWaveCos: {
+          value: Math.cos(0.4)
+        }
+      },
+      transparent: true,
+      depthWrite: false,
+      depthTest: false
+    });
+    var geometry = new THREE.PlaneGeometry(2, 2);
+    scene.add(new THREE.Mesh(geometry, material));
+    var rafId = null,
+      time = 0,
+      lastTime = performance.now();
+    var targetFPS = q === 'low' ? 30 : 60,
+      frameTime = 1000 / targetFPS;
+    function renderFrame() {
+      material.uniforms.uTime.value = time;
+      material.uniforms.uRotCos.value = Math.cos(time * 0.3);
+      material.uniforms.uRotSin.value = Math.sin(time * 0.3);
+      renderer.render(scene, camera);
+    }
+    function animate(now) {
+      var dt = now - lastTime;
+      if (dt >= frameTime) {
+        time += 0.016 * rotationSpeed;
+        renderFrame();
+        lastTime = now - dt % frameTime;
+      }
+      rafId = requestAnimationFrame(animate);
+    }
+    if (reducedMotion) {
+      time = 2.0;
+      renderFrame(); // single static frame — no animation loop
+    } else {
+      rafId = requestAnimationFrame(animate);
+    }
+
+    // Pause when the tab/PWA is hidden — saves phone battery.
+    function onVis() {
+      if (reducedMotion) return;
+      if (document.hidden) {
+        if (rafId) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+      } else if (!rafId) {
+        lastTime = performance.now();
+        rafId = requestAnimationFrame(animate);
+      }
+    }
+    document.addEventListener('visibilitychange', onVis);
+    var resizeTimeout = null;
+    function onResize() {
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(function () {
+        if (!containerRef.current) return;
+        var w = containerRef.current.clientWidth,
+          h = containerRef.current.clientHeight;
+        renderer.setSize(w, h);
+        material.uniforms.uResolution.value.set(w, h);
+        if (reducedMotion) renderFrame();
+      }, 150);
+    }
+    window.addEventListener('resize', onResize, {
+      passive: true
+    });
+    return function () {
+      window.removeEventListener('resize', onResize);
+      document.removeEventListener('visibilitychange', onVis);
+      if (rafId) cancelAnimationFrame(rafId);
+      renderer.dispose();
+      renderer.forceContextLoss();
+      if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
+      material.dispose();
+      geometry.dispose();
+    };
+  }, []);
+  return React.createElement('div', {
+    ref: containerRef,
+    style: {
+      position: 'fixed',
+      inset: 0,
+      width: '100%',
+      height: '100%',
+      pointerEvents: 'none'
+    }
+  });
+}
+
+// Mount the background in its own root — isolated from the app.
+(function () {
+  try {
+    var el = document.getElementById('bg-root');
+    if (!el || !window.THREE) return; // no mount point or three.js failed to load → keep CSS background
+    ReactDOM.createRoot(el).render(React.createElement(LightPillar, {
+      topColor: '#5227FF',
+      bottomColor: '#FF9FFC',
+      intensity: 1,
+      rotationSpeed: 0.3,
+      glowAmount: 0.005,
+      pillarWidth: 3,
+      pillarHeight: 0.4,
+      noiseIntensity: 0.2,
+      pillarRotation: 60
+    }));
+  } catch (e) {/* background is decorative — never let it break the app */}
+})();

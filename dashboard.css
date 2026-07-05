@@ -3,24 +3,22 @@
 html,body{overflow-x:hidden;max-width:100vw;}
 #root{overflow-x:hidden;max-width:100vw;}
 body{
-  /* ── Sapphire "alive" background: blue ambient glows + carbon weave + base ── */
-  background-color:#0a0a0a;
+  /* ── Midnight base under the LightPillar WebGL background (carbon weave removed).
+     The purple/pink ambient glows double as the fallback look if WebGL is unavailable. ── */
+  background-color:#08070d;
   background-image:
-    radial-gradient(ellipse 70% 55% at 82% 8%,  rgba(40,90,210,0.22) 0%, transparent 60%),
-    radial-gradient(ellipse 65% 60% at 12% 92%, rgba(20,40,120,0.26) 0%, transparent 62%),
-    linear-gradient(27deg,  #141414 5px, transparent 5px),
-    linear-gradient(207deg, #141414 5px, transparent 5px),
-    linear-gradient(27deg,  #0e0e0e 5px, transparent 5px),
-    linear-gradient(207deg, #0e0e0e 5px, transparent 5px),
-    linear-gradient(90deg,  #111 10px, transparent 10px),
-    linear-gradient(#131313 25%, #0f0f0f 25%, #0f0f0f 50%, transparent 50%, transparent 75%, #141414 75%, #141414);
-  background-position:0 0,0 0,0 5px,10px 0,0 10px,10px 5px,0 0,0 0;
-  background-size:auto,auto,20px 20px,20px 20px,20px 20px,20px 20px,20px 20px,20px 20px;
-  background-attachment:fixed,fixed,scroll,scroll,scroll,scroll,scroll,scroll;
+    radial-gradient(ellipse 70% 55% at 75% 12%, rgba(82,39,255,0.16) 0%, transparent 60%),
+    radial-gradient(ellipse 65% 60% at 18% 90%, rgba(255,159,252,0.08) 0%, transparent 62%);
+  background-attachment:fixed,fixed;
   color:#e6ecf5;
   font-family:'Geist',system-ui,sans-serif;
   min-height:100vh;
 }
+/* LightPillar background layer — behind everything, never intercepts touches.
+   opacity is the master brightness dial: full shader brightness washes out card text. */
+#bg-root{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0.5;}
+#bg-root canvas{display:block;width:100%!important;height:100%!important;}
+#root{position:relative;z-index:1;}
 /* faint noise grain so the glass has fine texture to refract */
 body::before{
   content:'';position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0.5;
@@ -50,8 +48,22 @@ input,select,textarea,button{-webkit-tap-highlight-color:transparent;}
 .card-rim::before{background:radial-gradient(circle at var(--mouse-x,50%) var(--mouse-y,50%),rgba(30,100,255,.10) 0%,rgba(30,80,220,.03) 38%,transparent 55%);}
 .glow-item::before{background:radial-gradient(circle at var(--mouse-x,50%) var(--mouse-y,50%),rgba(30,100,255,.06) 0%,rgba(30,80,220,.02) 30%,transparent 48%);}
 
-/* Rim border */
-.card-rim::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:inset 0 0 0 1.5px rgba(120,160,255,0);z-index:2;}
+/* ── BorderGlow (React Bits, adapted): directional mesh-gradient border ──
+   --cursor-angle + --edge-proximity are set by the app's cursor tracker.
+   The colored arc follows the cursor and fades in as it nears the edge.
+   Touch devices never receive mousemove → vars stay unset → effect dormant (saves battery). */
+.card-rim::after{
+  content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:2;
+  border:1.5px solid transparent;
+  background:conic-gradient(from var(--cursor-angle,0deg),
+    rgba(244,114,182,0.95) 0%, rgba(192,132,252,0.90) 8%, rgba(56,189,248,0.55) 16%, transparent 24%,
+    transparent 76%, rgba(56,189,248,0.55) 84%, rgba(192,132,252,0.90) 92%, rgba(244,114,182,0.95) 100%) border-box;
+  -webkit-mask:linear-gradient(#000 0 0) padding-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;
+          mask:linear-gradient(#000 0 0) padding-box,linear-gradient(#000 0 0);
+          mask-composite:exclude;
+  opacity:clamp(0, (var(--edge-proximity,0) - 30) / 70, 1);
+}
 
 /* Glow item — task rows, weather, check-in internals */
 .glow-item{position:relative;overflow:hidden;border-radius:inherit;transition:box-shadow .2s,background .15s;}
@@ -60,10 +72,24 @@ input,select,textarea,button{-webkit-tap-highlight-color:transparent;}
 @media(hover:hover) and (pointer:fine){
   .card-rim::before,.glow-item::before{transition:opacity .35s ease;}
   .card-rim:hover::before,.glow-item:hover::before{opacity:1;}
-  .card-rim::after{transition:box-shadow .3s ease;}
-  .card-rim:hover::after{box-shadow:inset 0 0 0 1.5px rgba(80,140,255,.85),inset 0 0 40px rgba(30,100,255,.20),inset 0 0 10px rgba(30,100,255,.14);}
-  .card-rim:hover{box-shadow:0 0 55px rgba(30,100,255,.45),0 0 130px rgba(20,70,220,.26),0 0 260px rgba(15,50,200,.14);transform:translateY(-2px);}
-  .glow-item:hover{box-shadow:0 0 18px rgba(60,110,235,.22),inset 0 0 0 1px rgba(120,160,255,.28);}
+  .card-rim::after{transition:opacity .25s ease-out;}
+  .card-rim:hover{box-shadow:0 0 55px rgba(120,60,255,.38),0 0 130px rgba(255,110,240,.16),0 0 260px rgba(82,39,255,.12);transform:translateY(-2px);}
+  .glow-item:hover{box-shadow:0 0 18px rgba(150,90,255,.22),inset 0 0 0 1px rgba(200,150,255,.28);}
+  /* BorderGlow on buttons: same directional arc, thinner ring */
+  button{position:relative;}
+  button::after{
+    content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:2;
+    border:1px solid transparent;
+    background:conic-gradient(from var(--cursor-angle,0deg),
+      rgba(244,114,182,0.9) 0%, rgba(192,132,252,0.85) 10%, transparent 26%,
+      transparent 74%, rgba(192,132,252,0.85) 90%, rgba(244,114,182,0.9) 100%) border-box;
+    -webkit-mask:linear-gradient(#000 0 0) padding-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;
+            mask:linear-gradient(#000 0 0) padding-box,linear-gradient(#000 0 0);
+            mask-composite:exclude;
+    opacity:0;transition:opacity .2s ease-out;
+  }
+  button:hover::after{opacity:clamp(0, (var(--edge-proximity,0) - 10) / 90, 1);}
 }
 /* ── Monitoring panel entry ── */
 @keyframes backdrop-in{from{opacity:0;}to{opacity:1;}}

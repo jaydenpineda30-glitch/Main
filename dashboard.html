@@ -18,6 +18,8 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+<!-- three.js (UMD) — powers the LightPillar animated background; loaded like React above -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" crossorigin="anonymous"></script>
 <!-- Monitoring system — load before the app bundle so globals are available -->
 <script src="error-handler.js"></script>
 <script src="network-monitor.js"></script>
@@ -90,6 +92,8 @@
 <script src="data.js"></script>
 </head>
 <body>
+<!-- Animated LightPillar background — its own React root, sits behind everything, never re-renders with the app -->
+<div id="bg-root" aria-hidden="true"></div>
 <div id="root"></div>
 <div id="app-error" style="display:none;padding:32px 24px;font-family:'Geist',system-ui;background:#0a0a0a;color:#ff6b6b;min-height:100vh;position:fixed;inset:0;z-index:9999;overflow:auto;"></div>
 <script>
