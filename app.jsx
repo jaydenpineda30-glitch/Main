@@ -122,9 +122,11 @@ const editPill={appearance:"none",border:"1px solid rgba(255,255,255,0.22)",curs
 const btnGlass={appearance:"none",padding:"6px 13px",borderRadius:999,border:"1px solid rgba(91,140,255,0.35)",background:"rgba(91,140,255,0.14)",color:"rgba(180,210,255,0.92)",cursor:"pointer",fontSize:12,fontWeight:500,boxShadow:"inset 0 1px 0 rgba(91,140,255,0.18)",whiteSpace:"nowrap"};
 const btnGlassP={appearance:"none",padding:"6px 14px",borderRadius:999,border:"1px solid rgba(91,140,255,0.55)",background:"linear-gradient(135deg,rgba(91,140,255,0.88),rgba(50,85,204,0.92))",color:"#ffffff",cursor:"pointer",fontSize:12,fontWeight:600,boxShadow:"0 2px 12px rgba(50,90,200,0.40),inset 0 1px 0 rgba(255,255,255,0.22)",whiteSpace:"nowrap"};
 // ── Card surface: soft white "aurora" bloom from the TOP-RIGHT corner + elevated shadow so cards pop ──
-const cardBg="radial-gradient(ellipse 108% 72px at 0% 0%,rgba(255,255,255,0.22) 0%,rgba(255,255,255,0.06) 40%,transparent 65%),radial-gradient(ellipse 108% 60px at 100% 100%,rgba(255,255,255,0.09) 0%,rgba(255,255,255,0.02) 40%,transparent 65%),rgba(16,14,26,0.74)";
-const cardShadow="0 18px 46px rgba(0,0,0,0.52),0 6px 16px rgba(0,0,0,0.34),inset 0 1px 0 rgba(255,255,255,0.22)";
-const cardShadowSoft="0 10px 26px rgba(0,0,0,0.44),inset 0 1px 0 rgba(255,255,255,0.18)";
+// GlassSurface (React Bits) frosted recipe — white mist + inset top/bottom highlights.
+// This is the same look GlassSurface itself renders on Safari/iOS (its fallback mode).
+const cardBg="radial-gradient(ellipse 108% 72px at 0% 0%,rgba(255,255,255,0.14) 0%,rgba(255,255,255,0.03) 40%,transparent 65%),rgba(255,255,255,0.08)";
+const cardShadow="0 18px 46px rgba(0,0,0,0.42),0 6px 16px rgba(0,0,0,0.26),inset 0 1px 0 rgba(255,255,255,0.28),inset 0 -1px 0 rgba(255,255,255,0.10)";
+const cardShadowSoft="0 10px 26px rgba(0,0,0,0.36),inset 0 1px 0 rgba(255,255,255,0.22),inset 0 -1px 0 rgba(255,255,255,0.08)";
 
 const INIT={
   uni:{subjects:Object.keys(SUBJECTS).map(function(k,i){return{id:i+1,name:k,progress:0};}),completedEvents:[],assessments:SYLLABUS_ASSESSMENTS.map(function(a){return{...a};})},
@@ -581,7 +583,7 @@ function WeatherWidget(props){
   return(
     <>
       {/* ── Compact dashboard widget ── */}
-      <div className="glow-item" style={{background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:16,padding:"14px 16px",boxShadow:cardShadow}}>
+      <div className="glow-item" style={{background:cardBg,backdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",WebkitBackdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:16,padding:"14px 16px",boxShadow:cardShadow}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <div style={{fontSize:10,color:T.text3}}>Melbourne</div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
@@ -723,7 +725,7 @@ function GymSection(props){
     if(!nextSess||wkt.sets.length===0)return;
     try{localStorage.setItem('gym_tab_draft',JSON.stringify({rotId:nextSess?nextSess.id:null,sets:wkt.sets,savedAt:Date.now()}));}catch(_){}
   },[wkt.sets]);
-  const gs={card:{position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow},btn:{...btnGlass,padding:"5px 12px"},btnP:{...btnGlassP},inp:{width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"},acc:{background:T.bg3,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",border:"0.5px solid "+T.border,userSelect:"none"}};
+  const gs={card:{position:"relative",background:cardBg,backdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",WebkitBackdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow},btn:{...btnGlass,padding:"5px 12px"},btnP:{...btnGlassP},inp:{width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"},acc:{background:T.bg3,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",border:"0.5px solid "+T.border,userSelect:"none"}};
   function gCellEdge(g){return{borderBottom:"1.5px solid rgba("+g+",0.45)",boxShadow:"inset 0 -10px 22px rgba("+g+",0.16)"}}
   function getExPrev(name){const ex=(gymData.exercises||[]).find(function(e){return e.name&&e.name.toLowerCase()===name.toLowerCase();});if(!ex||!ex.logs||!ex.logs.length)return null;return ex.logs[ex.logs.length-1].weight;}
   const currentMonth=todayStr().slice(0,7);
@@ -834,7 +836,7 @@ function GymSection(props){
           {label:"THIS MONTH",val:sessThisMonth+" sess",g:"91,140,255"},
           {label:"STREAK",val:streak>0?streak+" wk":"—",g:streak>0?"34,197,94":"148,163,184"}
         ].map(function(c,i){return(
-          <div key={i} style={{flex:1,minWidth:mob?130:110,background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:"10px 14px",boxShadow:cardShadowSoft,...gCellEdge(c.g)}}>
+          <div key={i} style={{flex:1,minWidth:mob?130:110,background:cardBg,backdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",WebkitBackdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:"10px 14px",boxShadow:cardShadowSoft,...gCellEdge(c.g)}}>
             <div style={{fontSize:9,fontWeight:700,color:"#8f97a6",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:4}}>{c.label}</div>
             <div style={{fontSize:15,fontWeight:700,color:T.text,fontVariantNumeric:"tabular-nums"}}>{c.val}</div>
           </div>
@@ -1057,8 +1059,8 @@ function FinanceSection({data,onUpdate,mob,gcalEvents,work}){
   const [recForm,setRecForm]=useState({name:"",amount:"",cat:"Bills",dueDay:""});
   const fBtnP={...btnGlassP};
   const fInp={width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"};
-  function fCard(ex){return{position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow,...(ex||{})};}
-  const fGlassMini={background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,boxShadow:cardShadowSoft};
+  function fCard(ex){return{position:"relative",background:cardBg,backdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",WebkitBackdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow,...(ex||{})};}
+  const fGlassMini={background:cardBg,backdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",WebkitBackdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,boxShadow:cardShadowSoft};
   const fStatLabel={fontSize:10,fontWeight:600,color:"#8f97a6",textTransform:"uppercase",letterSpacing:"0.05em"};
   const fST={fontSize:13,fontWeight:600,marginBottom:0,color:"#cdd5e2",letterSpacing:"-0.01em"};
   function fmtNum(n){return n.toLocaleString("en-AU",{minimumFractionDigits:2,maximumFractionDigits:2});}
@@ -1171,7 +1173,7 @@ function FinanceSection({data,onUpdate,mob,gcalEvents,work}){
           {label:"Net",value:(net>=0?"+$":"−$")+fmtRound(Math.abs(net)),sub:net>=0?"surplus":"shortfall",col:T.text,glow:net>=0?"rgba(105,240,174,1)":"rgba(255,107,107,1)"},
           {label:"Disposable",value:(disposableLeft>=0?"$":"−$")+fmtRound(Math.abs(disposableLeft)),sub:_sgCommit>0?"after bills, one-offs & savings":"after bills & one-offs",col:T.text,glow:disposableLeft<=0?"rgba(255,107,107,1)":dispRatio<0.15?"rgba(255,209,102,1)":"rgba(105,240,174,1)"}
         ];
-        const stripBase={background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,overflow:"hidden",marginBottom:14,boxShadow:cardShadow};
+        const stripBase={background:cardBg,backdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",WebkitBackdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,overflow:"hidden",marginBottom:14,boxShadow:cardShadow};
         const cell={padding:mob?"11px 14px":"13px 20px"};
         const divV={width:1,flexShrink:0,alignSelf:"stretch",background:"rgba(255,255,255,0.07)"};
         if(mob){return(
@@ -1209,7 +1211,7 @@ function FinanceSection({data,onUpdate,mob,gcalEvents,work}){
         var seg={padding:mob?"10px 12px":"11px 18px"};
         var lbl={fontSize:9,fontWeight:600,color:T.text3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4};
         return(
-          <div style={{display:"flex",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,overflow:"hidden",marginBottom:12,...edgeSt}}>
+          <div style={{display:"flex",background:cardBg,backdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",WebkitBackdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,overflow:"hidden",marginBottom:12,...edgeSt}}>
             <div style={{...seg,flex:1}}>
               <div style={lbl}>Daily avg</div>
               <div style={{fontSize:mob?13:15,fontWeight:500,color:T.text,letterSpacing:"-0.01em"}}>${fmtRound(dailyRate)}/day</div>
@@ -1625,7 +1627,7 @@ function InvestSection({data,onUpdate,mob}){
   const symbolsKey=allSymbols.join(",");
 
   // ── styles ──
-  const iCard=function(ex){return{position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:14,boxShadow:cardShadow,...(ex||{})};};
+  const iCard=function(ex){return{position:"relative",background:cardBg,backdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",WebkitBackdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:14,boxShadow:cardShadow,...(ex||{})};};
   const iStatLabel={fontSize:10,fontWeight:600,color:"#8f97a6",textTransform:"uppercase",letterSpacing:"0.05em"};
   const iInp={width:"100%",padding:"8px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"};
   const iBtn={...btnGlassP};
@@ -2072,8 +2074,8 @@ function WorkSection({data,mob,onUpdate,onFlush,gcalEvents}){
   const wBtn={...btnGlass,padding:"5px 12px"};
   const wBtnP={...btnGlassP};
   const wInp={width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"};
-  function wCard(ex){return{position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow,...(ex||{})};}
-  const wGlassMini={background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,boxShadow:cardShadowSoft};
+  function wCard(ex){return{position:"relative",background:cardBg,backdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",WebkitBackdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow,...(ex||{})};}
+  const wGlassMini={background:cardBg,backdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",WebkitBackdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,boxShadow:cardShadowSoft};
   const wStatLabel={fontSize:10,fontWeight:600,color:"#8f97a6",textTransform:"uppercase",letterSpacing:"0.05em"};
   const wST={fontSize:13,fontWeight:600,marginBottom:0,color:"#cdd5e2",letterSpacing:"-0.01em"};
   function cellEdge(hex){return{borderBottom:"1.5px solid "+hex+"80",boxShadow:"inset 0 -5px 12px "+hex+"15"};}
@@ -2406,7 +2408,7 @@ function WorkSection({data,mob,onUpdate,onFlush,gcalEvents}){
 // Projects (baby-steps goal breakdowns) + Shopping list
 // ─────────────────────────────────────────────────────────────────────────────
 function nid(pref){return (pref||"i")+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
-const PCARD={position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow};
+const PCARD={position:"relative",background:cardBg,backdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",WebkitBackdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow};
 const PINP={width:"100%",padding:"9px 12px",borderRadius:10,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:13,boxSizing:"border-box",outline:"none"};
 const MONO="ui-monospace,Menlo,Consolas,monospace";
 
@@ -3862,7 +3864,7 @@ function App(){
     );
   }
 
-  function card(ex){return{position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow,...(ex||{})};}
+  function card(ex){return{position:"relative",background:cardBg,backdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",WebkitBackdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow,...(ex||{})};}
   const sT={fontSize:13,fontWeight:600,marginBottom:12,color:"#cdd5e2",letterSpacing:"-0.01em"};
   const btn={...btnGlass,padding:"5px 12px"};
   const btnP={...btnGlassP};
@@ -3871,7 +3873,7 @@ function App(){
   const eyebrow={fontSize:11,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",color:T.accent};
   const sectLabel={fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.42)",marginBottom:14};
   const pill={fontSize:10,fontWeight:700,padding:"2px 9px",borderRadius:999,background:"rgba(91,140,255,0.16)",color:T.accentSoft||"#8fb0ff",border:"1px solid rgba(120,150,255,0.4)"};
-  const glassMini={background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:12,boxShadow:cardShadowSoft};
+  const glassMini={background:cardBg,backdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",WebkitBackdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:12,boxShadow:cardShadowSoft};
   const tagStyle={academic:{background:"rgba(55,138,221,0.18)",color:"#7eb3e8"},health:{background:"rgba(59,109,17,0.22)",color:"#8ac571"},finance:{background:"rgba(186,117,23,0.22)",color:"#e8b970"},career:{background:"rgba(127,119,221,0.22)",color:"#b3acff"},personal:{background:"rgba(136,135,128,0.22)",color:"#b4b3ac"}};
   function getTagStyle(area){return tagStyle[(area||"personal").toLowerCase()]||tagStyle.personal;}
 
@@ -3886,7 +3888,8 @@ function App(){
   // Login screen — shown until Google sign-in completes
   if(!authUser){return(
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"transparent",fontFamily:"'Geist',system-ui,sans-serif"}}>
-      <div style={{background:"rgba(255,255,255,0.07)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:"0.5px solid rgba(255,255,255,0.16)",borderRadius:20,padding:"40px 36px",textAlign:"center",maxWidth:340,width:"90%",boxShadow:"0 8px 40px rgba(0,0,0,0.5)"}}>
+      <GlassSurface width="90%" height="auto" borderRadius={20} backgroundOpacity={0.08} saturation={1.5} style={{maxWidth:340,boxShadow:"0 8px 40px rgba(0,0,0,0.5)"}}>
+       <div style={{padding:"36px 30px",textAlign:"center",width:"100%"}}>
         <div style={{display:"flex",justifyContent:"center",color:T.accent,marginBottom:8}}><UIcon name="sparkle" size={30}/></div>
         <div style={{fontSize:20,fontWeight:700,color:T.text,marginBottom:6}}>Jayden's Dashboard</div>
         <div style={{fontSize:13,color:T.text2,marginBottom:28,lineHeight:1.6}}>Sign in with Google to access your dashboard and sync your data across devices.</div>
@@ -3904,7 +3907,8 @@ function App(){
           <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.7 2.5 30.2 0 24 0 14.8 0 6.9 5.4 3 13.3l7.8 6C12.7 13 18 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4 7.1-10 7.1-17z"/><path fill="#FBBC05" d="M10.8 28.7A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.2.8-4.7l-7.8-6A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.5 10.8l8.3-6.1z"/><path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.5-5.8c-2 1.4-4.6 2.3-7.7 2.3-6 0-11.1-4-12.9-9.4l-8.3 6.1C6.9 42.6 14.8 48 24 48z"/></svg>
           Sign in with Google
         </button>
-      </div>
+       </div>
+      </GlassSurface>
     </div>
   );}
 
@@ -3953,7 +3957,7 @@ function App(){
           {e.stack&&<pre style={{fontSize:9,color:"rgba(255,255,255,0.3)",whiteSpace:"pre-wrap",wordBreak:"break-word",margin:0,lineHeight:1.4}}>{e.stack}</pre>}
         </div>);})}
       </div>}
-      {!mob&&<nav style={{position:"fixed",left:0,top:0,bottom:0,width:navCollapsed?68:218,zIndex:50,display:"flex",flexDirection:"column",padding:navCollapsed?"18px 10px":"18px 14px",gap:3,background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",borderRight:"1px solid rgba(255,255,255,0.10)",boxShadow:"8px 0 32px rgba(0,0,0,0.40),inset 0 1px 0 rgba(255,255,255,0.22)",transition:"width 0.22s cubic-bezier(0.23,1,0.32,1)",overflowY:"auto",overflowX:"hidden"}}>
+      {!mob&&<nav style={{position:"fixed",left:0,top:0,bottom:0,width:navCollapsed?68:218,zIndex:50,display:"flex",flexDirection:"column",padding:navCollapsed?"18px 10px":"18px 14px",gap:3,background:cardBg,backdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",WebkitBackdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",borderRight:"1px solid rgba(255,255,255,0.10)",boxShadow:"8px 0 32px rgba(0,0,0,0.40),inset 0 1px 0 rgba(255,255,255,0.22)",transition:"width 0.22s cubic-bezier(0.23,1,0.32,1)",overflowY:"auto",overflowX:"hidden"}}>
         {/* Rail header — avatar, name, sync dot */}
         <div style={{display:"flex",alignItems:"center",gap:10,padding:navCollapsed?"0 0 16px":"2px 4px 16px",borderBottom:"0.5px solid rgba(255,255,255,0.08)",marginBottom:10,justifyContent:navCollapsed?"center":"flex-start"}}>
           <div style={{width:34,height:34,borderRadius:"50%",flexShrink:0,overflow:"hidden",background:"linear-gradient(135deg,#5b8cff,#3a5fcc)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:"#fff"}}>{authUser&&authUser.photoURL?<img src={authUser.photoURL} alt="" style={{width:34,height:34,borderRadius:"50%"}}/>:"J"}</div>
@@ -4710,7 +4714,7 @@ function App(){
               <NavGlyph name="Boardroom" size={15}/>Start Session
             </button>
 
-            {brGoalProposals.length>0&&<div className="card-rim" style={{background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(91,140,255,0.28)",borderRadius:14,padding:"14px 18px",marginBottom:20,boxShadow:cardShadow}}>
+            {brGoalProposals.length>0&&<div className="card-rim" style={{background:cardBg,backdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",WebkitBackdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",border:"1px solid rgba(91,140,255,0.28)",borderRadius:14,padding:"14px 18px",marginBottom:20,boxShadow:cardShadow}}>
               <div style={{fontSize:11,fontWeight:600,color:"rgba(91,140,255,0.8)",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.08em"}}>Goals surfaced from your last session</div>
               {brGoalProposals.map(function(p,i){return(
                 <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 0",borderBottom:i<brGoalProposals.length-1?"0.5px solid rgba(255,255,255,0.06)":"none"}}>
@@ -4726,7 +4730,7 @@ function App(){
               );})}
             </div>}
 
-            {brTaskProposals.length>0&&<div className="card-rim" style={{background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(199,125,255,0.28)",borderRadius:14,padding:"14px 18px",marginBottom:20,boxShadow:cardShadow}}>
+            {brTaskProposals.length>0&&<div className="card-rim" style={{background:cardBg,backdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",WebkitBackdropFilter:"blur(14px) saturate(1.8) brightness(1.12)",border:"1px solid rgba(199,125,255,0.28)",borderRadius:14,padding:"14px 18px",marginBottom:20,boxShadow:cardShadow}}>
               <div style={{fontSize:11,fontWeight:600,color:"rgba(199,125,255,0.85)",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.08em"}}>To-dos from your last session</div>
               {brTaskProposals.map(function(t,i){return(
                 <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"8px 0",borderBottom:i<brTaskProposals.length-1?"0.5px solid rgba(255,255,255,0.06)":"none"}}>
@@ -4987,6 +4991,137 @@ const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(React.createElement(ErrorBoundary, null, React.createElement(App)));
 
 // ───────────────────────────────────────────────────────────────────────────
+// GlassSurface (React Bits, adapted) — liquid-glass surface with SVG
+// displacement refraction. Full effect runs on desktop Chrome/Edge only;
+// Safari/Firefox (and therefore the iPhone PWA) get the frosted fallback —
+// that detection is part of the original component. Adapted for this app:
+// no imports, CSS lives in dashboard.css, dark-theme-only styling.
+// ───────────────────────────────────────────────────────────────────────────
+function GlassSurface(props){
+  props=props||{};
+  var children=props.children;
+  var width=props.width!=null?props.width:200;
+  var height=props.height!=null?props.height:80;
+  var borderRadius=props.borderRadius!=null?props.borderRadius:20;
+  var borderWidth=props.borderWidth!=null?props.borderWidth:0.07;
+  var brightness=props.brightness!=null?props.brightness:50;
+  var opacity=props.opacity!=null?props.opacity:0.93;
+  var blur=props.blur!=null?props.blur:11;
+  var displace=props.displace!=null?props.displace:0;
+  var backgroundOpacity=props.backgroundOpacity!=null?props.backgroundOpacity:0;
+  var saturation=props.saturation!=null?props.saturation:1;
+  var distortionScale=props.distortionScale!=null?props.distortionScale:-180;
+  var redOffset=props.redOffset!=null?props.redOffset:0;
+  var greenOffset=props.greenOffset!=null?props.greenOffset:10;
+  var blueOffset=props.blueOffset!=null?props.blueOffset:20;
+  var xChannel=props.xChannel||'R';
+  var yChannel=props.yChannel||'G';
+  var mixBlendMode=props.mixBlendMode||'difference';
+  var className=props.className||'';
+  var style=props.style||{};
+
+  var uniqueId=React.useId().replace(/:/g,'-');
+  var filterId='glass-filter-'+uniqueId;
+  var redGradId='red-grad-'+uniqueId;
+  var blueGradId='blue-grad-'+uniqueId;
+
+  var svgState=useState(false);
+  var svgSupported=svgState[0],setSvgSupported=svgState[1];
+
+  var containerRef=useRef(null);
+  var feImageRef=useRef(null);
+  var redChannelRef=useRef(null);
+  var greenChannelRef=useRef(null);
+  var blueChannelRef=useRef(null);
+  var gaussianBlurRef=useRef(null);
+
+  function generateDisplacementMap(){
+    var rect=containerRef.current?containerRef.current.getBoundingClientRect():null;
+    var actualWidth=(rect&&rect.width)||400;
+    var actualHeight=(rect&&rect.height)||200;
+    var edgeSize=Math.min(actualWidth,actualHeight)*(borderWidth*0.5);
+    var svgContent=
+      '<svg viewBox="0 0 '+actualWidth+' '+actualHeight+'" xmlns="http://www.w3.org/2000/svg">'+
+      '<defs>'+
+      '<linearGradient id="'+redGradId+'" x1="100%" y1="0%" x2="0%" y2="0%">'+
+      '<stop offset="0%" stop-color="#0000"/><stop offset="100%" stop-color="red"/></linearGradient>'+
+      '<linearGradient id="'+blueGradId+'" x1="0%" y1="0%" x2="0%" y2="100%">'+
+      '<stop offset="0%" stop-color="#0000"/><stop offset="100%" stop-color="blue"/></linearGradient>'+
+      '</defs>'+
+      '<rect x="0" y="0" width="'+actualWidth+'" height="'+actualHeight+'" fill="black"></rect>'+
+      '<rect x="0" y="0" width="'+actualWidth+'" height="'+actualHeight+'" rx="'+borderRadius+'" fill="url(#'+redGradId+')" />'+
+      '<rect x="0" y="0" width="'+actualWidth+'" height="'+actualHeight+'" rx="'+borderRadius+'" fill="url(#'+blueGradId+')" style="mix-blend-mode: '+mixBlendMode+'" />'+
+      '<rect x="'+edgeSize+'" y="'+edgeSize+'" width="'+(actualWidth-edgeSize*2)+'" height="'+(actualHeight-edgeSize*2)+'" rx="'+borderRadius+'" fill="hsl(0 0% '+brightness+'% / '+opacity+')" style="filter:blur('+blur+'px)" />'+
+      '</svg>';
+    return 'data:image/svg+xml,'+encodeURIComponent(svgContent);
+  }
+
+  function updateDisplacementMap(){
+    if(feImageRef.current)feImageRef.current.setAttribute('href',generateDisplacementMap());
+  }
+
+  useEffect(function(){
+    updateDisplacementMap();
+    [{ref:redChannelRef,offset:redOffset},{ref:greenChannelRef,offset:greenOffset},{ref:blueChannelRef,offset:blueOffset}].forEach(function(item){
+      if(item.ref.current){
+        item.ref.current.setAttribute('scale',String(distortionScale+item.offset));
+        item.ref.current.setAttribute('xChannelSelector',xChannel);
+        item.ref.current.setAttribute('yChannelSelector',yChannel);
+      }
+    });
+    if(gaussianBlurRef.current)gaussianBlurRef.current.setAttribute('stdDeviation',String(displace));
+  },[width,height,borderRadius,borderWidth,brightness,opacity,blur,displace,distortionScale,redOffset,greenOffset,blueOffset,xChannel,yChannel,mixBlendMode]);
+
+  useEffect(function(){
+    if(!containerRef.current)return;
+    var ro=new ResizeObserver(function(){setTimeout(updateDisplacementMap,0);});
+    ro.observe(containerRef.current);
+    return function(){ro.disconnect();};
+  },[]);
+
+  useEffect(function(){
+    // Original component's detection: Safari + Firefox can't do backdrop-filter:url(#svg) → frosted fallback
+    var isWebkit=/Safari/.test(navigator.userAgent)&&!/Chrome/.test(navigator.userAgent);
+    var isFirefox=/Firefox/.test(navigator.userAgent);
+    if(isWebkit||isFirefox){setSvgSupported(false);return;}
+    var div=document.createElement('div');
+    div.style.backdropFilter='url(#'+filterId+')';
+    setSvgSupported(div.style.backdropFilter!=='');
+  },[]);
+
+  var containerStyle=Object.assign({},style,{
+    width:typeof width==='number'?width+'px':width,
+    height:typeof height==='number'?height+'px':height,
+    borderRadius:borderRadius+'px'
+  });
+  containerStyle['--glass-frost']=backgroundOpacity;
+  containerStyle['--glass-saturation']=saturation;
+  containerStyle['--filter-id']='url(#'+filterId+')';
+
+  return (
+    <div ref={containerRef} className={'glass-surface '+(svgSupported?'glass-surface--svg':'glass-surface--fallback')+' '+className} style={containerStyle}>
+      <svg className="glass-surface__filter" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id={filterId} colorInterpolationFilters="sRGB" x="0%" y="0%" width="100%" height="100%">
+            <feImage ref={feImageRef} x="0" y="0" width="100%" height="100%" preserveAspectRatio="none" result="map"/>
+            <feDisplacementMap ref={redChannelRef} in="SourceGraphic" in2="map" result="dispRed"/>
+            <feColorMatrix in="dispRed" type="matrix" values="1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0" result="red"/>
+            <feDisplacementMap ref={greenChannelRef} in="SourceGraphic" in2="map" result="dispGreen"/>
+            <feColorMatrix in="dispGreen" type="matrix" values="0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0" result="green"/>
+            <feDisplacementMap ref={blueChannelRef} in="SourceGraphic" in2="map" result="dispBlue"/>
+            <feColorMatrix in="dispBlue" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0" result="blue"/>
+            <feBlend in="red" in2="green" mode="screen" result="rg"/>
+            <feBlend in="rg" in2="blue" mode="screen" result="output"/>
+            <feGaussianBlur ref={gaussianBlurRef} in="output" stdDeviation="0.7"/>
+          </filter>
+        </defs>
+      </svg>
+      <div className="glass-surface__content">{children}</div>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // LightPillar (React Bits, adapted) — animated WebGL background pillar.
 // Adapted for this app: no imports (global THREE from CDN), no CSS file,
 // auto quality scaling (phones get 'low'), honours prefers-reduced-motion
@@ -5017,12 +5152,13 @@ function LightPillar(props){
     var camera=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
 
     var isMobile=/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    var isLowEnd=isMobile||(navigator.hardwareConcurrency&&navigator.hardwareConcurrency<=4);
-    var q=isMobile?'low':(isLowEnd?'medium':'high');
+    // Perf: this is a soft-glow background behind blurred glass — render it small and
+    // upscale. Full-res retina raymarching lagged the whole app (and every glass card
+    // re-blurs each frame while the background animates, multiplying the cost).
+    var q=isMobile?'low':'medium';
     var qualitySettings={
-      low:{iterations:24,waveIterations:1,pixelRatio:0.5,precision:'mediump',stepMultiplier:1.5},
-      medium:{iterations:40,waveIterations:2,pixelRatio:0.65,precision:'mediump',stepMultiplier:1.2},
-      high:{iterations:80,waveIterations:4,pixelRatio:Math.min(window.devicePixelRatio,2),precision:'highp',stepMultiplier:1.0}
+      low:{iterations:24,waveIterations:1,pixelRatio:0.4,precision:'mediump',stepMultiplier:1.5},
+      medium:{iterations:40,waveIterations:2,pixelRatio:0.5,precision:'mediump',stepMultiplier:1.2}
     };
     var settings=qualitySettings[q];
 
@@ -5109,7 +5245,7 @@ function LightPillar(props){
     scene.add(new THREE.Mesh(geometry,material));
 
     var rafId=null,time=0,lastTime=performance.now();
-    var targetFPS=q==='low'?30:60,frameTime=1000/targetFPS;
+    var targetFPS=30,frameTime=1000/targetFPS; // 30fps everywhere — halves the glass re-blur cost
     function renderFrame(){
       material.uniforms.uTime.value=time;
       material.uniforms.uRotCos.value=Math.cos(time*0.3);
