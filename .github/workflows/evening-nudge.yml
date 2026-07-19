@@ -2,7 +2,8 @@ name: Boardroom evening nudge
 
 on:
   schedule:
-    - cron: '0 10 * * *'   # 10:00 UTC = 8pm AEST (Melbourne, no DST). Adjust to '0 9 * * *' during AEDT if desired.
+    - cron: '0 10 * * *'   # 10:00 UTC = 8pm AEST (Apr-Oct). Two entries cover both DST states; job gates on actual Melbourne local hour below so only one fires.
+    - cron: '0 9 * * *'    # 09:00 UTC = 8pm AEDT (Oct-Apr).
   workflow_dispatch:
 
 jobs:
@@ -12,18 +13,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check Melbourne local time
+        run: |
+          HOUR=$(TZ=Australia/Melbourne date +%H)
+          echo "Melbourne local hour is $HOUR"
+          if [ "$HOUR" != "20" ]; then
+            echo "Not 8pm Melbourne local time (AEST/AEDT drift day) - skipping run."
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          fi
+
       - name: Setup Node
+        if: env.SKIP != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install firebase-admin
-        run: npm install firebase-admin
+        if: env.SKIP != 'true'
+        run: npm install firebase-admin@^13.10.0
 
       - name: Write service account key from secret
+        if: env.SKIP != 'true'
         run: printf '%s' "$SA_JSON" > personal-dashboard-53b0d-firebase-adminsdk-fbsvc-1d6afe66d0.json
         env:
           SA_JSON: ${{ secrets.FIREBASE_SA_JSON }}
 
       - name: Run boardroom nudge
+        if: env.SKIP != 'true'
         run: node boardroom-nudge.js

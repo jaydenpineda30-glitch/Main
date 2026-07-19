@@ -9,30 +9,15 @@ var DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
 var TASK_CATS = ["Finances","Errands","Admin","Health","Social","Study","Meal Prep","Car & Transport","Home","Family","Work","Self-care","Shopping","Other"];
 
-var SUBJECTS = {
-  "WIA&B":       "WORK IN ACCOUNTING & BOOKKEEPING INDUSTRY",
-  "POB":         "PREPARE OPERATIONAL BUDGETS",
-  "BAS/IAS":     "BAS/IAS",
-  "FinStmts NRE":"PREPARE FINANCIAL STATEMENTS FOR NON-REPORTING ENTITIES",
-  "Payroll":     "ESTABLISH & MAINTAIN PAYROLL SYSTEMS",
-  "PFR":         "PREPARE FINANCIAL REPORTS",
-  "Law":         "LAW"
-};
-
-var SC = {
-  "WIA&B":       "#BA7517",
-  "POB":         "#D85A30",
-  "BAS/IAS":     "#7F77DD",
-  "FinStmts NRE":"#D4537E",
-  "Payroll":     "#378ADD",
-  "PFR":         "#1D9E75",
-  "Law":         "#639922"
-};
+// Uni subjects are fully dynamic now (stored in data.uni.subjects, not here) — add
+// them in the Uni tab's "+ Subject" button, or paste a syllabus into the Gemini
+// importer, which creates subjects automatically from whatever the syllabus contains.
+// SUBJECT_PALETTE is just the rotating default color new subjects get assigned.
+var SUBJECT_PALETTE = ["#BA7517","#D85A30","#7F77DD","#D4537E","#378ADD","#1D9E75","#639922","#C77DFF","#4DD0E1","#FF6B6B"];
 
 // ── Semester assessments ──────────────────────────────────────────────────────
 // Cleared — old TAFE semester 1 2026 assessments are complete.
-// Re-populate via Gemini importer (Uni → Import Syllabus) when diploma starts.
-// Also update SUBJECTS and SC above to match diploma subject codes.
+// Re-populate via Gemini importer (Uni → Import Syllabus) when a new course starts.
 var SYLLABUS_ASSESSMENTS = [];
 
 // ── Reflection questions ──────────────────────────────────────────────────────

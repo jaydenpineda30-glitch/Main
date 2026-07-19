@@ -393,9 +393,13 @@
       return createElement('div', { style: { fontSize: 12, color: C.text3 } }, 'Running first check…');
     }
     var checks = health.checks || {};
+    var HEALTH_LABELS = {
+      groqKey:    'Groq',
+      marketData: 'Market data (Finnhub/TwelveData)'
+    };
     var rows = Object.keys(checks).map(function (key) {
       var c = checks[key];
-      var col = c.ok ? C.success : C.danger;
+      var col = c.ok === true ? C.success : c.ok === false ? C.danger : C.warn;
       return createElement('div', {
         key: key,
         style: {
@@ -403,7 +407,7 @@
           padding: '8px 0', borderBottom: '0.5px solid ' + C.border
         }
       },
-        createElement('span', { style: { fontSize: 12, color: C.text2 } }, key),
+        createElement('span', { style: { fontSize: 12, color: C.text2 } }, HEALTH_LABELS[key] || key),
         createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 7 } },
           createElement('span', { style: { fontSize: 11, color: C.text3 } }, c.detail),
           createElement('span', {

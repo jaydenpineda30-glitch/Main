@@ -103,7 +103,15 @@
             return (res.result.items || []).map(function (ev) {
               return parseEvent(ev, cal.id, cal.backgroundColor, cal.summary, acc.email);
             });
-          }).catch(function () { return []; })
+          }).catch(function (err) {
+            if (window.ErrorHandler) {
+              ErrorHandler.warn(
+                'Event fetch failed for calendar "' + (cal.summary || cal.id) + '" (' + acc.email + '): ' + err.message,
+                'gcal-sync'
+              );
+            }
+            return [];
+          })
         );
       });
     });
@@ -135,7 +143,11 @@
         push();
         if (callback) callback();
       }).catch(function (err) {
-        console.warn('[GCalSync] calendarList failed for', acc.email, err);
+        if (window.ErrorHandler) {
+          ErrorHandler.warn('calendarList failed for ' + acc.email + ': ' + err.message, 'gcal-sync');
+        } else {
+          console.warn('[GCalSync] calendarList failed for', acc.email, err);
+        }
         if (callback) callback();
       });
   }

@@ -92,8 +92,12 @@ function counts(d) {
     process.exit(0);
   }
 
-  // dashData: replace whole field with backup's
-  await docRef.set({ dashData: backup.dashData }, { merge: true });
+  // dashData: replace whole field with backup's. Use update() (not set with merge:true) —
+  // set({...}, {merge:true}) recursively merges nested maps, so stale/corrupt nested keys
+  // already in Firestore but absent from the backup would survive the "restore", defeating
+  // the point of this tool. update() replaces the dashData field wholesale while leaving
+  // sibling top-level fields on this doc (e.g. settings) untouched.
+  await docRef.update({ dashData: backup.dashData });
   console.log('✓ Wrote dashData');
 
   // captures: re-create only the ones missing in Firestore (don't delete extras)

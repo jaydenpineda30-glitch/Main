@@ -28,7 +28,10 @@ const ErrorBoundary = window.ErrorBoundary || class extends React.Component {
 };
 
 const T={bg:"#0a0a0a",bg2:"rgba(225,234,255,0.07)",bg3:"rgba(225,234,255,0.04)",border:"rgba(255,255,255,0.10)",border2:"rgba(255,255,255,0.16)",text:"#e6ecf5",text2:"#9aa2b2",text3:"rgba(255,255,255,0.30)",accent:"#5b8cff",accentBg:"rgba(91,140,255,0.15)",danger:"#ff6b6b",dangerBg:"rgba(255,107,107,0.15)",success:"#69f0ae",successBg:"rgba(105,240,174,0.15)",warn:"#ffd166",warnBg:"rgba(255,209,102,0.15)",orange:"#ff9a3c",orangeBg:"rgba(255,154,60,0.15)"};
-// DAYS, TASK_CATS, SUBJECTS, SC, SYLLABUS_ASSESSMENTS, REFL_QS, REFL_LABELS, WX_MAP, WX_DAYS → data.js
+// DAYS, TASK_CATS, SUBJECT_PALETTE, SYLLABUS_ASSESSMENTS, REFL_QS, REFL_LABELS, WX_MAP, WX_DAYS → data.js
+// Uni subjects live in data.uni.subjects (array of {id,name,color}), not in data.js — fully dynamic.
+function subjectColor(subjects,name){var s=(subjects||[]).find(function(x){return x.name===name;});return s?s.color:null;}
+function nextSubjectColor(subjects){return SUBJECT_PALETTE[(subjects||[]).length%SUBJECT_PALETTE.length];}
 
 // ── Navigation glyphs — consistent stroke-based line icons (replaces emoji) ──
 const NAV_PAGES=["Dashboard","Uni","Work","Gym","Personal","Finance","Invest","Journal","Boardroom","Projects","Shopping"];
@@ -127,7 +130,7 @@ const cardShadow="0 18px 46px rgba(0,0,0,0.52),0 6px 16px rgba(0,0,0,0.34),inset
 const cardShadowSoft="0 10px 26px rgba(0,0,0,0.44),inset 0 1px 0 rgba(255,255,255,0.18)";
 
 const INIT={
-  uni:{subjects:Object.keys(SUBJECTS).map(function(k,i){return{id:i+1,name:k,progress:0};}),completedEvents:[],assessments:SYLLABUS_ASSESSMENTS.map(function(a){return{...a};})},
+  uni:{subjects:[],completedEvents:[],assessments:SYLLABUS_ASSESSMENTS.map(function(a){return{...a};})},
   gym:{
     exercises:[],
     bodyWeight:[],
@@ -135,9 +138,9 @@ const INIT={
     rotation:[
       {id:1,name:"Push Day",focus:"Chest, shoulders, triceps"},
       {id:2,name:"Pull Day",focus:"Back, biceps"},
-      {id:3,name:"Legs — Hamstring Focus",focus:"Hamstrings, glutes, calves"},
+      {id:3,name:"Legs · Hamstring Focus",focus:"Hamstrings, glutes, calves"},
       {id:4,name:"Upper Day",focus:"Full upper body"},
-      {id:5,name:"Legs — Quad Focus",focus:"Quads, glutes, calves"},
+      {id:5,name:"Legs · Quad Focus",focus:"Quads, glutes, calves"},
     ],
     rotIdx:0,
     workouts:[],
@@ -246,6 +249,8 @@ function isLikelySeedState(d){
 function localDateStr(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 function todayStr(){return localDateStr(new Date());}
 function futureDateStr(n){const d=new Date();d.setDate(d.getDate()+n);return localDateStr(d);}
+function pastDateStr(n){const d=new Date();d.setDate(d.getDate()-n);return localDateStr(d);}
+function fmtTime12(t){if(!t)return"";const parts=t.split(":");const h=parseInt(parts[0],10);const ap=h>=12?"pm":"am";const h12=h%12||12;return h12+":"+parts[1]+ap;}
 function weekMonday(){const n=new Date();const d=n.getDay();const off=d===0?-6:1-d;const m=new Date(n);m.setDate(n.getDate()+off);return localDateStr(m);}
 function daysBetween(s){const d=new Date(s+'T00:00:00');const now=new Date();const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());return Math.round((d-today)/864e5);}
 function fmtDate(s){if(!s)return"";return new Date(s).toLocaleDateString("en-AU",{day:"numeric",month:"short"});}
@@ -271,11 +276,11 @@ function analyzeReflectionFallback(answers,history){
   const neg=countHits(allText,NEG);const pos=countHits(allText,POS);const perf=countHits(allText,PERF);const burn=countHits(allText,BURNOUT);const growth=countHits(allText,GROWTH);const aon=countHits(allText,AON);
   const sentScore=Math.max(-1,Math.min(1,(pos-neg)/6));
   let emotionalState;
-  if(sentScore>=0.5)emotionalState="Positive — feeling capable and progressing";
-  else if(sentScore>=0.1)emotionalState="Cautiously optimistic — mixed but moving forward";
-  else if(sentScore>=-0.1)emotionalState="Neutral — steady but not thriving";
-  else if(sentScore>=-0.4)emotionalState="Stressed — carrying notable tension this week";
-  else emotionalState="Depleted — significant strain detected";
+  if(sentScore>=0.5)emotionalState="Positive, feeling capable and progressing";
+  else if(sentScore>=0.1)emotionalState="Cautiously optimistic, mixed but moving forward";
+  else if(sentScore>=-0.1)emotionalState="Neutral, steady but not thriving";
+  else if(sentScore>=-0.4)emotionalState="Stressed, carrying notable tension this week";
+  else emotionalState="Depleted, significant strain detected";
   const patterns=[];
   if(burn>=2)patterns.push("burnout_risk");
   if(perf>=2)patterns.push("perfectionism");
@@ -288,32 +293,32 @@ function analyzeReflectionFallback(answers,history){
   const bestIdx=qScores.indexOf(Math.max.apply(null,qScores));
   const areas=["your academic load","your work situation","your physical health habits","your work-life balance","your personal growth direction"];
   let dominantPattern;
-  if(patterns.indexOf("burnout_risk")!==-1)dominantPattern="Burnout risk — energy reserves running low";
-  else if(patterns.indexOf("perfectionism")!==-1)dominantPattern="Perfectionist pressure — very high internal standards";
-  else if(patterns.indexOf("high_stress")!==-1)dominantPattern="High stress load — multiple areas feeling stretched";
-  else if(patterns.indexOf("all_or_nothing")!==-1)dominantPattern="All-or-nothing thinking — seeing things in extremes";
-  else if(patterns.indexOf("growth_mindset")!==-1)dominantPattern="Growth orientation — approaching challenges with curiosity";
-  else if(patterns.indexOf("resilient_week")!==-1)dominantPattern="Resilient week — navigating challenges effectively";
-  else dominantPattern="Steady week — maintaining baseline without major spikes";
+  if(patterns.indexOf("burnout_risk")!==-1)dominantPattern="Burnout risk, energy reserves running low";
+  else if(patterns.indexOf("perfectionism")!==-1)dominantPattern="Perfectionist pressure, very high internal standards";
+  else if(patterns.indexOf("high_stress")!==-1)dominantPattern="High stress load, multiple areas feeling stretched";
+  else if(patterns.indexOf("all_or_nothing")!==-1)dominantPattern="All-or-nothing thinking, seeing things in extremes";
+  else if(patterns.indexOf("growth_mindset")!==-1)dominantPattern="Growth orientation, approaching challenges with curiosity";
+  else if(patterns.indexOf("resilient_week")!==-1)dominantPattern="Resilient week, navigating challenges effectively";
+  else dominantPattern="Steady week, maintaining baseline without major spikes";
   let rootIssue;
-  if(worstIdx>=0&&qScores[worstIdx]<0){rootIssue="Strongest friction in "+areas[worstIdx];if(patterns.indexOf("perfectionism")!==-1)rootIssue+=" — possibly amplified by perfectionist expectations";else if(patterns.indexOf("all_or_nothing")!==-1)rootIssue+=" — all-or-nothing framing may be intensifying this";}
+  if(worstIdx>=0&&qScores[worstIdx]<0){rootIssue="Strongest friction in "+areas[worstIdx];if(patterns.indexOf("perfectionism")!==-1)rootIssue+=", possibly amplified by perfectionist expectations";else if(patterns.indexOf("all_or_nothing")!==-1)rootIssue+=", all-or-nothing framing may be intensifying this";}
   else{rootIssue=bestIdx>=0?"Strongest momentum in "+areas[bestIdx]:"No single dominant friction point this week";}
   let insight;
-  if(patterns.indexOf("burnout_risk")!==-1)insight="Your language this week signals depletion across multiple areas. Burnout doesn't arrive suddenly — it builds through sustained output without adequate recovery. The fact that you're recognising it is the first and most important step. Your nervous system is asking for genuine rest, not just less work.";
-  else if(patterns.indexOf("perfectionism")!==-1)insight="There's a pattern of measuring your efforts against an ideal rather than a realistic baseline. Perfectionism often masquerades as high standards but functions as a stress amplifier — raising the bar each time you clear it. Progress over perfection is a skill worth practising deliberately this week.";
-  else if(patterns.indexOf("all_or_nothing")!==-1)insight="Your language this week leans toward absolutes (always/never/everything/nothing). This thinking pattern amplifies difficulty — one missed session becomes 'failing at fitness,' one hard day becomes 'a terrible week.' The reality almost always sits in the grey zone.";
-  else if(patterns.indexOf("high_stress")!==-1)insight="Multiple domains felt strained simultaneously this week. When stress shows up across academic, physical, and relational areas at once, it usually signals that recovery mechanisms need attention — sleep quality, micro-breaks, and brief transitions between tasks often matter more than you'd expect.";
-  else if(patterns.indexOf("growth_mindset")!==-1)insight="You approached challenges this week with curiosity rather than rigidity — looking at what to improve rather than cataloguing what went wrong. That orientation is a genuine psychological strength. It's the difference between feedback as information and feedback as verdict.";
+  if(patterns.indexOf("burnout_risk")!==-1)insight="Your language this week signals depletion across multiple areas. Burnout doesn't arrive suddenly, it builds through sustained output without adequate recovery. The fact that you're recognising it is the first and most important step. Your nervous system is asking for genuine rest, not just less work.";
+  else if(patterns.indexOf("perfectionism")!==-1)insight="There's a pattern of measuring your efforts against an ideal rather than a realistic baseline. Perfectionism often masquerades as high standards but functions as a stress amplifier, raising the bar each time you clear it. Progress over perfection is a skill worth practising deliberately this week.";
+  else if(patterns.indexOf("all_or_nothing")!==-1)insight="Your language this week leans toward absolutes (always/never/everything/nothing). This thinking pattern amplifies difficulty: one missed session becomes 'failing at fitness,' one hard day becomes 'a terrible week.' The reality almost always sits in the grey zone.";
+  else if(patterns.indexOf("high_stress")!==-1)insight="Multiple domains felt strained simultaneously this week. When stress shows up across academic, physical, and relational areas at once, it usually signals that recovery mechanisms need attention: sleep quality, micro-breaks, and brief transitions between tasks often matter more than you'd expect.";
+  else if(patterns.indexOf("growth_mindset")!==-1)insight="You approached challenges this week with curiosity rather than rigidity, looking at what to improve rather than cataloguing what went wrong. That orientation is a genuine psychological strength. It's the difference between feedback as information and feedback as verdict.";
   else if(sentScore>=0.3)insight="This was a strong week. Take a moment to notice what conditions made that possible — specific habits, environments, or mindsets. Understanding what works is as valuable as diagnosing what doesn't, and most people skip this step.";
   else insight="A stable week — not dramatic in either direction. These plateau periods are where consistent habits quietly build the foundations for future momentum. The absence of visible progress doesn't mean nothing is moving.";
   let recommendation;
-  if(patterns.indexOf("burnout_risk")!==-1)recommendation="Prioritise one genuinely restorative activity this week — not productive rest, actual rest. Protect one block of time with no output requirement. Even 90 minutes of complete disconnection can meaningfully reset your baseline.";
+  if(patterns.indexOf("burnout_risk")!==-1)recommendation="Prioritise one genuinely restorative activity this week, not productive rest, actual rest. Protect one block of time with no output requirement. Even 90 minutes of complete disconnection can meaningfully reset your baseline.";
   else if(patterns.indexOf("perfectionism")!==-1)recommendation="Before your next major task, decide in advance what 'good enough' looks like and aim for that deliberately. Notice the difference in energy expenditure versus your usual standard.";
   else if(patterns.indexOf("all_or_nothing")!==-1)recommendation="When you notice absolute language in your own thinking, pause and find one counter-example. One exception breaks the rule and restructures the framing entirely.";
-  else if(patterns.indexOf("high_stress")!==-1)recommendation="Identify the single highest-leverage action that would reduce your stress load most — not the most urgent task, but the one whose completion creates the most breathing room — and do that one first this week.";
+  else if(patterns.indexOf("high_stress")!==-1)recommendation="Identify the single highest-leverage action that would reduce your stress load most, not the most urgent task, but the one whose completion creates the most breathing room, and do that one first this week.";
   else if(patterns.indexOf("growth_mindset")!==-1)recommendation="Channel this week's momentum into one specific commitment: pick the area with the most untapped potential from your reflection and schedule a deliberate block of time for it.";
-  else recommendation="Note down what made this week manageable — two or three specific conditions that were present. Keep these as a reference point when harder weeks arrive.";
-  let patternHistory="First reflection — patterns will emerge as you keep logging each week.";
+  else recommendation="Note down what made this week manageable: two or three specific conditions that were present. Keep these as a reference point when harder weeks arrive.";
+  let patternHistory="First reflection. Patterns will emerge as you keep logging each week.";
   if(history&&history.length>=2){
     const prev=history.slice(-5);
     const prevTexts=prev.map(function(r){return(r.answers||[]).map(function(a){return(a.a||a.answer||"");}).join(" ").toLowerCase();});
@@ -324,11 +329,11 @@ function analyzeReflectionFallback(answers,history){
     const stressCount=prevPats.filter(function(p){return p==="high_stress";}).length;
     const total=prev.length;
     if(burnCount>=2)patternHistory="Burnout risk has appeared in "+burnCount+" of your last "+Math.min(4,history.length)+" reflections. This is a recurring pattern that warrants real attention, not just a harder push.";
-    else if(perfCount>=2)patternHistory="Perfectionism has surfaced in "+perfCount+" of your last "+Math.min(4,history.length)+" reflections — a consistent internal pressure source rather than a one-off response.";
+    else if(perfCount>=2)patternHistory="Perfectionism has surfaced in "+perfCount+" of your last "+Math.min(4,history.length)+" reflections, a consistent internal pressure source rather than a one-off response.";
     else if(stressCount>=2)patternHistory="High stress has been flagged in "+stressCount+" recent reflections. Worth asking: is this situational (exam period, busy work stretch) or a longer pattern?";
     else if(stressWeeks>=Math.ceil(total*0.7))patternHistory="Stress has dominated "+stressWeeks+" of your last "+total+" reflections. Worth asking: is this environment, workload, or an internal pattern?";
-    else if(stressWeeks===0)patternHistory="Consistently positive tone across your last "+total+" reflections — you're tracking a meaningful stretch of stability and growth.";
-    else patternHistory="Mixed weeks across your last "+total+" reflections ("+stressWeeks+" higher-stress, "+(total-stressWeeks)+" more positive). No single dominant pattern yet — keep logging for clearer trends.";
+    else if(stressWeeks===0)patternHistory="Consistently positive tone across your last "+total+" reflections. You're tracking a meaningful stretch of stability and growth.";
+    else patternHistory="Mixed weeks across your last "+total+" reflections ("+stressWeeks+" higher-stress, "+(total-stressWeeks)+" more positive). No single dominant pattern yet. Keep logging for clearer trends.";
   } else if(history&&history.length===1){patternHistory="Second reflection logged. One more week of data needed before cross-week patterns can be identified.";}
   return{emotionalState,dominantPattern,rootIssue,insight,recommendation,patternHistory,sentimentScore:sentScore,detectedPatterns:patterns,sentColor:sentScore>=0.1?"#69f0ae":sentScore<=-0.1?"#ff6b6b":"#ffd166",sentBg:sentScore>=0.1?"rgba(105,240,174,0.06)":sentScore<=-0.1?"rgba(255,107,107,0.06)":"rgba(255,209,102,0.06)",sentBorder:sentScore>=0.1?"rgba(105,240,174,0.25)":sentScore<=-0.1?"rgba(255,107,107,0.25)":"rgba(255,209,102,0.25)"};
 }
@@ -423,8 +428,8 @@ function generateCheckinFallback(data){
   // Tasks block
   if(overdue.length>0||urgent.length>0){
     const lines=[];
-    overdue.forEach(function(t){lines.push(t.name+" is "+Math.abs(daysBetween(t.due))+"d overdue — worth sorting today.");});
-    urgent.forEach(function(t){lines.push(t.name+" is due "+fmtDate(t.due)+" — don't leave it too late.");});
+    overdue.forEach(function(t){lines.push(t.name+" is "+Math.abs(daysBetween(t.due))+"d overdue, worth sorting today.");});
+    urgent.forEach(function(t){lines.push(t.name+" is due "+fmtDate(t.due)+", don't leave it too late.");});
     blocks.push({header:"Tasks",items:lines});
   }
 
@@ -432,9 +437,9 @@ function generateCheckinFallback(data){
   if(tmrFree){
     const pending=data.personal.tasks.filter(function(t){return !t.done;});
     if(pending.length>0){
-      blocks.push({header:"Suggestion",items:["Tomorrow looks free — good window to knock off "+pending[0].name+(pending.length>1?" or "+pending[1].name:"")+"."+(nextSess?" Could also fit in your "+nextSess.name+"!":"")]});
+      blocks.push({header:"Suggestion",items:["Tomorrow looks free, good window to knock off "+pending[0].name+(pending.length>1?" or "+pending[1].name:"")+"."+(nextSess?" Could also fit in your "+nextSess.name+"!":"")]});
     } else {
-      blocks.push({header:"Suggestion",items:["Tomorrow is free — great chance to get ahead on study or hit the gym"+(nextSess?" ("+nextSess.name+" is up next).":".")]}); 
+      blocks.push({header:"Suggestion",items:["Tomorrow is free, great chance to get ahead on study or hit the gym"+(nextSess?" ("+nextSess.name+" is up next).":".")]});
     }
   } else if(nextSess){
     blocks.push({header:"Suggestion",items:["Next gym session is "+nextSess.name+" ("+nextSess.focus+"). Pre-fill your weights on the dashboard before you go."]});
@@ -702,6 +707,8 @@ function GymSection(props){
   const [dragIdx,setDragIdx]=useState(null);const [dragOver,setDragOver]=useState(null);
   const [editRotIdx,setEditRotIdx]=useState(null);const [editRotForm,setEditRotForm]=useState({rName:"",rFocus:"",exercises:[]});
   const [showArchive,setShowArchive]=useState(false);const [showProgress,setShowProgress]=useState(true);const [expandedWktId,setExpandedWktId]=useState(null);
+  const [showLegacyEx,setShowLegacyEx]=useState(false);
+  const [bulkMode,setBulkMode]=useState(false);const [bulkText,setBulkText]=useState("");
   const [bwInput,setBwInput]=useState("");const [editWktName,setEditWktName]=useState(false);
   const rotation=gymData.rotation||[];const rotLen=rotation.length>0?rotation.length:1;
   const rotIdx=(gymData.rotIdx||0)%rotLen;const nextSess=rotation.length>0?rotation[rotIdx]:null;
@@ -725,10 +732,11 @@ function GymSection(props){
   },[wkt.sets]);
   const gs={card:{position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow},btn:{...btnGlass,padding:"5px 12px"},btnP:{...btnGlassP},inp:{width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"},acc:{background:T.bg3,borderRadius:12,padding:"10px 14px",marginBottom:8,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",border:"0.5px solid "+T.border,userSelect:"none"}};
   function gCellEdge(g){return{borderBottom:"1.5px solid rgba("+g+",0.45)",boxShadow:"inset 0 -10px 22px rgba("+g+",0.16)"}}
+  function fmtSetLine(ws){var s=(ws.sets===""||ws.sets==null)?"—":ws.sets;var r=(ws.reps===""||ws.reps==null)?"—":ws.reps;var w=(ws.weight===""||ws.weight==null)?"—":ws.weight+"kg";return s+"×"+r+" @ "+w;}
   function getExPrev(name){const ex=(gymData.exercises||[]).find(function(e){return e.name&&e.name.toLowerCase()===name.toLowerCase();});if(!ex||!ex.logs||!ex.logs.length)return null;return ex.logs[ex.logs.length-1].weight;}
   const currentMonth=todayStr().slice(0,7);
   const sessThisMonth=(gymData.workouts||[]).filter(function(w){return w.date&&w.date.startsWith(currentMonth);}).length;
-  function calcStreak(){const dates=new Set((gymData.workouts||[]).map(function(w){return w.date;}));const msDay=86400000;const now=new Date();const dow=now.getDay()||7;var ws=new Date(now.getTime()-((dow-1)*msDay));var s=0;while(s<52){const we=new Date(ws.getTime()+(6*msDay));var hit=false;for(var d=new Date(ws);d<=we;d=new Date(d.getTime()+msDay)){if(dates.has(d.toISOString().slice(0,10))){hit=true;break;}}if(!hit)break;s++;ws=new Date(ws.getTime()-(7*msDay));}return s;}
+  function calcStreak(){const dates=new Set((gymData.workouts||[]).map(function(w){return w.date;}));const msDay=86400000;const now=new Date();const dow=now.getDay()||7;var ws=new Date(now.getTime()-((dow-1)*msDay));var s=0;while(s<52){const we=new Date(ws.getTime()+(6*msDay));var hit=false;for(var d=new Date(ws);d<=we;d=new Date(d.getTime()+msDay)){if(dates.has(localDateStr(d))){hit=true;break;}}if(!hit)break;s++;ws=new Date(ws.getTime()-(7*msDay));}return s;}
   const streak=calcStreak();
   const bwArr=gymData.bodyWeight||[];const lastBW=bwArr.length>0?bwArr[bwArr.length-1]:null;const prevBW=bwArr.length>1?bwArr[bwArr.length-2]:null;const bwDiff=lastBW&&prevBW?lastBW.weight-prevBW.weight:null;const bwTrend=bwDiff===null?null:bwDiff>0?"↑":bwDiff<0?"↓":"=";
   const topLiftName=nextSess&&nextSess.exercises&&nextSess.exercises.length>0?nextSess.exercises[0].exercise:null;const topLiftPrev=topLiftName?getExPrev(topLiftName):null;
@@ -747,9 +755,21 @@ function GymSection(props){
   function handleDragStart(i){setDragIdx(i);}
   function handleDragOver(e,i){e.preventDefault();setDragOver(i);}
   function handleDrop(i){if(dragIdx===null||dragIdx===i){setDragIdx(null);setDragOver(null);return;}var nr=rotation.slice();var moved=nr.splice(dragIdx,1)[0];nr.splice(i,0,moved);var ni=rotIdx;if(rotIdx===dragIdx)ni=i;else if(dragIdx<rotIdx&&i>=rotIdx)ni=rotIdx-1;else if(dragIdx>rotIdx&&i<=rotIdx)ni=rotIdx+1;if(onUpdateRot)onUpdateRot(nr,ni);setDragIdx(null);setDragOver(null);}
-  function logBWInline(){if(!bwInput)return;const w=Number(bwInput);if(isNaN(w)||w<30||w>300){if(window.showToast)window.showToast("Enter a valid weight (30–300 kg)");return;}if(onAddBW)onAddBW({date:todayStr(),weight:w});setBwInput("");}
+  function logBWInline(){if(!bwInput)return;const w=Number(bwInput);if(isNaN(w)||w<30||w>300){if(window.showToast)window.showToast("Enter a valid weight (30 to 300 kg)");return;}if(onAddBW)onAddBW({date:todayStr(),weight:w});setBwInput("");}
   const archiveCount=(gymData.workouts||[]).length;const exCount=(gymData.exercises||[]).length;
   const exNames=(function(){var seen={};var names=[];(gymData.exercises||[]).forEach(function(ex){var n=(ex.name||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});(gymData.rotation||[]).forEach(function(r){(r.exercises||[]).forEach(function(ex){var n=(ex.exercise||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});});return names;})();
+  // Exercises that appear anywhere in the current rotation = "current program". Anything
+  // logged before but no longer in any rotation day is "legacy" (e.g. a swapped-out program) —
+  // split so old data doesn't read as mixed in with what you're doing now.
+  const currentExNameSet=(function(){var s={};rotation.forEach(function(r){(r.exercises||[]).forEach(function(ex){var n=(ex.exercise||"").trim().toLowerCase();if(n)s[n]=true;});});return s;})();
+  const activeExList=(gymData.exercises||[]).filter(function(ex){return currentExNameSet[(ex.name||"").trim().toLowerCase()];});
+  const legacyExList=(gymData.exercises||[]).filter(function(ex){return !currentExNameSet[(ex.name||"").trim().toLowerCase()];});
+  function parseBulkExercises(text){
+    return text.split("\n").map(function(line){return line.trim();}).filter(Boolean).map(function(line,i){
+      var parts=line.split("|").map(function(p){return p.trim();});
+      return{id:Date.now()+i,exercise:parts[0]||"",sets:parts[1]||"",reps:parts[2]||"",weight:parts[3]||""};
+    });
+  }
   function drawBWSpark(){
     if(bwArr.length<2)return null;
     const vals=bwArr.map(function(d){return d.weight;});const mn=Math.min.apply(null,vals);const mx=Math.max.apply(null,vals);const range=mx-mn||1;
@@ -822,7 +842,7 @@ function GymSection(props){
             })()}
           </div>
         ):(
-          <div style={{fontSize:13,color:T.text2}}>No rotation set — add one below ↓</div>
+          <div style={{fontSize:13,color:T.text2}}>No rotation set. Add one below ↓</div>
         )}
       </div>
 
@@ -861,7 +881,7 @@ function GymSection(props){
                     <button onClick={function(){removeRow(wi);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:14,padding:0}}>×</button>
                   </div>
                 </div>
-                <div style={{fontSize:11,color:T.text2}}>{ws.sets}×{ws.reps} @ {ws.weight}kg</div>
+                <div style={{fontSize:11,color:T.text2}}>{fmtSetLine(ws)}</div>
               </div>
             ):(
               <div key={ws.id||wi} style={{display:"grid",gridTemplateColumns:"1fr 52px 44px 44px 62px 36px",gap:6,alignItems:"center",padding:"5px 8px",background:T.bg3,borderRadius:8,marginBottom:4}}>
@@ -935,7 +955,9 @@ function GymSection(props){
         </div>
         {showProgress&&(exCount===0?(
           <div style={{fontSize:12,color:T.text2,paddingTop:8}}>No exercises tracked yet.</div>
-        ):(gymData.exercises||[]).map(function(ex,ei){
+        ):(<React.Fragment>
+          {activeExList.length===0&&<div style={{fontSize:12,color:T.text2,paddingTop:8}}>No current-program exercises logged yet.</div>}
+          {activeExList.map(function(ex,ei){
           const logs=ex.logs||[];const last=logs.length>0?logs[logs.length-1]:null;const prev2=logs.length>1?logs[logs.length-2]:null;const diff=(last&&prev2)?last.weight-prev2.weight:null;const trend=diff===null?null:diff>0?"↑":diff<0?"↓":"=";const tCol=trend==="↑"?T.success:trend==="↓"?T.danger:T.text3;
           return(
             <div key={ex.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:"0.5px solid "+T.border}}>
@@ -950,7 +972,26 @@ function GymSection(props){
               <button style={{...gs.btn,fontSize:10,padding:"2px 7px",flexShrink:0}} onClick={function(){if(onLogW)onLogW(ex);}}>Log</button>
             </div>
           );
-        }))}
+          })}
+          {legacyExList.length>0&&<div style={{marginTop:8,paddingTop:8,borderTop:"0.5px solid "+T.border}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}} onClick={function(){setShowLegacyEx(function(v){return!v;});}}>
+              <span style={{fontSize:11,color:T.text3}}>Older exercises ({legacyExList.length}) · not in your current program</span>
+              <span style={{color:T.text3,fontSize:11}}>{showLegacyEx?"▾":"▸"}</span>
+            </div>
+            {showLegacyEx&&legacyExList.map(function(ex){
+              const logs=ex.logs||[];const last=logs.length>0?logs[logs.length-1]:null;
+              return(
+                <div key={ex.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:"0.5px solid "+T.border,opacity:0.6}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,fontWeight:500,color:T.text,marginBottom:1}}>{ex.name}</div>
+                    <div style={{fontSize:10,color:T.text3}}>{last?last.weight+"kg":"no data"}</div>
+                  </div>
+                  <button style={{...gs.btn,fontSize:10,padding:"2px 7px",flexShrink:0}} onClick={function(){if(onLogW)onLogW(ex);}}>Log</button>
+                </div>
+              );
+            })}
+          </div>}
+        </React.Fragment>))}
       </div>
 
       {/* 6 — Rotation (static) */}
@@ -966,7 +1007,7 @@ function GymSection(props){
             <div style={{width:22,height:22,borderRadius:"50%",background:isCur?T.accent:"rgba(255,255,255,0.06)",border:"1px solid "+(isCur?T.accent:T.border2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:isCur?"#fff":T.text3,flexShrink:0}}>{i+1}</div>
             <div style={{flex:1}}><div style={{fontSize:13,fontWeight:isCur?600:400,color:T.text}}>{r.name}{isCur&&<span style={{fontSize:10,color:T.accent,marginLeft:8}}>← next</span>}</div><div style={{fontSize:10,color:T.text2}}>{r.focus}{(r.exercises&&r.exercises.length>0)&&<span style={{marginLeft:6,color:T.text3}}>{r.exercises.length} ex</span>}</div></div>
             <button onClick={function(e){e.stopPropagation();trk("gym.rotation_advance");if(onUpdateRot)onUpdateRot(rotation,i);}} style={{...gs.btn,fontSize:10,padding:"2px 7px"}}>Set current</button>
-            <button onClick={function(e){e.stopPropagation();const exs=(r.exercises&&r.exercises.length>0)?r.exercises.map(function(ex){return{...ex};}):Array(3).fill(null).map(function(_,j){return{id:j+1,exercise:"",sets:"",reps:"",weight:""};});setEditRotIdx(editRotIdx===i?null:i);setEditRotForm({rName:r.name,rFocus:r.focus||"",exercises:exs});}} style={editRotIdx===i?{...editPill,color:T.accent,border:"1px solid rgba(91,140,255,0.5)",background:"rgba(91,140,255,0.14)"}:editPill}><UIcon name="pencil" size={11}/>Edit</button>
+            <button onClick={function(e){e.stopPropagation();const exs=(r.exercises&&r.exercises.length>0)?r.exercises.map(function(ex){return{...ex};}):Array(3).fill(null).map(function(_,j){return{id:j+1,exercise:"",sets:"",reps:"",weight:""};});setEditRotIdx(editRotIdx===i?null:i);setEditRotForm({rName:r.name,rFocus:r.focus||"",exercises:exs});setBulkMode(false);setBulkText("");}} style={editRotIdx===i?{...editPill,color:T.accent,border:"1px solid rgba(91,140,255,0.5)",background:"rgba(91,140,255,0.14)"}:editPill}><UIcon name="pencil" size={11}/>Edit</button>
             <button onClick={function(e){e.stopPropagation();removeRotItem(r.id);}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:14}}>×</button>
           </div>
           {editRotIdx===i&&<div style={{padding:"12px",borderRadius:8,background:"rgba(91,140,255,0.06)",border:"0.5px solid rgba(91,140,255,0.2)",marginBottom:8}}>
@@ -974,7 +1015,15 @@ function GymSection(props){
               <div><div style={{fontSize:10,color:T.text2,marginBottom:3}}>Session name</div><input style={gs.inp} value={editRotForm.rName} onChange={function(ev){var v=ev.target.value;setEditRotForm(function(f){return{...f,rName:v};});}}/></div>
               <div><div style={{fontSize:10,color:T.text2,marginBottom:3}}>Focus muscles</div><input style={gs.inp} placeholder="e.g. Chest, Triceps" value={editRotForm.rFocus} onChange={function(ev){var v=ev.target.value;setEditRotForm(function(f){return{...f,rFocus:v};});}}/></div>
             </div>
-            <div style={{fontSize:10,color:T.text2,marginBottom:4}}>Exercises</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+              <div style={{fontSize:10,color:T.text2}}>Exercises</div>
+              <button style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:10,padding:0}} onClick={function(){setBulkMode(function(v){return!v;});}}>{bulkMode?"Row editor instead":"New program? Paste a list"}</button>
+            </div>
+            {bulkMode?(<div style={{marginBottom:8}}>
+              <textarea style={{...gs.inp,resize:"vertical",fontFamily:"monospace",fontSize:11,lineHeight:1.5}} rows={5} placeholder={"One exercise per line, replaces the list below:\nIncline dumbbell press\nCable fly | 4 | 10 | 12\nOverhead press"} value={bulkText} onChange={function(ev){setBulkText(ev.target.value);}}/>
+              <div style={{fontSize:9,color:T.text3,margin:"4px 0 6px"}}>Optional: "Exercise | sets | reps | kg" per line.</div>
+              <button style={{...gs.btnP,fontSize:10,padding:"3px 10px"}} onClick={function(){var parsed=parseBulkExercises(bulkText);if(!parsed.length)return;setEditRotForm(function(f){return{...f,exercises:parsed};});setBulkMode(false);setBulkText("");}}>Replace exercises with this list</button>
+            </div>):(<React.Fragment>
             <div style={{display:"grid",gridTemplateColumns:"1fr 44px 44px 52px 24px",gap:4,marginBottom:3}}>{["Exercise","Sets","Reps","kg",""].map(function(h,hi){return<div key={hi} style={{fontSize:9,color:T.text3}}>{h}</div>;})}</div>
             {(editRotForm.exercises||[]).map(function(ex,ei){return(<div key={ex.id||ei} style={{display:"grid",gridTemplateColumns:"1fr 44px 44px 52px 24px",gap:4,marginBottom:4}}>
               <input style={{...gs.inp,padding:"4px 6px",fontSize:11}} list="gymExSuggestions" placeholder="Exercise" value={ex.exercise||""} onChange={function(ev){var v=ev.target.value;setEditRotForm(function(f){return{...f,exercises:f.exercises.map(function(e,j){return j===ei?{...e,exercise:v}:e;})};});}}/>
@@ -983,10 +1032,11 @@ function GymSection(props){
               <input style={{...gs.inp,padding:"4px 3px",fontSize:11}} type="number" placeholder="80" value={ex.weight||""} onChange={function(ev){var v=ev.target.value;setEditRotForm(function(f){return{...f,exercises:f.exercises.map(function(e,j){return j===ei?{...e,weight:v}:e;})};});}}/>
               <button style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:13,padding:0}} onClick={function(){setEditRotForm(function(f){return{...f,exercises:f.exercises.filter(function(_,j){return j!==ei;})};});}}>×</button>
             </div>);})}
+            </React.Fragment>)}
             <div style={{display:"flex",gap:6,marginTop:6}}>
-              <button style={{...gs.btn,fontSize:10,padding:"2px 8px"}} onClick={function(){setEditRotForm(function(f){return{...f,exercises:(f.exercises||[]).concat([{id:Date.now(),exercise:"",sets:"",reps:"",weight:""}])};});}}>+ Row</button>
-              <button style={{...gs.btnP,fontSize:10,padding:"3px 10px"}} onClick={function(){trk("gym.rotation_edit");var nr=rotation.map(function(rt,ri){return ri===i?{...rt,name:editRotForm.rName||rt.name,focus:editRotForm.rFocus,exercises:(editRotForm.exercises||[]).filter(function(ex){return ex.exercise&&ex.exercise.trim();})}:rt;});if(onUpdateRot)onUpdateRot(nr,rotIdx);setEditRotIdx(null);if(window.showToast)window.showToast("Template saved!","success");}}>Save template</button>
-              <button style={{...gs.btn,fontSize:10,padding:"2px 8px"}} onClick={function(){setEditRotIdx(null);}}>Cancel</button>
+              {!bulkMode&&<button style={{...gs.btn,fontSize:10,padding:"2px 8px"}} onClick={function(){setEditRotForm(function(f){return{...f,exercises:(f.exercises||[]).concat([{id:Date.now(),exercise:"",sets:"",reps:"",weight:""}])};});}}>+ Row</button>}
+              <button style={{...gs.btnP,fontSize:10,padding:"3px 10px"}} onClick={function(){trk("gym.rotation_edit");var nr=rotation.map(function(rt,ri){return ri===i?{...rt,name:editRotForm.rName||rt.name,focus:editRotForm.rFocus,exercises:(editRotForm.exercises||[]).filter(function(ex){return ex.exercise&&ex.exercise.trim();})}:rt;});if(onUpdateRot)onUpdateRot(nr,rotIdx);setEditRotIdx(null);setBulkMode(false);if(window.showToast)window.showToast("Template saved!","success");}}>Save template</button>
+              <button style={{...gs.btn,fontSize:10,padding:"2px 8px"}} onClick={function(){setEditRotIdx(null);setBulkMode(false);}}>Cancel</button>
             </div>
           </div>}
         </React.Fragment>);})}
@@ -1028,7 +1078,7 @@ function GymSection(props){
                       {(wk.sets||[]).map(function(ws,si){return(
                         <div key={si} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"3px 0",borderBottom:si<(wk.sets||[]).length-1?"0.5px solid rgba(255,255,255,0.04)":"none"}}>
                           <span style={{color:T.text2}}>{ws.exercise}</span>
-                          <span style={{color:T.text3}}>{ws.sets}×{ws.reps} @ {ws.weight}kg</span>
+                          <span style={{color:T.text3}}>{fmtSetLine(ws)}</span>
                         </div>
                       );})}
                     </div>}
@@ -1130,7 +1180,7 @@ function FinanceSection({data,onUpdate,mob,gcalEvents,work}){
   function updateSourceName(id,val){onUpdate({...data,sources:sources.map(function(s){return s.id===id?{...s,name:val}:s;})});}
   function updateBudget(val){onUpdate({...data,monthlyBudget:Number(val)});}
   function updateDueDay(tId,val){onUpdate({...data,recurringTemplates:recurringTemplates.map(function(t){return t.id===tId?{...t,dueDay:Number(val)||null}:t;})});}
-  function daysUntilDue(dueDay,monthStr){if(!dueDay)return null;var td=new Date();var d=Number(dueDay);var pad=d<10?"0"+d:String(d);var due=new Date(monthStr+"-"+pad+"T12:00:00");return Math.round((due-td)/864e5);}
+  function daysUntilDue(dueDay,monthStr){if(!dueDay)return null;var td=new Date();var d=Number(dueDay);var parts=monthStr.split("-");var lastDay=new Date(Number(parts[0]),Number(parts[1]),0).getDate();var clamped=Math.min(d,lastDay);var pad=clamped<10?"0"+clamped:String(clamped);var due=new Date(monthStr+"-"+pad+"T12:00:00");return Math.round((due-td)/864e5);}
   function updateSavingsGoal(patch){onUpdate({...data,savingsGoal:{...(data.savingsGoal||{}),  ...patch}});}
   const todayStr_=todayStr();
   const isCurrentMonth=month===todayStr_.slice(0,7);
@@ -1308,7 +1358,7 @@ function FinanceSection({data,onUpdate,mob,gcalEvents,work}){
       <div className="card-rim" style={fCard()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <div>
-            <div style={fST}>Expenses — {fmtM(month)}</div>
+            <div style={fST}>Expenses · {fmtM(month)}</div>
             <div style={{fontSize:10,color:T.text3,marginTop:3}}>recurring auto-apply · one-off you log manually</div>
           </div>
           <button style={editPill} onClick={function(){setShowRecMgr(function(s){if(s)setEditRecId(null);return !s;});}}><UIcon name="gear" size={11}/>{showRecMgr?"Done":"Manage"}</button>
@@ -1332,7 +1382,7 @@ function FinanceSection({data,onUpdate,mob,gcalEvents,work}){
         </div>
         {/* Skipped this month */}
         {skippedThisMonth.length>0&&<div style={{marginBottom:10,padding:"6px 10px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border}}>
-          <div style={{fontSize:9,color:T.text3,marginBottom:6}}>SKIPPED THIS MONTH — tap to restore</div>
+          <div style={{fontSize:9,color:T.text3,marginBottom:6}}>SKIPPED THIS MONTH · tap to restore</div>
           {skippedThisMonth.map(function(t){return(<button key={t.id} onClick={function(){restoreRecurring(t.id);}} style={{...editPill,marginRight:4,marginBottom:4,fontSize:10,textDecoration:"line-through",color:T.text3}}>{t.name}</button>);})}
         </div>}
         {/* Recurring rows — edit inline (no separate Manage card) */}
@@ -1365,7 +1415,7 @@ function FinanceSection({data,onUpdate,mob,gcalEvents,work}){
               </div>
             </div>
           );})}
-          {recurringThisMonth.length===0&&showRecMgr&&<div style={{fontSize:11,color:T.text3,padding:"4px 0 8px"}}>No recurring entries yet — add one below.</div>}
+          {recurringThisMonth.length===0&&showRecMgr&&<div style={{fontSize:11,color:T.text3,padding:"4px 0 8px"}}>No recurring entries yet. Add one below.</div>}
           {showRecMgr&&<div style={{marginTop:8,paddingTop:10,borderTop:"0.5px solid "+T.border}}>
             <div style={{...fStatLabel,marginBottom:8}}>Add recurring</div>
             <div style={mob?{display:"flex",flexDirection:"column",gap:6}:{display:"grid",gridTemplateColumns:"1fr 80px 100px 50px 44px",gap:6,alignItems:"center"}}>
@@ -1380,7 +1430,7 @@ function FinanceSection({data,onUpdate,mob,gcalEvents,work}){
         {/* One-off rows */}
         <div>
           <div style={{...fStatLabel,marginBottom:6}}>One-off</div>
-          {oneOffThisMonth.length===0&&<div style={{fontSize:11,color:T.text3,padding:"6px 0"}}>Nothing added yet — use the form above</div>}
+          {oneOffThisMonth.length===0&&<div style={{fontSize:11,color:T.text3,padding:"6px 0"}}>Nothing added yet. Use the form above</div>}
           {oneOffThisMonth.map(function(e){
             if(editExpId===e.id){return mob?(<div key={e.id} style={{display:"flex",flexDirection:"column",gap:8,marginBottom:8,padding:"10px 12px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border}}>
               <input style={{...fInp,padding:"10px 12px",fontSize:14}} value={editExpForm.name} onChange={function(ev){setEditExpForm(function(f){return{...f,name:ev.target.value};});}}/>
@@ -1427,7 +1477,7 @@ function FinanceSection({data,onUpdate,mob,gcalEvents,work}){
         </div>
         {sgTarget===0
           ?<div>
-            <div style={{fontSize:11,color:T.text3,marginBottom:12}}>Name your goal and set a target — we'll show how much to put away each month and how many shifts that takes.</div>
+            <div style={{fontSize:11,color:T.text3,marginBottom:12}}>Name your goal and set a target, and we'll show how much to put away each month and how many shifts that takes.</div>
             <div style={{marginBottom:8}}><div style={{...fStatLabel,marginBottom:4}}>Goal name</div><input style={fInp} placeholder="e.g. Europe trip, Car, Emergency fund" value={sg.name||""} onChange={function(ev){updateSavingsGoal({name:ev.target.value});}}/></div>
             <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:8}}>
               <div><div style={{...fStatLabel,marginBottom:4}}>Target $</div><input style={fInp} type="number" step="50" placeholder="e.g. 5000" value={sg.target_draft||""} onChange={function(ev){updateSavingsGoal({target_draft:ev.target.value});}}/></div>
@@ -1614,6 +1664,8 @@ function InvestSection({data,onUpdate,mob}){
   const [finnKey,setFinnKey]=useState("");
   const [tdKey,setTdKey]=useState("");
   const [demo,setDemo]=useState(MS?MS.isDemo():true);
+  const [keyIssue,setKeyIssue]=useState(null);
+  const searchTimerRef=useRef(null);
   const [range,setRange]=useState(90);
   const [allocMode,setAllocMode]=useState("position");
   const [bench,setBench]=useState("SPY");
@@ -1656,9 +1708,11 @@ function InvestSection({data,onUpdate,mob}){
   const positions=buildPositions();
   const openPositions=positions.filter(function(p){return p.netShares>0.0001;});
 
-  // realized P&L (average-cost, in base ccy)
+  // realized P&L (in base ccy) — uses the cost basis captured on the sale record at
+  // sale time; falls back to today's live average-cost for legacy sales saved before
+  // costBasis was recorded (so a lot deleted afterward can't rewrite past P&L).
   var realized=0;
-  sales.forEach(function(s){var pos=positions.filter(function(p){return p.symbol===s.symbol;})[0];var avg=pos?pos.avgCost:0;realized+=((Number(s.price)||0)-avg)*(Number(s.shares)||0)*fx(s.ccy||(pos&&pos.ccy)||"USD");});
+  sales.forEach(function(s){var pos=positions.filter(function(p){return p.symbol===s.symbol;})[0];var avg=s.costBasis!=null?s.costBasis:(pos?pos.avgCost:0);realized+=((Number(s.price)||0)-avg)*(Number(s.shares)||0)*fx(s.ccy||(pos&&pos.ccy)||"USD");});
 
   // portfolio totals (base ccy)
   var portValue=0,portCost=0,todayChange=0,priced=0;
@@ -1676,8 +1730,13 @@ function InvestSection({data,onUpdate,mob}){
   function loadQuotes(){
     if(!MS||allSymbols.length===0){setRefreshedAt(new Date());return;}
     setLoading(true);
-    Promise.all(allSymbols.map(function(sym){return MS.getQuote(sym).then(function(q){return[sym,q];}).catch(function(){return[sym,null];});}))
-      .then(function(pairs){setQuotes(function(prev){var nq={...prev};pairs.forEach(function(pr){if(pr[1])nq[pr[0]]=pr[1];});return nq;});})
+    Promise.all(allSymbols.map(function(sym){return MS.getQuote(sym).then(function(q){return[sym,q,null];}).catch(function(e){return[sym,null,e&&e.message?e.message:String(e)];});}))
+      .then(function(triples){
+        setQuotes(function(prev){var nq={...prev};triples.forEach(function(pr){if(pr[1])nq[pr[0]]=pr[1];});return nq;});
+        var keyErr=triples.map(function(t){return t[2];}).filter(Boolean).find(function(m){return /denied|invalid|expired/i.test(m);});
+        setKeyIssue(keyErr||null);
+        if(keyErr)toast(keyErr,"warn");
+      })
       .then(function(){setRefreshedAt(new Date());}).catch(function(){}).then(function(){setLoading(false);});
     // sparkline/portfolio-series candles + profiles (best effort, cached)
     allSymbols.forEach(function(sym){
@@ -1719,7 +1778,7 @@ function InvestSection({data,onUpdate,mob}){
   // ── mutations ──
   function addToWatchlist(sym){sym=(sym||"").trim().toUpperCase();if(!sym)return;if(watchlist.some(function(w){return w.symbol===sym;})){toast(sym+" already in watchlist");return;}onUpdate({...data,watchlist:watchlist.concat([{symbol:sym}])});setAddSym("");setSearchRes([]);setSelected(sym);toast(sym+" added","success");}
   function removeFromWatchlist(sym){onUpdate({...data,watchlist:watchlist.filter(function(w){return w.symbol!==sym;})});if(selected===sym)setSelected(null);}
-  function runSearch(q){setAddSym(q);if(!MS||!q||q.trim().length<1){setSearchRes([]);return;}setSearching(true);MS.searchSymbols(q.trim()).then(function(r){setSearchRes((r||[]).slice(0,6));}).catch(function(){setSearchRes([]);}).then(function(){setSearching(false);});}
+  function runSearch(q){setAddSym(q);if(searchTimerRef.current)clearTimeout(searchTimerRef.current);if(!MS||!q||q.trim().length<1){setSearchRes([]);return;}searchTimerRef.current=setTimeout(function(){setSearching(true);MS.searchSymbols(q.trim()).then(function(r){setSearchRes((r||[]).slice(0,6));}).catch(function(){setSearchRes([]);}).then(function(){setSearching(false);});},300);}
   function addLot(){
     var sym=(lotForm.symbol||"").trim().toUpperCase();var sh=Number(lotForm.shares),cost=Number(lotForm.cost);
     if(!sym){toast("Enter a ticker");return;}if(isNaN(sh)||sh<=0){toast("Enter share count");return;}if(isNaN(cost)||cost<0){toast("Enter cost/share");return;}
@@ -1732,7 +1791,7 @@ function InvestSection({data,onUpdate,mob}){
     var sh=Number(sellForm.shares),px=Number(sellForm.price);
     if(isNaN(sh)||sh<=0){toast("Enter shares sold");return;}if(isNaN(px)||px<0){toast("Enter sale price");return;}
     var pos=positions.filter(function(p){return p.symbol===symbol;})[0];
-    var sale={id:"s"+Date.now(),symbol:symbol,shares:sh,price:px,ccy:(pos&&pos.ccy)||"USD",date:todayStr()};
+    var sale={id:"s"+Date.now(),symbol:symbol,shares:sh,price:px,ccy:(pos&&pos.ccy)||"USD",date:todayStr(),costBasis:pos?pos.avgCost:0};
     onUpdate({...data,sales:sales.concat([sale])});setSellFor(null);setSellForm({shares:"",price:""});toast("Sale recorded","success");
   }
   function setBase(c){onUpdate({...data,baseCurrency:c});}
@@ -1746,7 +1805,7 @@ function InvestSection({data,onUpdate,mob}){
     if(t){if(MS&&MS.setTdKey)MS.setTdKey(t);else{try{localStorage.setItem("__twelvedata_key__",t);}catch(_){}}}
     setDemo(MS?MS.isDemo():false);setShowKey(false);setFinnKey("");setTdKey("");
     if(MS&&MS.clearCache)MS.clearCache();setCandleMap({});setQuotes({});
-    toast("Keys saved — loading live data","success");setTimeout(loadQuotes,80);
+    toast("Keys saved · loading live data","success");setTimeout(loadQuotes,80);
   }
   function clearKeys(){if(MS){if(MS.setKey)MS.setKey("");if(MS.setTdKey)MS.setTdKey("");if(MS.clearCache)MS.clearCache();}setDemo(true);setCandleMap({});setQuotes({});toast("Reverted to demo mode");setTimeout(loadQuotes,80);}
 
@@ -1770,14 +1829,14 @@ function InvestSection({data,onUpdate,mob}){
     if(!selected)return;var q=quotes[selected]||{};var m=metrics[selected]||{};var note=notes[selected]||"";
     var heads=(news||[]).slice(0,4).map(function(x){return "- "+(x.headline||"");}).join("\n");
     var prompt="You are a skeptical devil's-advocate analyst. The user's investment thesis for "+selected+" is:\n\""+(note||"(none written)")+"\"\n\nCurrent: price "+invFmt(invQPrice(q))+" ("+invPct(invQPct(q))+" today), P/E "+(m.peTTM!=null?m.peTTM:"?")+", rev growth "+(m.revenueGrowth!=null?m.revenueGrowth+"%":"?")+".\nRecent headlines:\n"+heads+"\n\nIn 4-6 bullets: does the thesis still hold? What would challenge it? What's the strongest bear case? Plain English. End with: 'Not financial advice.'";
-    askGemini("Thesis check — "+selected,prompt);
+    askGemini("Thesis check · "+selected,prompt);
   }
   function aiDailyDigest(){
     var movers=allSymbols.map(function(s){var q=quotes[s];var pct=invQPct(q);return pct===null?null:{s:s,pct:pct};}).filter(Boolean).sort(function(a,b){return Math.abs(b.pct)-Math.abs(a.pct);}).slice(0,6);
     if(!movers.length){toast("No data yet");return;}
     var body=movers.map(function(m){return "- "+m.s+": "+invPct(m.pct)+" today";}).join("\n");
     var earn=allSymbols.map(function(s){var e=earnings[s];return e&&e.next?("- "+s+" earnings "+e.next.date):null;}).filter(Boolean).join("\n");
-    var prompt="You are a calm morning-briefing writer for a personal investing dashboard. Summarize today's watchlist & holdings in 3-5 short bullets — what moved and any notable context. Keep it low-anxiety, factual.\n\nMovers:\n"+body+(earn?("\n\nUpcoming earnings:\n"+earn):"")+"\n\nEnd with: 'Not financial advice.'";
+    var prompt="You are a calm morning-briefing writer for a personal investing dashboard. Summarize today's watchlist & holdings in 3-5 short bullets: what moved and any notable context. Keep it low-anxiety, factual.\n\nMovers:\n"+body+(earn?("\n\nUpcoming earnings:\n"+earn):"")+"\n\nEnd with: 'Not financial advice.'";
     askGemini("Daily digest",prompt);
   }
 
@@ -1816,7 +1875,7 @@ function InvestSection({data,onUpdate,mob}){
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:6,flexWrap:"wrap"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <h2 style={{fontSize:20,fontWeight:700,color:T.text,margin:0,letterSpacing:"-0.02em"}}>Invest</h2>
-          <span title={demo?"No keys — demo data":"Live data"} style={{fontSize:9.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",padding:"3px 8px",borderRadius:999,border:"0.5px solid "+(demo?"rgba(255,209,102,0.4)":"rgba(105,240,174,0.4)"),background:demo?"rgba(255,209,102,0.12)":"rgba(105,240,174,0.12)",color:demo?T.warn:T.success}}>{demo?"Demo data":"Live · delayed"}</span>
+          <span title={demo?"No keys · demo data":keyIssue?keyIssue:"Live data"} style={{fontSize:9.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",padding:"3px 8px",borderRadius:999,border:"0.5px solid "+(demo?"rgba(255,209,102,0.4)":keyIssue?"rgba(255,107,107,0.4)":"rgba(105,240,174,0.4)"),background:demo?"rgba(255,209,102,0.12)":keyIssue?"rgba(255,107,107,0.12)":"rgba(105,240,174,0.12)",color:demo?T.warn:keyIssue?T.danger:T.success}}>{demo?"Demo data":keyIssue?"Key rejected":"Live · delayed"}</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <div style={segWrap}><button style={segBtn(baseCcy==="AUD")} onClick={function(){setBase("AUD");}}>AUD</button><button style={segBtn(baseCcy==="USD")} onClick={function(){setBase("USD");}}>USD</button></div>
@@ -1829,9 +1888,9 @@ function InvestSection({data,onUpdate,mob}){
       {/* Keys */}
       {showKey&&<div style={iCard()}>
         <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:8}}>API keys (stored only in this browser)</div>
-        <div style={{fontSize:11,color:T.text3,marginBottom:6}}>Finnhub — quotes, fundamentals, ratings, news (finnhub.io, free 60/min)</div>
+        <div style={{fontSize:11,color:T.text3,marginBottom:6}}>Finnhub · quotes, fundamentals, ratings, news (finnhub.io, free 60/min)</div>
         <input style={{...iInp,marginBottom:10}} type="password" placeholder="Finnhub key…" value={finnKey} onChange={function(e){setFinnKey(e.target.value);}}/>
-        <div style={{fontSize:11,color:T.text3,marginBottom:6}}>Twelve Data — price charts & benchmarks (twelvedata.com, free 800/day). Finnhub's chart endpoint is premium, so charts use this.</div>
+        <div style={{fontSize:11,color:T.text3,marginBottom:6}}>Twelve Data · price charts & benchmarks (twelvedata.com, free 800/day). Finnhub's chart endpoint is premium, so charts use this.</div>
         <input style={{...iInp,marginBottom:10}} type="password" placeholder="Twelve Data key…" value={tdKey} onChange={function(e){setTdKey(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")saveKeys();}}/>
         <div style={{display:"flex",gap:8}}><button style={iBtn} onClick={saveKeys}>Save</button>{!demo&&<button style={iGhost} onClick={clearKeys}>Use demo</button>}</div>
       </div>}
@@ -1851,7 +1910,7 @@ function InvestSection({data,onUpdate,mob}){
           <div style={segWrap}>{RANGES.map(function(r){return <button key={r[0]} style={segBtn(range===r[1])} onClick={function(){setRange(r[1]);}}>{r[0]}</button>;})}</div>
         </div>
         {heroSeries.length>1&&<div style={{marginTop:10,marginLeft:-4,marginRight:-4}}><InvChart closes={heroSeries} h={mob?70:96} accent={heroDeltaPct>=0?"#69f0ae":"#ff6b6b"}/></div>}
-        {!heroSeries.length&&openPositions.length>0&&<div style={{fontSize:10,color:T.text3,marginTop:8}}>Add a Twelve Data key for a live portfolio trend chart.</div>}
+        {!heroSeries.length&&openPositions.length>0&&<div style={{fontSize:10,color:T.text3,marginTop:8}}>{keyIssue?"Twelve Data key rejected · check Settings.":"Add a Twelve Data key for a live portfolio trend chart."}</div>}
       </div>
 
       {/* Allocation */}
@@ -1879,9 +1938,9 @@ function InvestSection({data,onUpdate,mob}){
       <div style={iCard()}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
           <div style={{fontSize:13,fontWeight:600,color:"#cdd5e2"}}>Holdings</div>
-          <div style={{fontSize:10,color:T.text3}}>{openPositions.length} open{holdings.length>priced&&priced<openPositions.length?" · "+(openPositions.length-priced)+" unpriced":""}</div>
+          <div style={{fontSize:10,color:T.text3}}>{openPositions.length} open{priced<openPositions.length?" · "+(openPositions.length-priced)+" unpriced":""}</div>
         </div>
-        {openPositions.length===0&&<div style={{fontSize:12,color:T.text3,padding:"4px 2px 10px"}}>No holdings yet. Add a lot below — enter each buy separately to track cost basis.</div>}
+        {openPositions.length===0&&<div style={{fontSize:12,color:T.text3,padding:"4px 2px 10px"}}>No holdings yet. Add a lot below, entering each buy separately to track cost basis.</div>}
         {openPositions.map(function(p){
           var q=quotes[p.symbol];var px=effPx(p.symbol);var r=fx(p.ccy);var man=isManual(p.symbol);
           var val=px!==null?px*p.netShares*r:null;var g=px!==null?(px-p.avgCost)*p.netShares*r:null;var gp=p.avgCost>0&&px!==null?((px-p.avgCost)/p.avgCost)*100:null;
@@ -1927,7 +1986,7 @@ function InvestSection({data,onUpdate,mob}){
           <input style={{...iInp,flex:"1 1 110px"}} type="date" value={lotForm.date} onChange={function(e){setLotForm({...lotForm,date:e.target.value});}}/>
           <button style={iBtn} onClick={addLot}>Add lot</button>
         </div>
-        <div style={{fontSize:10,color:T.text3,marginTop:8}}>Non-US? Add the exchange suffix — e.g. <b>CBA.AX</b> for ASX (also .L London, .TO Toronto, .HK Hong Kong). Needs a Twelve Data key.</div>
+        <div style={{fontSize:10,color:T.text3,marginTop:8}}>Non-US? Add the exchange suffix, e.g. <b>CBA.AX</b> for ASX (also .L London, .TO Toronto, .HK Hong Kong). Needs a Twelve Data key.</div>
       </div>
 
       {/* Watchlist */}
@@ -1967,7 +2026,7 @@ function InvestSection({data,onUpdate,mob}){
           </div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             <button style={{...iGhost,display:"flex",alignItems:"center",gap:5}} onClick={aiThesisCheck} disabled={ai.loading}><UIcon name="sparkle" size={12}/>Thesis check</button>
-            <button style={{...iBtn,display:"flex",alignItems:"center",gap:6}} onClick={function(){askGemini("Explain — "+selected,"Explain "+selected+" ("+((selProf&&selProf.name)||selected)+") to a long-term retail investor in 4-6 short bullets: what it does, what the price move & headlines suggest, and what to watch. End with 'Not financial advice.'");}} disabled={ai.loading}><UIcon name={ai.loading?"clock":"sparkle"} size={13}/>{ai.loading?"…":"Explain"}</button>
+            <button style={{...iBtn,display:"flex",alignItems:"center",gap:6}} onClick={function(){askGemini("Explain · "+selected,"Explain "+selected+" ("+((selProf&&selProf.name)||selected)+") to a long-term retail investor in 4-6 short bullets: what it does, what the price move & headlines suggest, and what to watch. End with 'Not financial advice.'");}} disabled={ai.loading}><UIcon name={ai.loading?"clock":"sparkle"} size={13}/>{ai.loading?"…":"Explain"}</button>
           </div>
         </div>
 
@@ -1979,7 +2038,7 @@ function InvestSection({data,onUpdate,mob}){
         </div>
         {rangedSel.length>1?
           <InvChart series={[{closes:rangedSel,color:"#5b8cff",name:selected,label:"primary"},{closes:rangedBench&&rangedBench.length>1?rangedBench:null,color:"#8f97a6",name:bench,label:"benchmark"}].filter(function(s){return s.closes;})} h={mob?160:210} mob={mob}/>
-          :<div style={{height:mob?160:210,display:"flex",alignItems:"center",justifyContent:"center",color:T.text3,fontSize:12,textAlign:"center"}}>No chart data. {demo?"":"Add a Twelve Data key for live charts."}</div>}
+          :<div style={{height:mob?160:210,display:"flex",alignItems:"center",justifyContent:"center",color:T.text3,fontSize:12,textAlign:"center"}}>No chart data. {demo?"":keyIssue?"Twelve Data key rejected · check Settings.":"Add a Twelve Data key for live charts."}</div>}
 
         {/* valuation snapshot */}
         {selM&&<div style={{marginTop:14}}>
@@ -1996,7 +2055,7 @@ function InvestSection({data,onUpdate,mob}){
         {(rec[selected]||ptarget[selected])&&<div style={{marginTop:16,display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr",gap:16}}>
           {rec[selected]&&<div><div style={{fontSize:11,fontWeight:600,color:"#cdd5e2",marginBottom:8}}>Analyst ratings</div><InvRatingBar rec={rec[selected]}/></div>}
           {ptarget[selected]&&ptarget[selected].targetMean!=null&&(function(){var t=ptarget[selected];var cur=invQPrice(selQuote);var up=cur!==null&&t.targetMean?((t.targetMean-cur)/cur*100):null;return (
-            <div><div style={{fontSize:11,fontWeight:600,color:"#cdd5e2",marginBottom:8}}>Price target</div><div style={{fontSize:20,fontWeight:700,color:T.text}}>${invFmt(t.targetMean)} <span style={{fontSize:12,fontWeight:600,color:up==null?T.text3:(up>=0?T.success:T.danger)}}>{up!=null?"("+invPct(up)+")":""}</span></div><div style={{fontSize:10,color:T.text3,marginTop:2}}>Range ${invFmt(t.targetLow)} – ${invFmt(t.targetHigh)}</div></div>
+            <div><div style={{fontSize:11,fontWeight:600,color:"#cdd5e2",marginBottom:8}}>Price target</div><div style={{fontSize:20,fontWeight:700,color:T.text}}>${invFmt(t.targetMean)} <span style={{fontSize:12,fontWeight:600,color:up==null?T.text3:(up>=0?T.success:T.danger)}}>{up!=null?"("+invPct(up)+")":""}</span></div><div style={{fontSize:10,color:T.text3,marginTop:2}}>Range ${invFmt(t.targetLow)} to ${invFmt(t.targetHigh)}</div></div>
           );})()}
         </div>}
 
@@ -2035,7 +2094,7 @@ function InvestSection({data,onUpdate,mob}){
         <span style={{fontSize:10,color:T.text3}}>Uses your Gemini key · grounded in your data</span>
       </div>
 
-      <div style={{fontSize:10,color:T.text3,textAlign:"center",padding:"6px 0 20px",lineHeight:1.5}}>Data {demo?"is simulated (demo mode)":"via Finnhub + Twelve Data, delayed ≥15 min"}. Realized P&L uses average-cost basis. Personal, informational use only — not investment advice.</div>
+      <div style={{fontSize:10,color:T.text3,textAlign:"center",padding:"6px 0 20px",lineHeight:1.5}}>Data {demo?"is simulated (demo mode)":"via Finnhub + Twelve Data, delayed ≥15 min"}. Realized P&L uses average-cost basis. Personal, informational use only, not investment advice.</div>
     </div>
   );
 }
@@ -2133,7 +2192,7 @@ function WorkSection({data,mob,onUpdate,onFlush,gcalEvents}){
   const estimatedPay=hrRate>0?periodEquiv*hrRate:null;
   const projectedEquiv=periodScheduled.reduce(function(a,ev){const p=shiftPay(ev.time);return a+(p?p.totalEquiv:0);},0);
   const projectedPay=hrRate>0?projectedEquiv*hrRate:null;
-  function estimateTax(gross){if(gross<=18200)return gross*0.02;if(gross<=45000)return(gross-18200)*0.19+gross*0.02;if(gross<=135000)return 5092+(gross-45000)*0.30+gross*0.02;if(gross<=190000)return 32092+(gross-135000)*0.37+gross*0.02;return 52442+(gross-190000)*0.45+gross*0.02;}
+  function estimateTax(gross){var incomeTax=gross<=18200?0:gross<=45000?(gross-18200)*0.16:gross<=135000?4288+(gross-45000)*0.30:gross<=190000?31288+(gross-135000)*0.37:51638+(gross-190000)*0.45;var levy=gross<=27222?0:gross<=34027?(gross-27222)*0.10:gross*0.02;return incomeTax+levy;}
   const periodDays=Math.max(1,Math.round((new Date(periodEnd)-new Date(periodStart))/864e5)+1);
   const annualGross=estimatedPay!=null?estimatedPay/periodDays*365:0;
   const periodTax=estimatedPay!=null?estimateTax(annualGross)/365*periodDays:null;
@@ -2141,7 +2200,7 @@ function WorkSection({data,mob,onUpdate,onFlush,gcalEvents}){
   const periodTaskCount=taskLog.filter(function(t){return t.shiftDate>=periodStart&&t.shiftDate<=periodEnd;}).length;
   const recentShiftDates=(gcalEvents||[]).filter(isGoTabEvent).filter(function(ev){return classifyWorkEvent(ev)!=="ignore";}).sort(function(a,b){return b.date.localeCompare(a.date);}).slice(0,14).map(function(ev){return ev.date;});
   function fmt$(n){return n!=null?"$"+n.toFixed(2):"—";}
-  function fmtPeriod(){const s=new Date(periodStart+"T12:00:00");const e=new Date(periodEnd+"T12:00:00");return s.toLocaleDateString("en-AU",{day:"numeric",month:"short"})+" – "+e.toLocaleDateString("en-AU",{day:"numeric",month:"short",year:"numeric"});}
+  function fmtPeriod(){const s=new Date(periodStart+"T12:00:00");const e=new Date(periodEnd+"T12:00:00");return s.toLocaleDateString("en-AU",{day:"numeric",month:"short"})+" · "+e.toLocaleDateString("en-AU",{day:"numeric",month:"short",year:"numeric"});}
   function openShift(ev){
     const k=shiftKey(ev);
     if(expandedShift===k){setExpandedShift(null);return;}
@@ -2217,9 +2276,9 @@ function WorkSection({data,mob,onUpdate,onFlush,gcalEvents}){
         </div>
         <div style={{display:"grid",gridTemplateColumns:mob?"repeat(2,1fr)":"repeat(4,1fr)",gap:10}}>
           {[
-            {label:"Standard hrs",value:periodNorm.toFixed(1)+"h",sub:"before 7pm · 1×",edge:"rgba(255,255,255,0.15)"},
+            {label:"Standard hrs",value:periodNorm.toFixed(1)+"h",sub:"before 7pm · 1×",edge:"#ffffff"},
             {label:"Penalty hrs",value:periodPen.toFixed(1)+"h",sub:"after 7pm · 1.5×",edge:"#ffd166"},
-            {label:"Shifts",value:workedShiftCount+"/"+scheduledShiftCount,sub:scheduledMeetingCount>0?(attendedMeetingCount+"/"+scheduledMeetingCount+" meeting"+(scheduledMeetingCount!==1?"s":"")+" attended"):"worked / scheduled",edge:"rgba(255,255,255,0.15)"},
+            {label:"Shifts",value:workedShiftCount+"/"+scheduledShiftCount,sub:scheduledMeetingCount>0?(attendedMeetingCount+"/"+scheduledMeetingCount+" meeting"+(scheduledMeetingCount!==1?"s":"")+" attended"):"worked / scheduled",edge:"#ffffff"},
             {label:"Tasks",value:String(periodTaskCount),sub:"logged this period",edge:"#c77dff"}
           ].map(function(c){return(
             <div key={c.label} style={{background:"rgba(225,234,255,0.07)",border:"0.5px solid rgba(255,255,255,0.10)",borderRadius:12,padding:"12px 14px",...cellEdge(c.edge)}}>
@@ -2229,7 +2288,7 @@ function WorkSection({data,mob,onUpdate,onFlush,gcalEvents}){
             </div>
           );})}
         </div>
-        <div style={{fontSize:9,color:T.text3,marginTop:10}}>Tax estimate only — actual PAYG may differ</div>
+        <div style={{fontSize:9,color:T.text3,marginTop:10}}>Tax estimate only. Actual PAYG may differ</div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:mob?"1fr":"2fr 1fr",gap:12,alignItems:"start",marginBottom:12}}>
         <div className="card-rim" style={wCard({marginBottom:0})}>
@@ -2238,7 +2297,7 @@ function WorkSection({data,mob,onUpdate,onFlush,gcalEvents}){
             <div style={{fontSize:9,color:T.text3}}>tap a shift → journal to mark worked</div>
           </div>
           {periodShifts.length===0
-            ?<div style={{fontSize:12,color:T.text2,padding:"20px 0",textAlign:"center"}}>{gcalEvents&&gcalEvents.length>0?"No GoTab shifts this period — use prev to look back":"Connect Google Calendar to see shifts"}</div>
+            ?<div style={{fontSize:12,color:T.text2,padding:"20px 0",textAlign:"center"}}>{gcalEvents&&gcalEvents.length>0?"No GoTab shifts this period. Use prev to look back":"Connect Google Calendar to see shifts"}</div>
             :<div>
               {periodShifts.map(function(ev){
                 const past=daysBetween(ev.date)<0;
@@ -2284,7 +2343,7 @@ function WorkSection({data,mob,onUpdate,onFlush,gcalEvents}){
                             :<span style={{fontSize:9,color:"#5b8cff",background:"rgba(91,140,255,0.12)",border:"0.5px solid rgba(91,140,255,0.3)",borderRadius:4,padding:"1px 6px",flexShrink:0,fontWeight:600}}>mark worked</span>))}
                     </div>
                     {isExp&&<div style={{background:"rgba(91,140,255,0.05)",border:"0.5px solid "+T.accent,borderTop:"none",borderRadius:"0 0 10px 10px",padding:"12px 14px"}}>
-                      <div style={{fontSize:10,color:T.text3,marginBottom:6,letterSpacing:"0.02em"}}>Shift diary — a note marks this shift as worked &amp; counts its pay</div>
+                      <div style={{fontSize:10,color:T.text3,marginBottom:6,letterSpacing:"0.02em"}}>Shift diary · a note marks this shift as worked &amp; counts its pay</div>
                       <textarea rows={4} placeholder="What did you do this shift? Incidents, wins, patterns worth remembering." value={logDraft.notes} onChange={function(e){setLogDraft({notes:e.target.value});}} style={{...wInp,resize:"none",fontSize:11,lineHeight:1.6}}/>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginTop:10}}>
                         <div>{counted&&<button onClick={function(){setAttendance(ev,false);setExpandedShift(null);}} style={{...wBtn,color:T.danger}}>Didn't work</button>}</div>
@@ -2315,7 +2374,7 @@ function WorkSection({data,mob,onUpdate,onFlush,gcalEvents}){
             <div style={wST}>Focus Goals</div>
           </div>
           {focusGoals.length===0
-            ?<div style={{fontSize:11,color:T.text3,textAlign:"center",padding:"18px 0 14px"}}>No goals yet — add something you are working towards</div>
+            ?<div style={{fontSize:11,color:T.text3,textAlign:"center",padding:"18px 0 14px"}}>No goals yet. Add something you are working towards</div>
             :<div style={{marginBottom:14}}>
               {focusGoals.map(function(g){
                 const done=g.status==="done";
@@ -2364,7 +2423,7 @@ function WorkSection({data,mob,onUpdate,onFlush,gcalEvents}){
           </div>
         </div>
         {tasksByDate.length===0
-          ?<div style={{fontSize:12,color:T.text2,textAlign:"center",padding:"28px 0"}}>No tasks logged yet — pick a tag above and describe what you did</div>
+          ?<div style={{fontSize:12,color:T.text2,textAlign:"center",padding:"28px 0"}}>No tasks logged yet. Pick a tag above and describe what you did</div>
           :<div style={{borderLeft:"1px solid rgba(255,255,255,0.07)",paddingLeft:16}}>
             {tasksByDate.map(function(group){
               const shiftMatch=(gcalEvents||[]).filter(isGoTabEvent).find(function(ev){return ev.date===group.date;});
@@ -2425,7 +2484,7 @@ function parseProjectImport(text){
     if(/^##\s+/.test(line)){
       var body=line.replace(/^##\s+/,"");
       var sp2=body.split(/\s+[—–-]\s+/);
-      stage={id:nid("st"),title:sp2[0].trim(),subtitle:sp2.slice(1).join(" — ").trim(),steps:[]};
+      stage={id:nid("st"),title:sp2[0].trim(),subtitle:sp2.slice(1).join(" · ").trim(),steps:[]};
       stages.push(stage);continue;
     }
     if(/^#\s+/.test(line)){
@@ -2476,12 +2535,13 @@ function ProjectsSection({data,onUpdate,onAddShopping,mob}){
   var [openId,setOpenId]=useState(null);
   var [showImport,setShowImport]=useState(false);
   var [txt,setTxt]=useState("");
+  var [confirmDel,setConfirmDel]=useState(false);
   function toast(m,t){if(window.showToast)window.showToast(m,t);}
   function doImport(){
     var p=parseProjectImport(txt);
-    if(!p){toast("Couldn't read that — needs a '# Title' line and at least one '- step'.","error");return;}
+    if(!p){toast("Couldn't read that. Needs a '# Title' line and at least one '- step'.","error");return;}
     onUpdate(projects.concat([p]));setTxt("");setShowImport(false);setOpenId(p.id);
-    toast("Project added — "+p.title,"success");
+    toast("Project added: "+p.title,"success");
   }
   function toggleStep(pid,sid){
     onUpdate(projects.map(function(p){return p.id!==pid?p:{...p,stages:p.stages.map(function(st){return{...st,steps:st.steps.map(function(s){return s.id!==sid?s:{...s,done:!s.done};})};})};}));
@@ -2513,7 +2573,7 @@ function ProjectsSection({data,onUpdate,onAddShopping,mob}){
           <span style={{width:7,height:7,borderRadius:"50%",background:T.accent,flexShrink:0,animation:"pulse 1.6s ease-in-out infinite"}}/>
           <span><b style={{fontWeight:700}}>Do next:</b> {stt.current.title}</span>
         </div>}
-        {!stt.current&&stt.total>0&&<div style={{marginTop:12,fontSize:12.5,color:T.success,fontWeight:600}}>🎉 Every step done — nice work.</div>}
+        {!stt.current&&stt.total>0&&<div style={{marginTop:12,fontSize:12.5,color:T.success,fontWeight:600}}>🎉 Every step done. Nice work.</div>}
       </div>
       {open.stages.map(function(st,si){return <div key={st.id} className="card-rim" style={PCARD}>
         <div style={{marginBottom:12}}>
@@ -2534,12 +2594,12 @@ function ProjectsSection({data,onUpdate,onAddShopping,mob}){
                 {s.meta.price&&<span style={{fontSize:10.5,fontWeight:600,color:T.accent}}>{s.meta.price}</span>}
                 {!s.done&&!sk&&onAddShopping&&<button onClick={function(){addStepToShopping(open,s);}} style={{...editPill,fontSize:10,padding:"2px 9px"}}>+ Shopping</button>}
               </div>}
-              {sk&&<div style={{marginTop:5,fontSize:10,color:T.success,fontWeight:600}}>Skip this — just tick to acknowledge</div>}
+              {sk&&<div style={{marginTop:5,fontSize:10,color:T.success,fontWeight:600}}>Skip this, just tick to acknowledge</div>}
             </div>
           </div>;
         })}
       </div>;})}
-      <button onClick={function(){removeProject(open.id);}} style={{...editPill,color:T.danger,borderColor:"rgba(255,107,107,0.4)",marginTop:4}}>Delete project</button>
+      <button onClick={function(){if(!confirmDel){setConfirmDel(true);setTimeout(function(){setConfirmDel(false);},3000);return;}removeProject(open.id);setConfirmDel(false);}} style={{...editPill,color:T.danger,borderColor:"rgba(255,107,107,0.4)",marginTop:4}}>{confirmDel?"Tap again to confirm delete":"Delete project"}</button>
     </div>;
   }
 
@@ -2554,7 +2614,7 @@ function ProjectsSection({data,onUpdate,onAddShopping,mob}){
     </div>
     {showImport&&<div className="card-rim" style={PCARD}>
       <div style={{fontSize:12,color:T.text2,marginBottom:8,lineHeight:1.5}}>Paste the breakdown block (Claude hands you one). Format: <code style={{fontFamily:MONO,fontSize:11}}># Title</code> · <code style={{fontFamily:MONO,fontSize:11}}>## Stage</code> · <code style={{fontFamily:MONO,fontSize:11}}>- step</code>.</div>
-      <textarea value={txt} onChange={function(e){setTxt(e.target.value);}} rows={mob?7:9} placeholder={"# 🔑 Anime Keychain\n## Stage 1 — Buy 4 things\n- Buy the main board | where: Amazon.com.au | price: ~$40"} style={{...PINP,resize:"vertical",fontFamily:MONO,fontSize:12,lineHeight:1.5}}/>
+      <textarea value={txt} onChange={function(e){setTxt(e.target.value);}} rows={mob?7:9} placeholder={"# 🔑 Anime Keychain\n## Stage 1 - Buy 4 things\n- Buy the main board | where: Amazon.com.au | price: ~$40"} style={{...PINP,resize:"vertical",fontFamily:MONO,fontSize:12,lineHeight:1.5}}/>
       <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
         <button style={editPill} onClick={function(){setTxt("");setShowImport(false);}}>Cancel</button>
         <button style={btnGlassP} onClick={doImport}>Import project</button>
@@ -2603,11 +2663,12 @@ function ShopRow(props){
 function ShoppingSection({data,onUpdate,mob}){
   var items=Array.isArray(data)?data:[];
   var [inp,setInp]=useState("");
+  var [confirmClear,setConfirmClear]=useState(false);
   function toast(m,t){if(window.showToast)window.showToast(m,t);}
-  function add(){var v=inp.trim();if(!v)return;onUpdate(items.concat([{id:nid("shp"),key:null,text:v,detail:"",source:"",done:false,addedAt:todayStr()}]));setInp("");}
+  function add(){var v=inp.trim();if(!v)return;if(items.some(function(x){return !x.done&&x.text.trim().toLowerCase()===v.toLowerCase();})){toast(v+" is already on the list","warn");setInp("");return;}onUpdate(items.concat([{id:nid("shp"),key:null,text:v,detail:"",source:"",done:false,addedAt:todayStr()}]));setInp("");}
   function toggle(id){onUpdate(items.map(function(x){return x.id!==id?x:{...x,done:!x.done};}));}
   function remove(id){onUpdate(items.filter(function(x){return x.id!==id;}));}
-  function clearBought(){onUpdate(items.filter(function(x){return !x.done;}));toast("Cleared bought items","success");}
+  function clearBought(){if(!confirmClear){setConfirmClear(true);setTimeout(function(){setConfirmClear(false);},3000);return;}onUpdate(items.filter(function(x){return !x.done;}));setConfirmClear(false);toast("Cleared bought items","success");}
   var todo=items.filter(function(x){return !x.done;});
   var bought=items.filter(function(x){return x.done;});
   return <div>
@@ -2616,7 +2677,7 @@ function ShoppingSection({data,onUpdate,mob}){
         <div style={{fontSize:mob?20:23,fontWeight:800,letterSpacing:"-0.02em",color:"#eef3fb"}}>Shopping</div>
         <div style={{fontSize:12,color:T.text3,marginTop:2}}>{todo.length} to buy{bought.length?" · "+bought.length+" in cart":""}</div>
       </div>
-      {bought.length>0&&<button style={editPill} onClick={clearBought}>Clear bought</button>}
+      {bought.length>0&&<button style={editPill} onClick={clearBought}>{confirmClear?"Tap again to confirm":"Clear bought"}</button>}
     </div>
     <div className="card-rim" style={PCARD}>
       <div style={{display:"flex",gap:8,marginBottom:(todo.length||bought.length)?14:0}}>
@@ -2637,7 +2698,7 @@ function ShoppingHomeCard({items,onUpdate,onOpen,cardStyle,mob}){
   var list=Array.isArray(items)?items:[];
   var [inp,setInp]=useState("");
   var todo=list.filter(function(x){return !x.done;});
-  function add(){var v=inp.trim();if(!v)return;onUpdate(list.concat([{id:nid("shp"),key:null,text:v,detail:"",source:"",done:false,addedAt:todayStr()}]));setInp("");}
+  function add(){var v=inp.trim();if(!v)return;if(list.some(function(x){return !x.done&&x.text.trim().toLowerCase()===v.toLowerCase();})){if(window.showToast)window.showToast(v+" is already on the list","warn");setInp("");return;}onUpdate(list.concat([{id:nid("shp"),key:null,text:v,detail:"",source:"",done:false,addedAt:todayStr()}]));setInp("");}
   function toggle(id){onUpdate(list.map(function(x){return x.id!==id?x:{...x,done:!x.done};}));}
   return <div className="card-rim" style={{...(cardStyle||PCARD),breakInside:"avoid"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
@@ -2766,13 +2827,13 @@ function App(){
   // Syllabus / assessment hub state
   const [showSyllabusImport,setShowSyllabusImport]=useState(false);
   const [syllabusText,setSyllabusText]=useState("");
-  const [syllabusStart,setSyllabusStart]=useState("2026-04-20");
+  const [syllabusStart,setSyllabusStart]=useState("");
   const [geminiKey,setGeminiKey]=useState(function(){try{return localStorage.getItem('__gemini_key__')||"";}catch(_){return "";}});
   const [groqKey,setGroqKey]=useState(function(){try{return localStorage.getItem('__groq_key__')||"";}catch(_){return "";}});
   const [geminiLoading,setGeminiLoading]=useState(false);
   const [geminiPreview,setGeminiPreview]=useState(null);
   const [showAddAssess,setShowAddAssess]=useState(false);
-  const [addAssessForm,setAddAssessForm]=useState({subject:"WIA&B",name:"",type:"SUBMISSION",date:todayStr()});
+  const [addAssessForm,setAddAssessForm]=useState({subject:(data.uni.subjects&&data.uni.subjects[0]&&data.uni.subjects[0].name)||"",name:"",type:"SUBMISSION",date:todayStr()});
   const [gcalExcludedIds,setGcalExcludedIds]=useState(function(){try{var x=localStorage.getItem('__gcal_excluded__');return x?JSON.parse(x):[];}catch(_){return [];}});
 
   // Call this anywhere in App to show a brief auto-dismissing notification.
@@ -2998,7 +3059,7 @@ function App(){
           setSyncStatus("synced");
         }else{
           setSyncStatus("offline");
-          try{showToast("Cloud data field missing — saves disabled. Contact dev to investigate.","error");}catch(_){}
+          try{showToast("Cloud data field missing. Saves disabled. Contact dev to investigate.","error");}catch(_){}
         }
       }).catch(function(err){
         console.error("[Firestore] Load failed:",err);
@@ -3042,7 +3103,7 @@ function App(){
         setData(mergeWithDefaults(parsed));
       }).catch(function(err){
         console.error("[Migration] Upload failed:",err);
-        showToast("Migration failed — your data is still saved locally.","error");
+        showToast("Migration failed. Your data is still saved locally.","error");
         // Do NOT set _fbReady on migration failure — local data is still in dash_v1
         // and we don't want to risk overwriting Firestore with anything
         setSyncStatus("offline");
@@ -3063,7 +3124,7 @@ function App(){
     // wipe happened here. Refuse the write and surface it loudly.
     if(isLikelySeedState(data)){
       console.error("[SAFETY] Refused to save seed-shaped state to Firestore — would have wiped real data. State:",data);
-      try{showToast("Refused to save empty state — possible bug, data not synced.","error");}catch(_){}
+      try{showToast("Refused to save empty state. Possible bug, data not synced.","error");}catch(_){}
       setSyncStatus("offline");
       return;
     }
@@ -3178,9 +3239,9 @@ function App(){
     var subjects=(data.uni&&data.uni.subjects||[]).map(function(s){return s.name;}).join(', ');
 
     // ── Build context string ─────────────────────────────────────────────────
-    var ctx='WHO: Jayden — TAFE Melbourne accounting student. Subjects: '+subjects+'.\n';
+    var ctx='WHO: Jayden, TAFE Melbourne accounting student. Subjects: '+subjects+'.\n';
 
-    if(workedYesterday) ctx+='WORK: Had a GoTab shift yesterday — energy may be lower today.\n';
+    if(workedYesterday) ctx+='WORK: Had a GoTab shift yesterday, energy may be lower today.\n';
     if(workingToday)    ctx+='WORK: GoTab shift today.\n';
 
     ctx+='\nCALENDAR TODAY:\n'+(nonWorkEvs.length>0?nonWorkEvs.map(function(ev){return'- '+ev.title+(ev.time?' at '+ev.time:'');}).join('\n'):'No events today')+'\n';
@@ -3198,9 +3259,9 @@ function App(){
 
     if(nextGym){
       var gymLine='Next: '+nextGym.name+(nextGym.focus?' ('+nextGym.focus+')':'');
-      if(daysSinceGym===0) gymLine+=' — logged today';
-      else if(daysSinceGym===1) gymLine+=' — last session yesterday';
-      else if(daysSinceGym!==null) gymLine+=' — '+daysSinceGym+'d since last session';
+      if(daysSinceGym===0) gymLine+=', logged today';
+      else if(daysSinceGym===1) gymLine+=', last session yesterday';
+      else if(daysSinceGym!==null) gymLine+=', '+daysSinceGym+'d since last session';
       ctx+='\nGYM: '+gymLine+'\n';
     }
     if(!bwThisWeek) ctx+='GYM: Body weight not yet logged this week.\n';
@@ -3214,7 +3275,7 @@ function App(){
     }
 
     // ── Prompt ───────────────────────────────────────────────────────────────
-    var prompt='You are Jayden\'s personal coach. You know him — TAFE accounting student, works GoTab shifts, trains at the gym, does weekly reflections.\n\n'+ctx+'\nWrite a personalised morning check-in. Exactly 3 lines:\nLine 1: Acknowledge his specific day — name actual assessments, work, or events if present\nLine 2: One concrete suggestion tied to his context (if reflection data present, connect to the identified pattern or recommendation)\nLine 3: A question that feels personal to his actual situation — not generic\n\nRules: under 65 words. Use his name once. Warm and direct — not cheesy. Plain lines, no bullets or numbers.';
+    var prompt='You are Jayden\'s personal coach. You know him: TAFE accounting student, works GoTab shifts, trains at the gym, does weekly reflections.\n\n'+ctx+'\nWrite a personalised morning check-in. Exactly 3 lines:\nLine 1: Acknowledge his specific day, name actual assessments, work, or events if present\nLine 2: One concrete suggestion tied to his context (if reflection data present, connect to the identified pattern or recommendation)\nLine 3: A question that feels personal to his actual situation, not generic\n\nRules: under 65 words. Use his name once. Warm and direct, not cheesy. Plain lines, no bullets or numbers.';
 
     fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key='+key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.75}})})
       .then(function(r){if(!r.ok)throw new Error('Gemini '+r.status);return r.json();})
@@ -3233,7 +3294,7 @@ function App(){
   function toggleCalEv(id){trk("uni.gcal_event_toggle");setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
   function brOpener(mode){
     if(mode==="evening"){
-      return [{role:"assistant",persona:"Chris",text:"Walk me through your day. What actually happened — not the highlight reel?",ts:Date.now()}];
+      return [{role:"assistant",persona:"Chris",text:"Walk me through your day. What actually happened, not the highlight reel?",ts:Date.now()}];
     }
     if(mode==="drift"){
       return [{role:"assistant",persona:"Chris",text:"You opened this in the middle of the day. That usually means something's off. What's going on right now?",ts:Date.now()}];
@@ -3252,7 +3313,7 @@ function App(){
       return;
     }
     if(!b.onboarded){
-      setBrMessages([{role:"assistant",persona:"Chris",text:"Before we get into tasks — I want to understand you, not just your to-do list. What does \"better\" actually look like for you right now?",ts:Date.now()}]);
+      setBrMessages([{role:"assistant",persona:"Chris",text:"Before we get into tasks, I want to understand you, not just your to-do list. What does \"better\" actually look like for you right now?",ts:Date.now()}]);
       setBrLastSpeaker("Chris");
     } else {
       var seed=brOpener(brSessionMode());
@@ -3330,13 +3391,14 @@ function App(){
           return{...p,boardroom:{...(p.boardroom||{}),messages:msgs.concat([userMsg].concat(coachMsgs)),sessionStartedAt:(p.boardroom&&p.boardroom.sessionStartedAt)||new Date().toISOString()}};
         });
       }
-      if(e&&e.rateLimited) showToast("Boardroom paused — Groq's free limit was hit. Wait ~30s, then continue.","warn");
+      if(e&&e.rateLimited) showToast("Boardroom paused. Groq's free limit was hit. Wait ~30s, then continue.","warn");
       else showToast("Boardroom: "+(e&&e.message||"error"),"error");
       setBrLoading(false);
     });
   }
   function brEndSession(){
     if(brMessages.filter(function(m){return m.role==="user";}).length<1){setShowBoardroom(false);return;}
+    if(!groqKey.trim()){showToast("Groq API key missing or invalid · session couldn't be saved. Add it in Settings, then end the session again.","warn");return;}
     setBrLoading(true);
     setBrClosing(true);
     var mode=brSessionMode();
@@ -3380,10 +3442,10 @@ function App(){
         if(existingNS){ saveWithGoals(newMoment,existingNS); }
         else { BoardroomService.buildNorthStar(allMsgs).then(function(ns){ saveWithGoals(newMoment,(ns||"").trim()); }).catch(function(){ saveWithGoals(newMoment,""); }); }
       });
-    }).catch(function(){
+    }).catch(function(e){
       setBrClosing(false);
       setBrLoading(false);
-      setShowBoardroom(false);
+      showToast("Couldn't save the session: "+((e&&e.message)||"unknown error")+". Try ending it again.","error");
     });
   }
   function brAcceptGoal(proposed) {
@@ -3462,10 +3524,10 @@ function App(){
     }).catch(function(e){setBrLoading(false);showToast("Couldn't finish setup: "+(e&&e.message||"error"),"error");});
   }
   function brRedoConsultation(){
-    if(!window.confirm("Start a fresh consultation? It sets a new North Star — your current one is kept in the Session Log below, and your goals and history stay untouched.")) return;
+    if(!window.confirm("Start a fresh consultation? It sets a new North Star. Your current one is kept in the Session Log below, and your goals and history stay untouched.")) return;
     trk("boardroom.redo");
     setData(function(p){return{...p,boardroom:{...(p.boardroom||{}),onboarded:false,messages:[],sessionStartedAt:null,lastSpeaker:null}};});
-    setBrMessages([{role:"assistant",persona:"Chris",text:"Let's reset and go deep again. What does \"better\" actually look like for you right now — today, not in theory?",ts:Date.now()}]);
+    setBrMessages([{role:"assistant",persona:"Chris",text:"Let's reset and go deep again. What does \"better\" actually look like for you right now, today, not in theory?",ts:Date.now()}]);
     setBrLastSpeaker("Chris");
     setShowBoardroom(true);
   }
@@ -3501,7 +3563,7 @@ function App(){
     a.href=URL.createObjectURL(blob);
     a.download="obsidian-export.json";
     a.click();
-    showToast("Downloaded — move to my-project folder then run: node export-to-obsidian.js","success");
+    showToast("Downloaded. Move to my-project folder then run: node export-to-obsidian.js","success");
   }
   function restoreFromBackup(){
     var bk=getLatestBackup();
@@ -3513,28 +3575,34 @@ function App(){
       window.DASH_DOC.set({dashData:stripUndefined(merged)}).then(function(){
         showToast("Restored from backup ("+bk.key.replace("dash_backup_","")+") and saved to cloud","success");
         setSyncStatus("synced");
-      }).catch(function(){showToast("Restored locally — cloud sync failed","warn");});
+      }).catch(function(){showToast("Restored locally, cloud sync failed","warn");});
     }else{
       showToast("Restored from backup ("+bk.key.replace("dash_backup_","")+"). Reconnect to sync to cloud.","success");
     }
   }
   function toggleAssessmentDone(id){trk("uni.assessment_complete");setData(function(p){const as=p.uni.assessments||[];return{...p,uni:{...p.uni,assessments:as.map(function(a){return a.id===id?{...a,done:!a.done}:a;})}};}); }
   function removeAssessment(id){setData(function(p){return{...p,uni:{...p.uni,assessments:(p.uni.assessments||[]).filter(function(a){return a.id!==id;})}};}); }
+  function removeSubject(id){setData(function(p){return{...p,uni:{...p.uni,subjects:(p.uni.subjects||[]).filter(function(s){return s.id!==id;})}};}); }
   function addAssessment(){
     if(!addAssessForm.name||!addAssessForm.date)return;
     const na={id:"custom-"+Date.now(),subject:addAssessForm.subject,name:addAssessForm.name,type:addAssessForm.type,date:addAssessForm.date,done:false};
     setData(function(p){return{...p,uni:{...p.uni,assessments:(p.uni.assessments||[]).concat([na])}};});
-    setAddAssessForm({subject:"WIA&B",name:"",type:"SUBMISSION",date:todayStr()});
+    setAddAssessForm({subject:addAssessForm.subject,name:"",type:"SUBMISSION",date:todayStr()});
     setShowAddAssess(false);
   }
   async function parseWithGemini(){
     if(!syllabusText.trim()){return;}
     var key=geminiKey.trim();
     if(!key){showToast("Paste your Gemini API key first","error");return;}
+    if(!syllabusStart){showToast("Set the semester start date first","error");return;}
     try{localStorage.setItem('__gemini_key__',key);}catch(_){}
     setGeminiLoading(true);setGeminiPreview(null);
     try{
-      const prompt="Parse this university syllabus. Extract ONLY formal graded assessments (NOT quizzes, NOT self-testing exercises, NOT review questions, NOT resubmissions).\n\nSemester starts: "+syllabusStart+"\nWeek 1 = week of "+syllabusStart+"\nToday: "+todayStr()+"\n\nSubjects (use exact keys): WIA&B, POB, BAS/IAS, FinStmts NRE, Payroll, PFR, Law\n\nFor each assessment:\n- subject: one of the exact keys above\n- name: short descriptive name\n- type: IN-CLASS (supervised/in-class) | SUBMISSION (online submission/assignment) | EXAM\n- date: YYYY-MM-DD calculated from week number and semester start\n- done: false\n- id: short unique slug like 'wiab-at1'\n\nReturn ONLY a raw JSON array. No markdown, no explanation.\n\nSyllabus:\n"+syllabusText;
+      const existingSubjects=(data.uni.subjects||[]).map(function(s){return s.name;});
+      const subjectInstruction=existingSubjects.length>0
+        ?"Subjects (use exact names, reuse these if they match): "+existingSubjects.join(", ")+". If a unit in the syllabus isn't in this list, invent a short, clear subject code for it from the unit's own name."
+        :"No subjects are set up yet. Invent a short, clear subject code for each unit from its own name or unit code in the syllabus (e.g. an abbreviated unit title).";
+      const prompt="Parse this university syllabus. Extract ONLY formal graded assessments (NOT quizzes, NOT self-testing exercises, NOT review questions, NOT resubmissions).\n\nSemester starts: "+syllabusStart+"\nWeek 1 = week of "+syllabusStart+"\nToday: "+todayStr()+"\n\n"+subjectInstruction+"\n\nFor each assessment:\n- subject: a short subject code per the instruction above (keep the SAME subject string consistent across all assessments for that unit)\n- name: short descriptive name\n- type: IN-CLASS (supervised/in-class) | SUBMISSION (online submission/assignment) | EXAM\n- date: YYYY-MM-DD calculated from week number and semester start\n- done: false\n- id: short unique slug like 'unit-at1'\n\nReturn ONLY a raw JSON array. No markdown, no explanation.\n\nSyllabus:\n"+syllabusText;
       const resp=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+key,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.1}})});
       if(!resp.ok)throw new Error("Gemini API error "+resp.status);
       const json=await resp.json();
@@ -3548,14 +3616,34 @@ function App(){
   }
   function saveGeminiPreview(){
     if(!geminiPreview||geminiPreview.length===0)return;
-    setData(function(p){return{...p,uni:{...p.uni,assessments:geminiPreview.map(function(a){return{...a,done:a.done||false};})}}; });
+    setData(function(p){
+      var subs=(p.uni.subjects||[]).slice();
+      geminiPreview.forEach(function(a){
+        var name=(a.subject||"").trim();
+        if(name&&!subs.some(function(s){return s.name.toLowerCase()===name.toLowerCase();})){
+          subs.push({id:Date.now()+Math.floor(Math.random()*1000),name:name,color:nextSubjectColor(subs)});
+        }
+      });
+      var existingAssess=p.uni.assessments||[];
+      var existingIds={};existingAssess.forEach(function(a){existingIds[a.id]=true;});
+      var newOnes=geminiPreview.map(function(a){var id=a.id;while(existingIds[id]){id=id+"-2";}existingIds[id]=true;return{...a,id:id,done:a.done||false};});
+      return{...p,uni:{...p.uni,subjects:subs,assessments:existingAssess.concat(newOnes)}};
+    });
     setGeminiPreview(null);setSyllabusText("");setShowSyllabusImport(false);
-    showToast("Assessments saved!","success");
+    showToast(geminiPreview.length+" assessment"+(geminiPreview.length!==1?"s":"")+" added","success");
   }
-  function updateProg(id,val){setData(function(p){return{...p,uni:{...p.uni,subjects:p.uni.subjects.map(function(s){return s.id===id?{...s,progress:Number(val)}:s;})}}; });}
-  function toggleTask(id){setData(function(p){const ts=p.personal.tasks||[];const cur=ts.find(function(t){return t.id===id;});trk(cur&&cur.done?"task.uncomplete":"task.complete");return{...p,personal:{...p.personal,tasks:ts.map(function(t){return t.id===id?{...t,done:!t.done}:t;})}}; });}
+  // Plain checkbox click = instant complete, dated today (fast path). The clock icon
+  // next to each task opens the same modal for backdating instead, when that matters.
+  function toggleTask(id){
+    const cur=(data.personal.tasks||[]).find(function(t){return t.id===id;});
+    if(cur&&!cur.done){completeTask(id,todayStr(),"");return;}
+    trk("task.uncomplete");
+    setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.map(function(t){return t.id===id?{...t,done:false,completedAt:null,completedTime:null}:t;})}}; });
+  }
+  function completeTask(id,dateStr,timeStr){trk("task.complete");setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.map(function(t){return t.id===id?{...t,done:true,completedAt:dateStr||todayStr(),completedTime:timeStr||null}:t;})}}; });}
+  function openBackdateModal(id){setModal("complete_task");setMForm({taskId:id,date:todayStr(),time:""});}
   function archiveDone(){trk("task.archive");setData(function(p){const ts=p.personal.tasks||[];const done=ts.filter(function(t){return t.done;}).map(function(t){return{...t,archivedAt:todayStr()};});return{...p,personal:{...p.personal,tasks:ts.filter(function(t){return !t.done;}),archived:(p.personal.archived||[]).concat(done)}};});}
-  function restoreTask(id){trk("task.restore");setData(function(p){const arch=p.personal.archived||[];const match=arch.filter(function(t){return t.id===id;});if(match.length===0)return p;const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.concat([{...match[0],done:false,archivedAt:undefined}]),archived:arch.filter(function(x){return x.id!==id;})}};});}
+  function restoreTask(id){trk("task.restore");setData(function(p){const arch=p.personal.archived||[];const match=arch.filter(function(t){return t.id===id;});if(match.length===0)return p;const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.concat([{...match[0],done:false,archivedAt:undefined,completedAt:null,completedTime:null}]),archived:arch.filter(function(x){return x.id!==id;})}};});}
   function saveEditTask(){
     if(window.DataValidator){
       const r=DataValidator.validate("task",{name:editTaskForm.name,priority:editTaskForm.priority||"normal",due:editTaskForm.due||null,cat:editTaskForm.cat});
@@ -3608,7 +3696,7 @@ function App(){
           date:firebase.firestore.FieldValue.serverTimestamp(),
           updatedAt:firebase.firestore.FieldValue.serverTimestamp()
         }).then(function(){setCaptureText("");})
-          .catch(function(e){showToast("Save failed — "+(e.message||"check connection."),"error");});
+          .catch(function(e){showToast("Save failed: "+(e.message||"check connection."),"error");});
       }
     }).catch(function(e){
       setCaptureLoading(false);
@@ -3636,7 +3724,7 @@ function App(){
         if(c.id!==editCaptureData.id)return c;
         return{...c,title:editCaptureData.title,content:editCaptureData.content,formula:editCaptureData.formula,example:editCaptureData.example,tags:tagsArr};
       });});
-      showToast("Capture updated — will re-export on next sync","success");
+      showToast("Capture updated, will re-export on next sync","success");
       setEditCaptureData(null);
     }).catch(function(e){showToast("Save failed: "+e.message,"error");});
   }
@@ -3716,7 +3804,7 @@ function App(){
         const r=DataValidator.validate("task",{name:mForm.name,priority:mForm.priority||"normal",due:mForm.due||null,cat:mForm.cat||"Errands"});
         if(!r.valid){showToast(r.firstError);return;}
       }
-      if(modal==="add_subject"){
+      if(modal==="add_subject"||modal==="edit_subject"){
         if(!mForm.name||!mForm.name.trim()){showToast("Subject name can't be empty.");return;}
       }
       if(modal==="add_exercise"){
@@ -3727,7 +3815,8 @@ function App(){
         if(!r.valid){showToast(r.firstError);return;}
       }
     }
-    if(modal==="add_subject"){trk("uni.subject_add");setData(function(p){return{...p,uni:{...p.uni,subjects:p.uni.subjects.concat([{id:Date.now(),name:mForm.name,progress:0}])}};});}
+    if(modal==="add_subject"){trk("uni.subject_add");setData(function(p){var subs=p.uni.subjects||[];if(subs.some(function(s){return s.name.toLowerCase()===mForm.name.trim().toLowerCase();}))return p;return{...p,uni:{...p.uni,subjects:subs.concat([{id:Date.now(),name:mForm.name.trim(),color:mForm.color||nextSubjectColor(subs)}])}};});}
+    else if(modal==="edit_subject"){trk("uni.subject_edit");setData(function(p){var subs=p.uni.subjects||[];return{...p,uni:{...p.uni,subjects:subs.map(function(s){return s.id===mForm.editId?{...s,name:mForm.name.trim(),color:mForm.color||s.color}:s;})}};});}
     else if(modal==="add_exercise"){trk("gym.exercise_add");setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.concat([{id:Date.now(),name:mForm.name,logs:[]}])}};});}
     else if(modal==="log_weight")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.map(function(ex){return ex.id===mForm.exId?{...ex,logs:ex.logs.concat([{date:todayStr(),weight:Number(mForm.weight)}])}:ex;})}};});
     else if(modal==="add_task"){trk("task.add");setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.concat([{id:Date.now(),name:mForm.name,cat:mForm.cat||"Errands",priority:mForm.priority||"normal",due:mForm.due||null,done:false,addedAt:todayStr(),editedAt:null}])}};});}
@@ -3741,6 +3830,10 @@ function App(){
       });
       setModal(null);setMForm({});showToast("Template updated!","success");return;
     }
+    else if(modal==="complete_task"){
+      completeTask(mForm.taskId,mForm.date,mForm.time);
+      setModal(null);setMForm({});showToast("Task completed!","success");return;
+    }
     setModal(null);setMForm({});
     showToast("Saved!","success");
    }catch(err){captureError(err,"saveModal");}
@@ -3751,7 +3844,7 @@ function App(){
   function updateProjects(pr){setData(function(p){return{...p,projects:pr};});}
   function updateShopping(sh){setData(function(p){return{...p,shopping:sh};});}
   // Append one item to the shopping list (used by the "+ Add to shopping" button on project buy-steps).
-  function addToShopping(item){setData(function(p){var cur=Array.isArray(p.shopping)?p.shopping:[];if(item.key&&cur.some(function(x){return x.key===item.key&&!x.done;}))return p;return{...p,shopping:cur.concat([item])};});}
+  function addToShopping(item){setData(function(p){var cur=Array.isArray(p.shopping)?p.shopping:[];if(item.key&&cur.some(function(x){return x.key===item.key;}))return p;return{...p,shopping:cur.concat([item])};});}
   function requestImmediateSave(){_flushNow.current=true;} // bypass the 2s debounce on the next data save
   function submitRefl(){
     if(!reflIn.trim()){showToast("Write something before continuing.");return;}
@@ -3772,12 +3865,12 @@ function App(){
         const analysis=an||analyzeReflectionFallback(na,data.reflections);
         setReflAnalysis(analysis);setReflAnalysisLoading(false);
         setData(function(p){return{...p,reflections:p.reflections.concat([{id:Date.now(),date:new Date().toISOString(),answers:na.map(function(qa,i){return{question:qa.q,answer:qa.a,area:REFL_LABELS[i]};}),analysis:analysis}])};});
-      }).catch(function(){setReflAnalysisLoading(false);showToast("Analysis failed — reflection was still saved.","warn");});
+      }).catch(function(){setReflAnalysisLoading(false);showToast("Analysis failed. Reflection was still saved.","warn");});
     }
   }
 
   function evColor(ev){return ev.calColor||"#4285F4";}
-  function evLabel(ev){const keys=Object.keys(SUBJECTS);const match=keys.find(function(k){return ev.title&&ev.title.toUpperCase().includes(k.toUpperCase());});return match||ev.calName||"Google";}
+  function evLabel(ev){const keys=(data.uni.subjects||[]).map(function(s){return s.name;});const match=keys.find(function(k){return ev.title&&k&&ev.title.toUpperCase().includes(k.toUpperCase());});return match||ev.calName||"Google";}
 
   function renderWeek(){
     if(mob){
@@ -3855,7 +3948,7 @@ function App(){
   // ── Mock design-language helpers (Sapphire glass) ──
   const eyebrow={fontSize:11,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",color:T.accent};
   const sectLabel={fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.42)",marginBottom:14};
-  const pill={fontSize:10,fontWeight:700,padding:"2px 9px",borderRadius:999,background:"rgba(91,140,255,0.16)",color:T.accentSoft||"#8fb0ff",border:"1px solid rgba(120,150,255,0.4)"};
+  const pill={fontSize:10,fontWeight:700,padding:"2px 9px",borderRadius:999,background:"rgba(91,140,255,0.16)",color:"#8fb0ff",border:"1px solid rgba(120,150,255,0.4)"};
   const glassMini={background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:12,boxShadow:cardShadowSoft};
   const tagStyle={academic:{background:"rgba(55,138,221,0.18)",color:"#7eb3e8"},health:{background:"rgba(59,109,17,0.22)",color:"#8ac571"},finance:{background:"rgba(186,117,23,0.22)",color:"#e8b970"},career:{background:"rgba(127,119,221,0.22)",color:"#b3acff"},personal:{background:"rgba(136,135,128,0.22)",color:"#b4b3ac"}};
   function getTagStyle(area){return tagStyle[(area||"personal").toLowerCase()]||tagStyle.personal;}
@@ -3970,7 +4063,7 @@ function App(){
             title="Trigger Obsidian export now via GitHub Actions"
             onClick={function(){
               var pat=(data.settings&&data.settings.githubPAT||"").trim();
-              if(!pat){showToast("GitHub PAT not set — add it in Settings.","error");return;}
+              if(!pat){showToast("GitHub PAT not set. Add it in Settings.","error");return;}
               trk("export.manual");
               setObsExportStatus("running");
               fetch("https://api.github.com/repos/jaydenpineda30-glitch/obsidian-notes/actions/workflows/export.yml/dispatches",{
@@ -3978,9 +4071,9 @@ function App(){
                 headers:{"Authorization":"Bearer "+pat,"Content-Type":"application/json","Accept":"application/vnd.github+json"},
                 body:JSON.stringify({ref:"main"})
               }).then(function(r){
-                if(r.status===204){setObsExportStatus("done");showToast("Export triggered — notes will appear in Obsidian in ~30s","success");setTimeout(function(){setObsExportStatus("idle");},4000);}
+                if(r.status===204){setObsExportStatus("done");showToast("Export triggered, notes will appear in Obsidian in ~30s","success");setTimeout(function(){setObsExportStatus("idle");},4000);}
                 else{setObsExportStatus("error");showToast("Export trigger failed (status "+r.status+")","error");setTimeout(function(){setObsExportStatus("idle");},3000);}
-              }).catch(function(){setObsExportStatus("error");showToast("Export trigger failed — check connection","error");setTimeout(function(){setObsExportStatus("idle");},3000);});
+              }).catch(function(){setObsExportStatus("error");showToast("Export trigger failed, check connection","error");setTimeout(function(){setObsExportStatus("idle");},3000);});
             }}
             style={{display:"flex",alignItems:"center",gap:11,width:"100%",padding:navCollapsed?"10px 0":"9px 12px",justifyContent:navCollapsed?"center":"flex-start",borderRadius:12,border:"none",cursor:obsExportStatus==="running"?"default":"pointer",background:"transparent",color:obsExportStatus==="running"?T.text3:obsExportStatus==="done"?T.success:T.text2,fontSize:12.5,fontWeight:500}}>
             <span style={{display:"flex",flexShrink:0}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M7 8l5-5 5 5M5 21h14"/></svg></span>
@@ -4019,7 +4112,7 @@ function App(){
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
                 <div>
                   <div style={{fontSize:13,fontWeight:700,color:T.text,letterSpacing:"-0.01em"}}>{new Date(dStr(weekDates[0])).toLocaleDateString("en-AU",{month:"long",year:"numeric"})}</div>
-                  <div style={{fontSize:10,color:T.text3,marginTop:1}}>{fmtDate(dStr(weekDates[0]))} — {fmtDate(dStr(weekDates[6]))}</div>
+                  <div style={{fontSize:10,color:T.text3,marginTop:1}}>{fmtDate(dStr(weekDates[0]))} · {fmtDate(dStr(weekDates[6]))}</div>
                 </div>
                 <div style={{display:"flex",gap:5,alignItems:"center"}}>
                   {gcalReady&&!gcalConnected&&<button style={{...btn,fontSize:10,color:"#4285F4",border:"0.5px solid rgba(66,133,244,0.35)",display:"inline-flex",alignItems:"center",gap:4}} onClick={function(){window.GCalSync&&window.GCalSync.connect();}}><UIcon name="calendar" size={10}/>Connect</button>}
@@ -4036,15 +4129,6 @@ function App(){
             </div>
             <ErrorBoundary name="ShoppingHome"><ShoppingHomeCard items={data.shopping||[]} onUpdate={updateShopping} onOpen={function(){setPage("Shopping");}} cardStyle={card({breakInside:"avoid"})} mob={mob}/></ErrorBoundary>
             <div style={{breakInside:"avoid",marginBottom:12}}><WeatherWidget mob={mob}/></div>
-            {nextRot&&<div className="card-rim" style={{...card({breakInside:"avoid"}),padding:"14px 16px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-                  <div style={{fontSize:12,color:"#eef3fb",fontWeight:700,letterSpacing:0.2}}>Next session</div>
-                  <button style={editPill} onClick={function(){setPage("Gym");}}>Open →</button>
-                </div>
-                <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:3}}>{nextRot.name}</div>
-                <div style={{fontSize:11,color:T.text2,lineHeight:1.4}}>{nextRot.focus}</div>
-                {nextRot.exercises&&nextRot.exercises.length>0&&<div style={{fontSize:10,color:T.text3,marginTop:4}}>{nextRot.exercises.length} exercise{nextRot.exercises.length!==1?"s":""} planned</div>}
-              </div>}
 
           {/* Check-in (slim) */}
           <div className="card-rim" style={{...card({breakInside:"avoid"}),marginBottom:12}}>
@@ -4090,18 +4174,24 @@ function App(){
           {/* Assessments */}
           <div className="card-rim" style={card({breakInside:"avoid"})}>
               <div style={sT}>Upcoming assessments</div>
-              {upcoming.length===0?<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>:upcoming.map(function(a){const days=daysBetween(a.date);const col=SC[a.subject]||T.accent;const dayLabel=days===0?"Today":days===1?"Tomorrow":days<=13?WX_DAYS[new Date(a.date+"T00:00").getDay()]+" · "+days+" days":fmtDate(a.date);return(<div key={a.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:6,cursor:"pointer"}} onClick={function(){setPage("Uni");}}>
+              {upcoming.length===0?<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>:upcoming.map(function(a){const days=daysBetween(a.date);const col=subjectColor(data.uni.subjects,a.subject)||T.accent;const dayLabel=days===0?"Today":days===1?"Tomorrow":days<=13?WX_DAYS[new Date(a.date+"T00:00").getDay()]+" · "+days+" days":fmtDate(a.date);return(<div key={a.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:6,cursor:"pointer"}} onClick={function(){setPage("Uni");}}>
                 <div style={{width:7,height:7,borderRadius:"50%",background:col,flexShrink:0}}/>
-                <div style={{flex:1,minWidth:0,fontSize:12,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:col,fontWeight:700}}>{a.subject}</span>{" — "}{a.title}</div>
+                <div style={{flex:1,minWidth:0,fontSize:12,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:col,fontWeight:700}}>{a.subject}</span>{" · "}{a.title}</div>
                 <div style={{fontSize:10,color:days<=3?T.danger:T.text2,fontWeight:600,flexShrink:0,whiteSpace:"nowrap"}}>{dayLabel}</div>
               </div>);})}
             </div>
           {/* Pre-fill weights */}
           <div className="card-rim" style={card({breakInside:"avoid"})}>
-                <div style={sT}>Next session — pre-fill weights</div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:nextRot?4:0}}>
+                  <div>
+                    <div style={sT}>Next session · pre-fill weights</div>
+                    {nextRot&&<div style={{fontSize:11,color:T.text2,marginTop:2}}>{nextRot.name}{nextRot.focus?" · "+nextRot.focus:""}</div>}
+                  </div>
+                  <button style={editPill} onClick={function(){setPage("Gym");}}>Open →</button>
+                </div>
                 {!nextRot&&<div style={{fontSize:11,color:T.text2,marginBottom:8}}>Set up your rotation in the Gym tab.</div>}
                 {gymDraftBanner&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 13px",borderRadius:12,background:"rgba(225,234,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",boxShadow:"0 0 20px rgba(255,209,102,0.3),inset 0 1px 0 rgba(255,255,255,0.05)",marginBottom:10}}>
-                  <span style={{fontSize:11,color:T.warn}}>Unfinished session restored — keep logging or discard</span>
+                  <span style={{fontSize:11,color:T.warn}}>Unfinished session restored · keep logging or discard</span>
                   <button onClick={function(){try{localStorage.removeItem('gym_draft');}catch(_){}setGymDraftBanner(false);setNxtRows(nextRot&&nextRot.exercises&&nextRot.exercises.length>0?nextRot.exercises.map(function(ex,i){return{id:ex.id||i+1,exercise:ex.exercise||"",sets:ex.sets||"",reps:ex.reps||"",weight:ex.weight||""};}):[{id:1,exercise:"",sets:"",reps:"",weight:""},{id:2,exercise:"",sets:"",reps:"",weight:""},{id:3,exercise:"",sets:"",reps:"",weight:""}]);}} style={{...btnGlass,fontSize:10,padding:"3px 10px"}}>Discard</button>
                 </div>}
                 <datalist id="homeExSuggestions">{(function(){var seen={};var names=[];((data.gym||{}).exercises||[]).forEach(function(ex){var n=(ex.name||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});((data.gym||{}).rotation||[]).forEach(function(r){(r.exercises||[]).forEach(function(ex){var n=(ex.exercise||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});});return names;})().map(function(n){return React.createElement("option",{key:n,value:n});})}</datalist>
@@ -4146,7 +4236,7 @@ function App(){
                     <button style={{...btn,fontSize:10,padding:"4px 10px",marginTop:8}} onClick={function(){const e=(data.gym.bodyWeight||[]).find(function(e){return e.date>=thisWeek;});if(e){setBwIn(String(e.weight));setBwDate(e.date);}else{setBwIn("");setBwDate(todayStr());}setBwEditing(true);}}>Edit / add past entry</button>
                   </div>
                   :<div>
-                    <div style={{fontSize:10,color:T.text3,marginBottom:8}}>{bwEditing?"Update your entry or add a past entry below":dLeft<=1?"Last chance — ends tomorrow!":dLeft<=3?"Log before the week ends":"Log once this week"}</div>
+                    <div style={{fontSize:10,color:T.text3,marginBottom:8}}>{bwEditing?"Update your entry or add a past entry below":dLeft<=1?"Last chance, ends tomorrow!":dLeft<=3?"Log before the week ends":"Log once this week"}</div>
                     <div style={{display:"flex",gap:6,marginBottom:6}}><input style={{...inp,flex:1}} type="number" step="0.1" placeholder="e.g. 81.2 kg" value={bwIn} onChange={function(ev){setBwIn(ev.target.value);}}/><button style={btnP} onClick={logBW}>Log</button></div>
                     <input type="date" style={{...inp,padding:"6px 10px",fontSize:11,color:T.text3}} value={bwDate} onChange={function(ev){setBwDate(ev.target.value);}}/>
                     {bwLogged&&bwEditing&&<button style={{...btn,fontSize:10,padding:"4px 10px",marginTop:6,opacity:0.6}} onClick={function(){setBwEditing(false);setBwIn("");setBwDate(todayStr());}}>Cancel</button>}
@@ -4158,9 +4248,9 @@ function App(){
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={sT}>Tasks</div><button style={{...editPill,fontSize:14,padding:"2px 12px"}} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+</button></div>
               {urgTasks.length===0&&normTasks.length===0&&doneTasks.length===0&&<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>}
               {scheduleTaskId&&<div style={{fontSize:9,color:T.accent,marginBottom:6,padding:"3px 8px",borderRadius:6,background:T.accentBg,border:"0.5px solid rgba(91,140,255,0.3)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}><span>Tap a calendar day to schedule (or ESC)</span><button onClick={function(){setScheduleTaskId(null);}} title="Cancel scheduling" style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:14,padding:"0 4px",lineHeight:1,fontWeight:700}}>×</button></div>}
-              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:9,marginBottom:7,alignItems:"flex-start",padding:"10px 12px",borderRadius:12,background:isActive?"rgba(91,140,255,0.12)":"rgba(225,234,255,0.04)",border:"1px solid "+(isActive?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.07)"),boxShadow:"inset 10px 0 9px -8px "+TUC[urg],cursor:"default",transition:"background 0.15s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();if(scheduleTaskId===t.id){setScheduleTaskId(null);}else{trk("task.schedule");setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button></div>);})}</div>}
-              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:9,marginBottom:7,alignItems:"flex-start",padding:"10px 12px",borderRadius:12,background:isActive?"rgba(91,140,255,0.12)":"rgba(225,234,255,0.04)",border:"1px solid "+(isActive?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.07)"),boxShadow:"inset 10px 0 9px -8px "+TUC[urg],cursor:"default",transition:"background 0.15s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();if(scheduleTaskId===t.id){setScheduleTaskId(null);}else{trk("task.schedule");setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button></div>);})}</div>}
-              {doneTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneTasks.map(function(t){return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:5,alignItems:"center",opacity:0.45}}><input type="checkbox" checked={true} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,flexShrink:0}}/><div style={{fontSize:11,color:T.text3,textDecoration:"line-through"}}>{t.name}</div></div>);})}</div>}
+              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:9,marginBottom:7,alignItems:"flex-start",padding:"10px 12px",borderRadius:12,background:isActive?"rgba(91,140,255,0.12)":"rgba(225,234,255,0.04)",border:"1px solid "+(isActive?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.07)"),boxShadow:"inset 10px 0 9px -8px "+TUC[urg],cursor:"default",transition:"background 0.15s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:T.text3,flexShrink:0,opacity:0.45,display:"flex",transition:"opacity 0.15s"}} title="Mark done on a different day" onClick={function(e){e.stopPropagation();openBackdateModal(t.id);}}><UIcon name="clock" size={12}/></button><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();if(scheduleTaskId===t.id){setScheduleTaskId(null);}else{trk("task.schedule");setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button></div>);})}</div>}
+              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:9,marginBottom:7,alignItems:"flex-start",padding:"10px 12px",borderRadius:12,background:isActive?"rgba(91,140,255,0.12)":"rgba(225,234,255,0.04)",border:"1px solid "+(isActive?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.07)"),boxShadow:"inset 10px 0 9px -8px "+TUC[urg],cursor:"default",transition:"background 0.15s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:T.text3,flexShrink:0,opacity:0.45,display:"flex",transition:"opacity 0.15s"}} title="Mark done on a different day" onClick={function(e){e.stopPropagation();openBackdateModal(t.id);}}><UIcon name="clock" size={12}/></button><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();if(scheduleTaskId===t.id){setScheduleTaskId(null);}else{trk("task.schedule");setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button></div>);})}</div>}
+              {doneTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneTasks.map(function(t){return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:5,alignItems:"center",opacity:0.45}}><input type="checkbox" checked={true} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,flexShrink:0}}/><div style={{fontSize:11,color:T.text3,textDecoration:"line-through",flex:1,minWidth:0}}>{t.name}</div>{t.completedAt&&<div style={{fontSize:9,color:T.text3,flexShrink:0}}>{fmtDate(t.completedAt)}{t.completedTime?" · "+fmtTime12(t.completedTime):""}</div>}</div>);})}</div>}
             </div>
           </div>
           {appVersion&&<div style={{textAlign:"center",padding:"10px 0 2px",fontSize:10,color:T.text3,opacity:0.5}}>
@@ -4219,6 +4309,7 @@ function App(){
                           {a.done&&<span style={{fontSize:10,color:"#05071a",fontWeight:700}}>✓</span>}
                         </div>
                         <div style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          <span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:subjectColor(data.uni.subjects,a.subject)||T.text3,marginRight:6}}/>
                           <span style={{fontSize:9,fontWeight:700,color:T.text3,textTransform:"uppercase",letterSpacing:"0.04em",marginRight:6}}>{a.subject}</span>
                           <span style={{fontSize:12,color:a.done?T.text3:T.text,textDecoration:a.done?"line-through":"none"}}>{a.name}</span>
                         </div>
@@ -4231,13 +4322,29 @@ function App(){
                   })()
                 }
               </div>
+              {/* ── Subjects ── */}
+              <div className="card-rim" style={card()}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:(data.uni.subjects||[]).length>0?10:0}}>
+                  <div style={sT}>Subjects</div>
+                  <button style={{...btn,fontSize:10}} onClick={function(){setModal("add_subject");setMForm({color:nextSubjectColor(data.uni.subjects||[])});}}>+ Subject</button>
+                </div>
+                {(data.uni.subjects||[]).length===0
+                  ?<div style={{fontSize:12,color:T.text2}}>No subjects yet. Add one, or import a syllabus below and they'll be created for you.</div>
+                  :<div style={{display:"flex",flexWrap:"wrap",gap:8}}>{data.uni.subjects.map(function(s){return(<div key={s.id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",borderRadius:999,background:T.bg3,border:"0.5px solid "+T.border}}>
+                    <button type="button" onClick={function(){setModal("edit_subject");setMForm({editId:s.id,name:s.name,color:s.color||nextSubjectColor(data.uni.subjects||[])});}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:6,padding:0}}>
+                      <span style={{width:8,height:8,borderRadius:"50%",background:s.color||T.text3,flexShrink:0}}/>
+                      <span style={{fontSize:11,color:T.text}}>{s.name}</span>
+                    </button>
+                    <button style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:12,padding:0,opacity:0.5,lineHeight:1}} onClick={function(){removeSubject(s.id);}}>×</button>
+                  </div>);})}</div>}
+              </div>
               {/* ── Upcoming Classes ── */}
               <div className="card-rim" style={card()}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
                   <div style={sT}>Upcoming Classes</div>
                   <div style={{fontSize:9,color:T.text3}}>next 28 days</div>
                 </div>
-                {upcomingClasses.length===0?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No upcoming classes in the next 28 days.":"Connect Google Calendar to see your schedule."}</div>:(function(){let lastDate2="";return upcomingClasses.map(function(ev){const showDate=ev.date!==lastDate2;lastDate2=ev.date;const col=evColor(ev);const isToday=ev.date===todayStr();return(<div key={ev.id}>{showDate&&<div style={{fontSize:10,fontWeight:600,color:isToday?T.accent:T.text2,marginTop:10,marginBottom:6,paddingTop:8,borderTop:"0.5px solid "+T.border}}>{isToday?"Today — ":""}{new Date(ev.date+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"short"})}</div>}<div style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start"}}><div style={{width:2,borderRadius:2,background:col,alignSelf:"stretch",minHeight:28,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:T.text2,marginBottom:1}}>{evLabel(ev)}</div><div style={{fontSize:12,color:T.text,lineHeight:1.5}}>{ev.title}</div>{ev.description&&<div style={{fontSize:10,color:T.text3,marginTop:2,lineHeight:1.4}}>{ev.description.slice(0,120)}{ev.description.length>120?"…":""}</div>}<div style={{fontSize:10,color:T.text3,marginTop:2}}>{ev.time}</div></div></div></div>);});}())}
+                {upcomingClasses.length===0?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No upcoming classes in the next 28 days.":"Connect Google Calendar to see your schedule."}</div>:(function(){let lastDate2="";return upcomingClasses.map(function(ev){const showDate=ev.date!==lastDate2;lastDate2=ev.date;const col=evColor(ev);const isToday=ev.date===todayStr();return(<div key={ev.id}>{showDate&&<div style={{fontSize:10,fontWeight:600,color:isToday?T.accent:T.text2,marginTop:10,marginBottom:6,paddingTop:8,borderTop:"0.5px solid "+T.border}}>{isToday?"Today · ":""}{new Date(ev.date+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"short"})}</div>}<div style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start"}}><div style={{width:2,borderRadius:2,background:col,alignSelf:"stretch",minHeight:28,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:T.text2,marginBottom:1}}>{evLabel(ev)}</div><div style={{fontSize:12,color:T.text,lineHeight:1.5}}>{ev.title}</div>{ev.description&&<div style={{fontSize:10,color:T.text3,marginTop:2,lineHeight:1.4}}>{ev.description.slice(0,120)}{ev.description.length>120?"…":""}</div>}<div style={{fontSize:10,color:T.text3,marginTop:2}}>{ev.time}</div></div></div></div>);});}())}
               </div>
             </React.Fragment>);
           })()}
@@ -4270,7 +4377,8 @@ function App(){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={sT}>Tasks</div><div style={{display:"flex",gap:6}}>{doneTasks.length>0&&<button style={{...btn,color:T.success,borderColor:T.success+"50"}} onClick={archiveDone}>Archive done</button>}<button style={btn} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+ Task</button></div></div>
             {editTaskId&&<div style={{marginBottom:14,padding:"10px 12px",background:T.bg3,borderRadius:8,border:"0.5px solid "+T.accent+"40"}}><div style={{fontSize:11,color:T.accent,marginBottom:8,fontWeight:500}}>Editing task</div><div style={{display:"flex",flexDirection:"column",gap:6}}><input style={inp} value={editTaskForm.name||""} onChange={function(ev){setEditTaskForm(function(f){return{...f,name:ev.target.value};});}} placeholder="Task name"/><div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:6}}><select style={inp} value={editTaskForm.cat||"Errands"} onChange={function(ev){setEditTaskForm(function(f){return{...f,cat:ev.target.value};});}}>{TASK_CATS.map(function(c){return<option key={c}>{c}</option>;})}</select><select style={inp} value={editTaskForm.priority||"normal"} onChange={function(ev){setEditTaskForm(function(f){return{...f,priority:ev.target.value};});}}><option value="normal">Normal</option><option value="urgent">Urgent</option></select><input type="date" style={inp} value={editTaskForm.due||""} onChange={function(ev){setEditTaskForm(function(f){return{...f,due:ev.target.value};});}}/></div><div style={{display:"flex",gap:6,justifyContent:"flex-end"}}><button style={btn} onClick={function(){setEditTaskId(null);}}>Cancel</button><button style={btnP} onClick={saveEditTask}>Save</button></div></div></div>}
             {data.personal.tasks.length===0&&<div style={{fontSize:12,color:T.text2}}>No tasks yet.</div>}
-            {["urgent","normal"].map(function(pri){const tasks=data.personal.tasks.filter(function(t){return t.priority===pri;}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});if(tasks.length===0)return null;return(<div key={pri} style={{marginBottom:14}}><div style={{fontSize:9,fontWeight:700,color:pri==="urgent"?T.danger:T.text3,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>{pri}</div>{tasks.map(function(t){const urg=taskUrg(t);const col=TUC[urg];return(<div key={t.id} style={{display:"flex",alignItems:"flex-start",gap:9,marginBottom:8,padding:"11px 13px",borderRadius:12,background:"rgba(225,234,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",boxShadow:"inset 10px 0 9px -8px "+col}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:10,color:col,marginTop:1}}>{t.cat} · {taskLabel(t)}</div></div><button onClick={function(){setEditTaskId(t.id);setEditTaskForm({name:t.name,cat:t.cat,priority:t.priority,due:t.due});}} style={{...btn,fontSize:10,padding:"2px 7px"}}>Edit</button></div>);})}</div>);})}
+            {["urgent","normal"].map(function(pri){const tasks=data.personal.tasks.filter(function(t){return t.priority===pri&&!t.done;}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});if(tasks.length===0)return null;return(<div key={pri} style={{marginBottom:14}}><div style={{fontSize:9,fontWeight:700,color:pri==="urgent"?T.danger:T.text3,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>{pri}</div>{tasks.map(function(t){const urg=taskUrg(t);const col=TUC[urg];return(<div key={t.id} style={{display:"flex",alignItems:"flex-start",gap:9,marginBottom:8,padding:"11px 13px",borderRadius:12,background:"rgba(225,234,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",boxShadow:"inset 10px 0 9px -8px "+col}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:10,color:col,marginTop:1}}>{t.cat} · {taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:T.text3,flexShrink:0,opacity:0.5,display:"flex"}} title="Mark done on a different day" onClick={function(){openBackdateModal(t.id);}}><UIcon name="clock" size={13}/></button><button onClick={function(){setEditTaskId(t.id);setEditTaskForm({name:t.name,cat:t.cat,priority:t.priority,due:t.due});}} style={{...btn,fontSize:10,padding:"2px 7px"}}>Edit</button></div>);})}</div>);})}
+            {(function(){const doneP=data.personal.tasks.filter(function(t){return t.done;});if(doneP.length===0)return null;return(<div style={{marginBottom:14}}><div style={{fontSize:9,fontWeight:700,color:T.text3,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneP.map(function(t){return(<div key={t.id} style={{display:"flex",alignItems:"center",gap:9,marginBottom:6,padding:"9px 13px",borderRadius:12,background:"rgba(225,234,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",opacity:0.55}}><input type="checkbox" checked={true} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,flexShrink:0}}/><div style={{flex:1,minWidth:0,fontSize:12,color:T.text3,textDecoration:"line-through"}}>{t.name}</div>{t.completedAt&&<div style={{fontSize:10,color:T.text3,flexShrink:0}}>{fmtDate(t.completedAt)}{t.completedTime?" · "+fmtTime12(t.completedTime):""}</div>}</div>);})}</div>);})()}
           </div>
           {(data.personal.archived||[]).length>0&&<div className="card-rim" style={card()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:12,fontWeight:500,color:T.text3}}>Archived ({(data.personal.archived||[]).length})</div><button style={btn} onClick={function(){setShowArch(function(a){return !a;});}}>{showArch?"Hide":"Show"}</button></div>{showArch&&(data.personal.archived||[]).slice().reverse().map(function(t){return(<div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"6px 0",borderBottom:"0.5px solid "+T.border}}><div><span style={{color:T.text3,textDecoration:"line-through"}}>{t.name}</span><span style={{fontSize:10,color:T.text3,marginLeft:8}}>{fmtDate(t.archivedAt)}</span></div><button onClick={function(){restoreTask(t.id);}} style={{...btn,fontSize:10,padding:"2px 8px",color:T.accent,borderColor:T.accent+"50"}}>Restore</button></div>);})}</div>}
           <div className="card-rim" style={card()}><div style={sT}>Knowledge base</div><div style={{fontSize:11,color:T.text2,marginBottom:10}}>Notes here feed your daily check-in context.</div>{(data.docs||[]).map(function(d){return(<div key={d.id} style={{marginBottom:8,padding:"8px 10px",background:T.bg3,borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><div style={{fontSize:12,fontWeight:500,color:T.text}}>{d.title}</div><div style={{fontSize:10,color:T.text3,marginTop:2}}>{d.content.slice(0,80)}...</div><div style={{marginTop:4,display:"flex",gap:4}}>{(d.tags||[]).map(function(tag){return<span key={tag} style={{fontSize:9,padding:"1px 6px",borderRadius:99,background:T.accentBg,color:T.accent}}>{tag}</span>;})}</div></div><button onClick={function(){trk("kb.doc_delete");setData(function(p){return{...p,docs:(p.docs||[]).filter(function(x){return x.id!==d.id;})};});}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,marginLeft:8}}>×</button></div>);})}<div style={{marginTop:12,display:"flex",flexDirection:"column",gap:6}}><input style={inp} placeholder="Title" value={docIn.title} onChange={function(ev){setDocIn(function(p){return{...p,title:ev.target.value};});}}/><input style={inp} placeholder="Tags (comma separated)" value={docIn.tags} onChange={function(ev){setDocIn(function(p){return{...p,tags:ev.target.value};});}}/><textarea style={{...inp,resize:"vertical"}} rows={3} placeholder="Content..." value={docIn.content} onChange={function(ev){setDocIn(function(p){return{...p,content:ev.target.value};});}}/><button style={btnP} onClick={function(){if(!docIn.title||!docIn.content)return;trk("kb.doc_add");setData(function(p){return{...p,docs:(p.docs||[]).concat([{id:"doc"+Date.now(),title:docIn.title,tags:docIn.tags.split(",").map(function(t){return t.trim();}),content:docIn.content}])};});setDocIn({title:"",tags:"",content:""});}}>Add document</button></div></div>
@@ -4352,7 +4460,7 @@ function App(){
               <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:T.accent,background:T.accentBg,padding:"3px 10px",borderRadius:99,display:"inline-block",marginBottom:10}}>{REFL_LABELS[reflStep-1]} · {reflStep} of {REFL_QS.length}</div>
               <div style={{fontSize:14,fontWeight:500,marginBottom:16,lineHeight:1.6,color:T.text}}>{REFL_QS[reflStep-1]}</div>
               {reflAns.length>0&&<div style={{marginBottom:12}}>{reflAns.map(function(qa,i){return<div key={i} style={{marginBottom:4,fontSize:11,color:T.text3,padding:"5px 8px",background:T.bg3,borderRadius:6}}><span style={{color:T.text2,fontWeight:500}}>{REFL_LABELS[i]}: </span>{qa.a.slice(0,60)}{qa.a.length>60?"...":""}</div>;})}</div>}
-              <textarea value={reflIn} onChange={function(ev){setReflIn(ev.target.value);}} rows={5} style={{...inp,resize:"vertical",marginBottom:12,fontSize:13,lineHeight:1.6}} placeholder="Be honest — this is only visible to you..."/>
+              <textarea value={reflIn} onChange={function(ev){setReflIn(ev.target.value);}} rows={5} style={{...inp,resize:"vertical",marginBottom:12,fontSize:13,lineHeight:1.6}} placeholder="Be honest, this is only visible to you..."/>
               <div style={{display:"flex",gap:8}}>
                 {reflStep>1&&<button style={btn} onClick={function(){const prev=reflAns[reflStep-2]?reflAns[reflStep-2].a:"";setReflAns(reflAns.slice(0,reflStep-2));setReflIn(prev);setReflStep(reflStep-1);}}>← Back</button>}
                 <button style={btnP} onClick={submitRefl}>{reflStep<REFL_QS.length?"Next →":"Finish & Analyse"}</button>
@@ -4413,7 +4521,7 @@ function App(){
               );})}
             </div>
             {capturesLoading&&<div style={{fontSize:12,color:T.text3,padding:"20px 0",textAlign:"center"}}>Loading...</div>}
-            {!capturesLoading&&capturesData.length===0&&<div style={{fontSize:12,color:T.text3,padding:"20px 0",textAlign:"center"}}>No captures yet — hit Capture to add your first one.</div>}
+            {!capturesLoading&&capturesData.length===0&&<div style={{fontSize:12,color:T.text3,padding:"20px 0",textAlign:"center"}}>No captures yet. Hit Capture to add your first one.</div>}
             {!capturesLoading&&(function(){
               var filtered=capturesData.filter(function(c){
                 if(capturesFilter!=="all"&&c.type!==capturesFilter)return false;
@@ -4456,7 +4564,7 @@ function App(){
       {modal&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.82)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:200,padding:mob?"0":"16px"}} onClick={function(){setModal(null);}}>
         <div style={{background:"rgba(14,16,40,0.97)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 32px":"22px",width:mob?"100%":modal==="edit_rotation"?"480px":"340px",maxWidth:"100%",border:"0.5px solid rgba(91,140,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.1)"}} onClick={function(ev){ev.stopPropagation();}}>
           {mob&&<div style={{width:36,height:4,borderRadius:2,background:"rgba(255,255,255,0.2)",margin:"0 auto 20px"}}/>}
-          <div style={{fontSize:15,fontWeight:600,marginBottom:16,color:T.text}}>{modal==="add_subject"&&"Add subject"}{modal==="add_exercise"&&"Add exercise"}{modal==="log_weight"&&"Log weight — "+(mForm.exName||"")}{modal==="add_task"&&"Add task"}{modal==="edit_rotation"&&"Edit rotation template"}</div>
+          <div style={{fontSize:15,fontWeight:600,marginBottom:16,color:T.text}}>{modal==="add_subject"&&"Add subject"}{modal==="add_exercise"&&"Add exercise"}{modal==="log_weight"&&"Log weight · "+(mForm.exName||"")}{modal==="add_task"&&"Add task"}{modal==="edit_rotation"&&"Edit rotation template"}{modal==="complete_task"&&"Mark task done"}{modal==="edit_subject"&&"Edit subject"}</div>
           {modal==="add_exercise"&&(function(){
             var names=[];var seen={};
             (data.gym.exercises||[]).forEach(function(ex){var n=(ex.name||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});
@@ -4470,9 +4578,25 @@ function App(){
               </div>
             </div>);
           })()}
-          {(modal==="add_subject"||modal==="add_exercise"||modal==="add_task")&&<div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>{modal==="add_exercise"?"Or type a new one":"Name"}</div><input style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.name||""} onChange={function(ev){setMForm(function(f){return{...f,name:ev.target.value};});}} placeholder="Enter name..."/></div>}
+          {(modal==="add_subject"||modal==="add_exercise"||modal==="add_task"||modal==="edit_subject")&&<div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>{modal==="add_exercise"?"Or type a new one":"Name"}</div><input style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.name||""} onChange={function(ev){setMForm(function(f){return{...f,name:ev.target.value};});}} placeholder="Enter name..."/></div>}
+          {(modal==="add_subject"||modal==="edit_subject")&&<div style={{marginBottom:12}}>
+            <div style={{fontSize:11,color:T.text2,marginBottom:6}}>Color</div>
+            <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>{SUBJECT_PALETTE.map(function(c){const active=mForm.color===c;return(<button key={c} type="button" onClick={function(){setMForm(function(f){return{...f,color:c};});}} style={{width:24,height:24,borderRadius:"50%",background:c,border:active?"2px solid #fff":"2px solid transparent",boxShadow:active?"0 0 0 2px "+c+", 0 0 8px "+c:"none",cursor:"pointer",padding:0}}/>);})}</div>
+          </div>}
+          {modal==="edit_subject"&&<button style={{background:"none",border:"none",color:T.danger,cursor:"pointer",fontSize:11,padding:0,marginBottom:4}} onClick={function(){removeSubject(mForm.editId);setModal(null);setMForm({});}}>Delete subject</button>}
           {modal==="log_weight"&&<div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Weight (kg)</div><input type="number" step="0.5" style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.weight||""} onChange={function(ev){setMForm(function(f){return{...f,weight:ev.target.value};});}} placeholder="e.g. 85"/></div>}
           {modal==="add_task"&&<div><div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Category</div><select style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.cat||"Errands"} onChange={function(ev){setMForm(function(f){return{...f,cat:ev.target.value};});}}>{TASK_CATS.map(function(c){return<option key={c}>{c}</option>;})}</select></div><div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Priority</div><select style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.priority||"normal"} onChange={function(ev){setMForm(function(f){return{...f,priority:ev.target.value};});}}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></div><div style={{marginBottom:12}}><div style={{fontSize:11,color:T.text2,marginBottom:6}}>Due date</div><div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8}}>{[["Today",0],["3 days",3],["7 days",7],["14 days",14]].map(function(item){const label=item[0];const n=item[1];const val=futureDateStr(n);const active=mForm.due===val;return(<button key={label} type="button" onClick={function(){setMForm(function(f){return{...f,due:val};});}} style={{padding:"5px 10px",borderRadius:99,border:active?"1px solid "+T.accent:"0.5px solid "+T.border,background:active?T.accentBg:"transparent",color:active?T.accent:T.text2,fontSize:11,cursor:"pointer",fontWeight:active?600:400}}>{label}</button>);})}</div><input type="date" style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.due||""} onChange={function(ev){setMForm(function(f){return{...f,due:ev.target.value};});}}/></div></div>}
+          {modal==="complete_task"&&<div>
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,color:T.text2,marginBottom:6}}>Completed</div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8}}>{[["Today",0],["Yesterday",1],["2 days ago",2],["3 days ago",3]].map(function(item){const label=item[0];const n=item[1];const val=pastDateStr(n);const active=mForm.date===val;return(<button key={label} type="button" onClick={function(){setMForm(function(f){return{...f,date:val};});}} style={{padding:"5px 10px",borderRadius:99,border:active?"1px solid "+T.accent:"0.5px solid "+T.border,background:active?T.accentBg:"transparent",color:active?T.accent:T.text2,fontSize:11,cursor:"pointer",fontWeight:active?600:400}}>{label}</button>);})}</div>
+              <input type="date" style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.date||todayStr()} onChange={function(ev){setMForm(function(f){return{...f,date:ev.target.value};});}}/>
+            </div>
+            <div>
+              <div style={{fontSize:11,color:T.text2,marginBottom:6}}>Time <span style={{color:T.text3,fontWeight:400}}>(optional)</span></div>
+              <input type="time" style={{...inp,padding:"10px 12px",fontSize:14}} value={mForm.time||""} onChange={function(ev){setMForm(function(f){return{...f,time:ev.target.value};});}}/>
+            </div>
+          </div>}
           {modal==="edit_rotation"&&<div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
               <div><div style={{fontSize:11,color:T.text2,marginBottom:4}}>Session name</div><input style={{...inp,padding:"8px 10px",fontSize:13}} value={mForm.rName||""} onChange={function(ev){setMForm(function(f){return{...f,rName:ev.target.value};});}}/></div>
@@ -4582,7 +4706,8 @@ function App(){
             <div>
               <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Subject</div>
               <select style={{...inp,padding:"9px 11px"}} value={addAssessForm.subject} onChange={function(ev){setAddAssessForm(function(f){return{...f,subject:ev.target.value};});}}>
-                {Object.keys(SUBJECTS).map(function(s){return<option key={s} value={s}>{s}</option>;})}
+                {(data.uni.subjects||[]).length===0&&<option value="">Add a subject first ↓</option>}
+                {(data.uni.subjects||[]).map(function(s){return<option key={s.id} value={s.name}>{s.name}</option>;})}
                 <option value="Other">Other</option>
               </select>
             </div>
@@ -4619,7 +4744,7 @@ function App(){
           </div>
           <div style={{fontSize:11,color:T.text3,marginBottom:16,lineHeight:1.5}}>Paste your unit outline or assessment schedule below. Gemini AI will extract all assessment due dates and add them to your hub.</div>
 
-          {!geminiKey.trim()&&<div style={{marginBottom:14,padding:"9px 12px",borderRadius:8,background:"rgba(255,209,102,0.08)",border:"0.5px solid rgba(255,209,102,0.25)",fontSize:11,color:T.warn,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}><UIcon name="warn" size={12}/>No Gemini API key set — add it in <button onClick={function(){setShowSyllabusImport(false);setShowMonitor(true);}} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:11,padding:0,fontWeight:600}}>Logs → Settings</button></div>}
+          {!geminiKey.trim()&&<div style={{marginBottom:14,padding:"9px 12px",borderRadius:8,background:"rgba(255,209,102,0.08)",border:"0.5px solid rgba(255,209,102,0.25)",fontSize:11,color:T.warn,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}><UIcon name="warn" size={12}/>No Gemini API key set. Add it in <button onClick={function(){setShowSyllabusImport(false);setShowMonitor(true);}} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:11,padding:0,fontWeight:600}}>Logs → Settings</button></div>}
 
           {/* Semester start */}
           <div style={{marginBottom:12}}>
@@ -4630,7 +4755,7 @@ function App(){
           {/* Syllabus text */}
           <div style={{marginBottom:12}}>
             <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Syllabus / unit outline text</div>
-            <textarea style={{...inp,resize:"vertical",fontFamily:"monospace",fontSize:11,lineHeight:1.5}} rows={8} placeholder={"Paste your subject outline here...\nE.g.:\nWeek 5 — Assessment 1 due\nWeek 7 — Supervised exam (AT2)\n..."} value={syllabusText} onChange={function(ev){setSyllabusText(ev.target.value);}}/>
+            <textarea style={{...inp,resize:"vertical",fontFamily:"monospace",fontSize:11,lineHeight:1.5}} rows={8} placeholder={"Paste your subject outline here...\nE.g.:\nWeek 5: Assessment 1 due\nWeek 7: Supervised exam (AT2)\n..."} value={syllabusText} onChange={function(ev){setSyllabusText(ev.target.value);}}/>
           </div>
 
           {/* Parse button */}
@@ -4640,7 +4765,7 @@ function App(){
 
           {/* Preview */}
           {geminiPreview&&geminiPreview.length>0&&<div style={{marginBottom:16}}>
-            <div style={{fontSize:11,fontWeight:700,color:T.success,marginBottom:8}}>✓ {geminiPreview.length} assessments found — review before saving:</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.success,marginBottom:8}}>✓ {geminiPreview.length} assessments found. Review before saving:</div>
             <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:240,overflowY:"auto",paddingRight:2}}>
               {geminiPreview.map(function(a,i){
                 const badge=typeBadge(a.type||"SUBMISSION");
@@ -4895,7 +5020,7 @@ function App(){
             {brPendingIntent&&<div style={{alignSelf:"flex-start",maxWidth:"90%"}}>
               <div style={{fontSize:11,fontWeight:700,color:"#c77dff",marginBottom:3}}>🔵🟣 Boardroom</div>
               <div style={{background:"rgba(255,255,255,0.05)",border:"0.5px solid rgba(255,255,255,0.1)",color:"#e8e9f3",padding:"10px 13px",borderRadius:14,fontSize:13}}>
-                Quick check — want us to talk this through, or walk you through the actual steps?
+                Quick check: want us to talk this through, or walk you through the actual steps?
                 <div style={{display:"flex",gap:8,marginTop:10}}>
                   <button onClick={function(){brConfirmIntent("direction");}} style={{flex:1,background:"rgba(91,140,255,0.15)",border:"0.5px solid rgba(91,140,255,0.4)",borderRadius:8,padding:"7px 10px",color:"#8fb4ff",fontSize:12,fontWeight:600,cursor:"pointer"}}>Talk it through</button>
                   <button onClick={function(){brConfirmIntent("howto");}} style={{flex:1,background:"rgba(105,240,174,0.12)",border:"0.5px solid rgba(105,240,174,0.4)",borderRadius:8,padding:"7px 10px",color:"#69f0ae",fontSize:12,fontWeight:600,cursor:"pointer"}}>Show me the steps</button>
@@ -4930,7 +5055,7 @@ function App(){
           </div>
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Formula <span style={{color:T.text3,fontWeight:400}}>(optional)</span></div>
-            <input value={editCaptureData.formula||""} onChange={function(ev){setEditCaptureData(function(p){return{...p,formula:ev.target.value};});}} style={{...inp,padding:"9px 12px",fontSize:12,fontFamily:"monospace",width:"100%"}} placeholder="e.g. Revenue – Expenses = Profit"/>
+            <input value={editCaptureData.formula||""} onChange={function(ev){setEditCaptureData(function(p){return{...p,formula:ev.target.value};});}} style={{...inp,padding:"9px 12px",fontSize:12,fontFamily:"monospace",width:"100%"}} placeholder="e.g. Revenue - Expenses = Profit"/>
           </div>
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,color:T.text2,marginBottom:5}}>Example <span style={{color:T.text3,fontWeight:400}}>(optional)</span></div>
@@ -4955,12 +5080,12 @@ function App(){
         </div>
       </div>}
 
-      {mob&&<nav style={{display:"flex",position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:"rgba(5,7,26,0.97)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"0.5px solid rgba(91,140,255,0.18)",justifyContent:"space-around",alignItems:"stretch",boxShadow:"0 -4px 24px rgba(0,0,0,0.5)"}}>
+      {mob&&<nav style={{display:"flex",position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:"rgba(5,7,26,0.97)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"0.5px solid rgba(91,140,255,0.18)",alignItems:"stretch",boxShadow:"0 -4px 24px rgba(0,0,0,0.5)",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
         {NAV_PAGES.map(function(name){const active=page===name;return(
-          <button key={name} onClick={function(){setPage(name);}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,padding:"8px 4px",color:active?T.accent:T.text3,flex:1,minHeight:54,position:"relative"}}>
+          <button key={name} onClick={function(){setPage(name);}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,padding:"8px 10px",color:active?T.accent:T.text3,flex:"0 0 auto",minWidth:60,minHeight:54,position:"relative"}}>
             {active&&<div style={{position:"absolute",top:0,left:"50%",transform:"translateX(-50%)",width:24,height:2,borderRadius:1,background:T.accent}}/>}
             <span style={{display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}><NavGlyph name={name} size={18}/></span>
-            <span style={{fontSize:9,fontWeight:active?700:400,letterSpacing:0.2}}>{name}</span>
+            <span style={{fontSize:9,fontWeight:active?700:400,letterSpacing:0.2,whiteSpace:"nowrap"}}>{name}</span>
           </button>
         );})}
       </nav>}

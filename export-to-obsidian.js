@@ -137,12 +137,22 @@ async function enhanceCapture(capture, allCaptures, vaultNotes, geminiKey) {
         })
       }
     );
+    if (!res.ok) {
+      var errBody = await res.text().catch(function() { return ''; });
+      var isAuthError = res.status >= 400 && res.status < 500;
+      console.warn(
+        '[export-to-obsidian] Gemini enhancement failed: HTTP ' + res.status +
+        (isAuthError ? ' — looks like an invalid/expired GEMINI_API_KEY' : ' — transient/network issue, safe to retry') +
+        ' for "' + (capture.title || capture.rawInput) + '": ' + errBody.slice(0, 200)
+      );
+      return {};
+    }
     var data = await res.json();
     var text = (data.candidates && data.candidates[0] && data.candidates[0].content &&
       data.candidates[0].content.parts && data.candidates[0].content.parts[0].text) || '{}';
     return JSON.parse(text);
   } catch (e) {
-    console.warn('  Gemini enhancement skipped for "' + (capture.title || capture.rawInput) + '": ' + e.message);
+    console.warn('[export-to-obsidian] Gemini enhancement failed: network/parse error for "' + (capture.title || capture.rawInput) + '": ' + e.message);
     return {};
   }
 }

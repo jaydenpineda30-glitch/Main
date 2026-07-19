@@ -109,7 +109,17 @@ var T = {
   orange: "#ff9a3c",
   orangeBg: "rgba(255,154,60,0.15)"
 };
-// DAYS, TASK_CATS, SUBJECTS, SC, SYLLABUS_ASSESSMENTS, REFL_QS, REFL_LABELS, WX_MAP, WX_DAYS → data.js
+// DAYS, TASK_CATS, SUBJECT_PALETTE, SYLLABUS_ASSESSMENTS, REFL_QS, REFL_LABELS, WX_MAP, WX_DAYS → data.js
+// Uni subjects live in data.uni.subjects (array of {id,name,color}), not in data.js — fully dynamic.
+function subjectColor(subjects, name) {
+  var s = (subjects || []).find(function (x) {
+    return x.name === name;
+  });
+  return s ? s.color : null;
+}
+function nextSubjectColor(subjects) {
+  return SUBJECT_PALETTE[(subjects || []).length % SUBJECT_PALETTE.length];
+}
 
 // ── Navigation glyphs — consistent stroke-based line icons (replaces emoji) ──
 var NAV_PAGES = ["Dashboard", "Uni", "Work", "Gym", "Personal", "Finance", "Invest", "Journal", "Boardroom", "Projects", "Shopping"];
@@ -567,13 +577,7 @@ var cardShadow = "0 18px 46px rgba(0,0,0,0.52),0 6px 16px rgba(0,0,0,0.34),inset
 var cardShadowSoft = "0 10px 26px rgba(0,0,0,0.44),inset 0 1px 0 rgba(255,255,255,0.18)";
 var INIT = {
   uni: {
-    subjects: Object.keys(SUBJECTS).map(function (k, i) {
-      return {
-        id: i + 1,
-        name: k,
-        progress: 0
-      };
-    }),
+    subjects: [],
     completedEvents: [],
     assessments: SYLLABUS_ASSESSMENTS.map(function (a) {
       return _objectSpread({}, a);
@@ -593,7 +597,7 @@ var INIT = {
       focus: "Back, biceps"
     }, {
       id: 3,
-      name: "Legs — Hamstring Focus",
+      name: "Legs · Hamstring Focus",
       focus: "Hamstrings, glutes, calves"
     }, {
       id: 4,
@@ -601,7 +605,7 @@ var INIT = {
       focus: "Full upper body"
     }, {
       id: 5,
-      name: "Legs — Quad Focus",
+      name: "Legs · Quad Focus",
       focus: "Quads, glutes, calves"
     }],
     rotIdx: 0,
@@ -768,6 +772,19 @@ function futureDateStr(n) {
   d.setDate(d.getDate() + n);
   return localDateStr(d);
 }
+function pastDateStr(n) {
+  var d = new Date();
+  d.setDate(d.getDate() - n);
+  return localDateStr(d);
+}
+function fmtTime12(t) {
+  if (!t) return "";
+  var parts = t.split(":");
+  var h = parseInt(parts[0], 10);
+  var ap = h >= 12 ? "pm" : "am";
+  var h12 = h % 12 || 12;
+  return h12 + ":" + parts[1] + ap;
+}
 function weekMonday() {
   var n = new Date();
   var d = n.getDay();
@@ -886,7 +903,7 @@ function analyzeReflectionFallback(answers, history) {
   var aon = countHits(allText, AON);
   var sentScore = Math.max(-1, Math.min(1, (pos - neg) / 6));
   var emotionalState;
-  if (sentScore >= 0.5) emotionalState = "Positive — feeling capable and progressing";else if (sentScore >= 0.1) emotionalState = "Cautiously optimistic — mixed but moving forward";else if (sentScore >= -0.1) emotionalState = "Neutral — steady but not thriving";else if (sentScore >= -0.4) emotionalState = "Stressed — carrying notable tension this week";else emotionalState = "Depleted — significant strain detected";
+  if (sentScore >= 0.5) emotionalState = "Positive, feeling capable and progressing";else if (sentScore >= 0.1) emotionalState = "Cautiously optimistic, mixed but moving forward";else if (sentScore >= -0.1) emotionalState = "Neutral, steady but not thriving";else if (sentScore >= -0.4) emotionalState = "Stressed, carrying notable tension this week";else emotionalState = "Depleted, significant strain detected";
   var patterns = [];
   if (burn >= 2) patterns.push("burnout_risk");
   if (perf >= 2) patterns.push("perfectionism");
@@ -902,19 +919,19 @@ function analyzeReflectionFallback(answers, history) {
   var bestIdx = qScores.indexOf(Math.max.apply(null, qScores));
   var areas = ["your academic load", "your work situation", "your physical health habits", "your work-life balance", "your personal growth direction"];
   var dominantPattern;
-  if (patterns.indexOf("burnout_risk") !== -1) dominantPattern = "Burnout risk — energy reserves running low";else if (patterns.indexOf("perfectionism") !== -1) dominantPattern = "Perfectionist pressure — very high internal standards";else if (patterns.indexOf("high_stress") !== -1) dominantPattern = "High stress load — multiple areas feeling stretched";else if (patterns.indexOf("all_or_nothing") !== -1) dominantPattern = "All-or-nothing thinking — seeing things in extremes";else if (patterns.indexOf("growth_mindset") !== -1) dominantPattern = "Growth orientation — approaching challenges with curiosity";else if (patterns.indexOf("resilient_week") !== -1) dominantPattern = "Resilient week — navigating challenges effectively";else dominantPattern = "Steady week — maintaining baseline without major spikes";
+  if (patterns.indexOf("burnout_risk") !== -1) dominantPattern = "Burnout risk, energy reserves running low";else if (patterns.indexOf("perfectionism") !== -1) dominantPattern = "Perfectionist pressure, very high internal standards";else if (patterns.indexOf("high_stress") !== -1) dominantPattern = "High stress load, multiple areas feeling stretched";else if (patterns.indexOf("all_or_nothing") !== -1) dominantPattern = "All-or-nothing thinking, seeing things in extremes";else if (patterns.indexOf("growth_mindset") !== -1) dominantPattern = "Growth orientation, approaching challenges with curiosity";else if (patterns.indexOf("resilient_week") !== -1) dominantPattern = "Resilient week, navigating challenges effectively";else dominantPattern = "Steady week, maintaining baseline without major spikes";
   var rootIssue;
   if (worstIdx >= 0 && qScores[worstIdx] < 0) {
     rootIssue = "Strongest friction in " + areas[worstIdx];
-    if (patterns.indexOf("perfectionism") !== -1) rootIssue += " — possibly amplified by perfectionist expectations";else if (patterns.indexOf("all_or_nothing") !== -1) rootIssue += " — all-or-nothing framing may be intensifying this";
+    if (patterns.indexOf("perfectionism") !== -1) rootIssue += ", possibly amplified by perfectionist expectations";else if (patterns.indexOf("all_or_nothing") !== -1) rootIssue += ", all-or-nothing framing may be intensifying this";
   } else {
     rootIssue = bestIdx >= 0 ? "Strongest momentum in " + areas[bestIdx] : "No single dominant friction point this week";
   }
   var insight;
-  if (patterns.indexOf("burnout_risk") !== -1) insight = "Your language this week signals depletion across multiple areas. Burnout doesn't arrive suddenly — it builds through sustained output without adequate recovery. The fact that you're recognising it is the first and most important step. Your nervous system is asking for genuine rest, not just less work.";else if (patterns.indexOf("perfectionism") !== -1) insight = "There's a pattern of measuring your efforts against an ideal rather than a realistic baseline. Perfectionism often masquerades as high standards but functions as a stress amplifier — raising the bar each time you clear it. Progress over perfection is a skill worth practising deliberately this week.";else if (patterns.indexOf("all_or_nothing") !== -1) insight = "Your language this week leans toward absolutes (always/never/everything/nothing). This thinking pattern amplifies difficulty — one missed session becomes 'failing at fitness,' one hard day becomes 'a terrible week.' The reality almost always sits in the grey zone.";else if (patterns.indexOf("high_stress") !== -1) insight = "Multiple domains felt strained simultaneously this week. When stress shows up across academic, physical, and relational areas at once, it usually signals that recovery mechanisms need attention — sleep quality, micro-breaks, and brief transitions between tasks often matter more than you'd expect.";else if (patterns.indexOf("growth_mindset") !== -1) insight = "You approached challenges this week with curiosity rather than rigidity — looking at what to improve rather than cataloguing what went wrong. That orientation is a genuine psychological strength. It's the difference between feedback as information and feedback as verdict.";else if (sentScore >= 0.3) insight = "This was a strong week. Take a moment to notice what conditions made that possible — specific habits, environments, or mindsets. Understanding what works is as valuable as diagnosing what doesn't, and most people skip this step.";else insight = "A stable week — not dramatic in either direction. These plateau periods are where consistent habits quietly build the foundations for future momentum. The absence of visible progress doesn't mean nothing is moving.";
+  if (patterns.indexOf("burnout_risk") !== -1) insight = "Your language this week signals depletion across multiple areas. Burnout doesn't arrive suddenly, it builds through sustained output without adequate recovery. The fact that you're recognising it is the first and most important step. Your nervous system is asking for genuine rest, not just less work.";else if (patterns.indexOf("perfectionism") !== -1) insight = "There's a pattern of measuring your efforts against an ideal rather than a realistic baseline. Perfectionism often masquerades as high standards but functions as a stress amplifier, raising the bar each time you clear it. Progress over perfection is a skill worth practising deliberately this week.";else if (patterns.indexOf("all_or_nothing") !== -1) insight = "Your language this week leans toward absolutes (always/never/everything/nothing). This thinking pattern amplifies difficulty: one missed session becomes 'failing at fitness,' one hard day becomes 'a terrible week.' The reality almost always sits in the grey zone.";else if (patterns.indexOf("high_stress") !== -1) insight = "Multiple domains felt strained simultaneously this week. When stress shows up across academic, physical, and relational areas at once, it usually signals that recovery mechanisms need attention: sleep quality, micro-breaks, and brief transitions between tasks often matter more than you'd expect.";else if (patterns.indexOf("growth_mindset") !== -1) insight = "You approached challenges this week with curiosity rather than rigidity, looking at what to improve rather than cataloguing what went wrong. That orientation is a genuine psychological strength. It's the difference between feedback as information and feedback as verdict.";else if (sentScore >= 0.3) insight = "This was a strong week. Take a moment to notice what conditions made that possible — specific habits, environments, or mindsets. Understanding what works is as valuable as diagnosing what doesn't, and most people skip this step.";else insight = "A stable week — not dramatic in either direction. These plateau periods are where consistent habits quietly build the foundations for future momentum. The absence of visible progress doesn't mean nothing is moving.";
   var recommendation;
-  if (patterns.indexOf("burnout_risk") !== -1) recommendation = "Prioritise one genuinely restorative activity this week — not productive rest, actual rest. Protect one block of time with no output requirement. Even 90 minutes of complete disconnection can meaningfully reset your baseline.";else if (patterns.indexOf("perfectionism") !== -1) recommendation = "Before your next major task, decide in advance what 'good enough' looks like and aim for that deliberately. Notice the difference in energy expenditure versus your usual standard.";else if (patterns.indexOf("all_or_nothing") !== -1) recommendation = "When you notice absolute language in your own thinking, pause and find one counter-example. One exception breaks the rule and restructures the framing entirely.";else if (patterns.indexOf("high_stress") !== -1) recommendation = "Identify the single highest-leverage action that would reduce your stress load most — not the most urgent task, but the one whose completion creates the most breathing room — and do that one first this week.";else if (patterns.indexOf("growth_mindset") !== -1) recommendation = "Channel this week's momentum into one specific commitment: pick the area with the most untapped potential from your reflection and schedule a deliberate block of time for it.";else recommendation = "Note down what made this week manageable — two or three specific conditions that were present. Keep these as a reference point when harder weeks arrive.";
-  var patternHistory = "First reflection — patterns will emerge as you keep logging each week.";
+  if (patterns.indexOf("burnout_risk") !== -1) recommendation = "Prioritise one genuinely restorative activity this week, not productive rest, actual rest. Protect one block of time with no output requirement. Even 90 minutes of complete disconnection can meaningfully reset your baseline.";else if (patterns.indexOf("perfectionism") !== -1) recommendation = "Before your next major task, decide in advance what 'good enough' looks like and aim for that deliberately. Notice the difference in energy expenditure versus your usual standard.";else if (patterns.indexOf("all_or_nothing") !== -1) recommendation = "When you notice absolute language in your own thinking, pause and find one counter-example. One exception breaks the rule and restructures the framing entirely.";else if (patterns.indexOf("high_stress") !== -1) recommendation = "Identify the single highest-leverage action that would reduce your stress load most, not the most urgent task, but the one whose completion creates the most breathing room, and do that one first this week.";else if (patterns.indexOf("growth_mindset") !== -1) recommendation = "Channel this week's momentum into one specific commitment: pick the area with the most untapped potential from your reflection and schedule a deliberate block of time for it.";else recommendation = "Note down what made this week manageable: two or three specific conditions that were present. Keep these as a reference point when harder weeks arrive.";
+  var patternHistory = "First reflection. Patterns will emerge as you keep logging each week.";
   if (history && history.length >= 2) {
     var prev = history.slice(-5);
     var prevTexts = prev.map(function (r) {
@@ -940,7 +957,7 @@ function analyzeReflectionFallback(answers, history) {
       return p === "high_stress";
     }).length;
     var total = prev.length;
-    if (burnCount >= 2) patternHistory = "Burnout risk has appeared in " + burnCount + " of your last " + Math.min(4, history.length) + " reflections. This is a recurring pattern that warrants real attention, not just a harder push.";else if (perfCount >= 2) patternHistory = "Perfectionism has surfaced in " + perfCount + " of your last " + Math.min(4, history.length) + " reflections — a consistent internal pressure source rather than a one-off response.";else if (stressCount >= 2) patternHistory = "High stress has been flagged in " + stressCount + " recent reflections. Worth asking: is this situational (exam period, busy work stretch) or a longer pattern?";else if (stressWeeks >= Math.ceil(total * 0.7)) patternHistory = "Stress has dominated " + stressWeeks + " of your last " + total + " reflections. Worth asking: is this environment, workload, or an internal pattern?";else if (stressWeeks === 0) patternHistory = "Consistently positive tone across your last " + total + " reflections — you're tracking a meaningful stretch of stability and growth.";else patternHistory = "Mixed weeks across your last " + total + " reflections (" + stressWeeks + " higher-stress, " + (total - stressWeeks) + " more positive). No single dominant pattern yet — keep logging for clearer trends.";
+    if (burnCount >= 2) patternHistory = "Burnout risk has appeared in " + burnCount + " of your last " + Math.min(4, history.length) + " reflections. This is a recurring pattern that warrants real attention, not just a harder push.";else if (perfCount >= 2) patternHistory = "Perfectionism has surfaced in " + perfCount + " of your last " + Math.min(4, history.length) + " reflections, a consistent internal pressure source rather than a one-off response.";else if (stressCount >= 2) patternHistory = "High stress has been flagged in " + stressCount + " recent reflections. Worth asking: is this situational (exam period, busy work stretch) or a longer pattern?";else if (stressWeeks >= Math.ceil(total * 0.7)) patternHistory = "Stress has dominated " + stressWeeks + " of your last " + total + " reflections. Worth asking: is this environment, workload, or an internal pattern?";else if (stressWeeks === 0) patternHistory = "Consistently positive tone across your last " + total + " reflections. You're tracking a meaningful stretch of stability and growth.";else patternHistory = "Mixed weeks across your last " + total + " reflections (" + stressWeeks + " higher-stress, " + (total - stressWeeks) + " more positive). No single dominant pattern yet. Keep logging for clearer trends.";
   } else if (history && history.length === 1) {
     patternHistory = "Second reflection logged. One more week of data needed before cross-week patterns can be identified.";
   }
@@ -1086,10 +1103,10 @@ function generateCheckinFallback(data) {
   if (overdue.length > 0 || urgent.length > 0) {
     var lines = [];
     overdue.forEach(function (t) {
-      lines.push(t.name + " is " + Math.abs(daysBetween(t.due)) + "d overdue — worth sorting today.");
+      lines.push(t.name + " is " + Math.abs(daysBetween(t.due)) + "d overdue, worth sorting today.");
     });
     urgent.forEach(function (t) {
-      lines.push(t.name + " is due " + fmtDate(t.due) + " — don't leave it too late.");
+      lines.push(t.name + " is due " + fmtDate(t.due) + ", don't leave it too late.");
     });
     blocks.push({
       header: "Tasks",
@@ -1105,12 +1122,12 @@ function generateCheckinFallback(data) {
     if (pending.length > 0) {
       blocks.push({
         header: "Suggestion",
-        items: ["Tomorrow looks free — good window to knock off " + pending[0].name + (pending.length > 1 ? " or " + pending[1].name : "") + "." + (nextSess ? " Could also fit in your " + nextSess.name + "!" : "")]
+        items: ["Tomorrow looks free, good window to knock off " + pending[0].name + (pending.length > 1 ? " or " + pending[1].name : "") + "." + (nextSess ? " Could also fit in your " + nextSess.name + "!" : "")]
       });
     } else {
       blocks.push({
         header: "Suggestion",
-        items: ["Tomorrow is free — great chance to get ahead on study or hit the gym" + (nextSess ? " (" + nextSess.name + " is up next)." : ".")]
+        items: ["Tomorrow is free, great chance to get ahead on study or hit the gym" + (nextSess ? " (" + nextSess.name + " is up next)." : ".")]
       });
     }
   } else if (nextSess) {
@@ -2014,14 +2031,26 @@ function GymSection(props) {
     _useState32 = _slicedToArray(_useState31, 2),
     expandedWktId = _useState32[0],
     setExpandedWktId = _useState32[1];
-  var _useState33 = useState(""),
+  var _useState33 = useState(false),
     _useState34 = _slicedToArray(_useState33, 2),
-    bwInput = _useState34[0],
-    setBwInput = _useState34[1];
+    showLegacyEx = _useState34[0],
+    setShowLegacyEx = _useState34[1];
   var _useState35 = useState(false),
     _useState36 = _slicedToArray(_useState35, 2),
-    editWktName = _useState36[0],
-    setEditWktName = _useState36[1];
+    bulkMode = _useState36[0],
+    setBulkMode = _useState36[1];
+  var _useState37 = useState(""),
+    _useState38 = _slicedToArray(_useState37, 2),
+    bulkText = _useState38[0],
+    setBulkText = _useState38[1];
+  var _useState39 = useState(""),
+    _useState40 = _slicedToArray(_useState39, 2),
+    bwInput = _useState40[0],
+    setBwInput = _useState40[1];
+  var _useState41 = useState(false),
+    _useState42 = _slicedToArray(_useState41, 2),
+    editWktName = _useState42[0],
+    setEditWktName = _useState42[1];
   var rotation = gymData.rotation || [];
   var rotLen = rotation.length > 0 ? rotation.length : 1;
   var rotIdx = (gymData.rotIdx || 0) % rotLen;
@@ -2115,6 +2144,12 @@ function GymSection(props) {
       boxShadow: "inset 0 -10px 22px rgba(" + g + ",0.16)"
     };
   }
+  function fmtSetLine(ws) {
+    var s = ws.sets === "" || ws.sets == null ? "—" : ws.sets;
+    var r = ws.reps === "" || ws.reps == null ? "—" : ws.reps;
+    var w = ws.weight === "" || ws.weight == null ? "—" : ws.weight + "kg";
+    return s + "×" + r + " @ " + w;
+  }
   function getExPrev(name) {
     var ex = (gymData.exercises || []).find(function (e) {
       return e.name && e.name.toLowerCase() === name.toLowerCase();
@@ -2139,7 +2174,7 @@ function GymSection(props) {
       var we = new Date(ws.getTime() + 6 * msDay);
       var hit = false;
       for (var d = new Date(ws); d <= we; d = new Date(d.getTime() + msDay)) {
-        if (dates.has(d.toISOString().slice(0, 10))) {
+        if (dates.has(localDateStr(d))) {
           hit = true;
           break;
         }
@@ -2262,7 +2297,7 @@ function GymSection(props) {
     if (!bwInput) return;
     var w = Number(bwInput);
     if (isNaN(w) || w < 30 || w > 300) {
-      if (window.showToast) window.showToast("Enter a valid weight (30–300 kg)");
+      if (window.showToast) window.showToast("Enter a valid weight (30 to 300 kg)");
       return;
     }
     if (onAddBW) onAddBW({
@@ -2294,6 +2329,41 @@ function GymSection(props) {
     });
     return names;
   }();
+  // Exercises that appear anywhere in the current rotation = "current program". Anything
+  // logged before but no longer in any rotation day is "legacy" (e.g. a swapped-out program) —
+  // split so old data doesn't read as mixed in with what you're doing now.
+  var currentExNameSet = function () {
+    var s = {};
+    rotation.forEach(function (r) {
+      (r.exercises || []).forEach(function (ex) {
+        var n = (ex.exercise || "").trim().toLowerCase();
+        if (n) s[n] = true;
+      });
+    });
+    return s;
+  }();
+  var activeExList = (gymData.exercises || []).filter(function (ex) {
+    return currentExNameSet[(ex.name || "").trim().toLowerCase()];
+  });
+  var legacyExList = (gymData.exercises || []).filter(function (ex) {
+    return !currentExNameSet[(ex.name || "").trim().toLowerCase()];
+  });
+  function parseBulkExercises(text) {
+    return text.split("\n").map(function (line) {
+      return line.trim();
+    }).filter(Boolean).map(function (line, i) {
+      var parts = line.split("|").map(function (p) {
+        return p.trim();
+      });
+      return {
+        id: Date.now() + i,
+        exercise: parts[0] || "",
+        sets: parts[1] || "",
+        reps: parts[2] || "",
+        weight: parts[3] || ""
+      };
+    });
+  }
   function drawBWSpark() {
     if (bwArr.length < 2) return null;
     var vals = bwArr.map(function (d) {
@@ -2578,7 +2648,7 @@ function GymSection(props) {
       fontSize: 13,
       color: T.text2
     }
-  }, "No rotation set \u2014 add one below \u2193")), /*#__PURE__*/React.createElement("div", {
+  }, "No rotation set. Add one below \u2193")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -2714,7 +2784,7 @@ function GymSection(props) {
         fontSize: 11,
         color: T.text2
       }
-    }, ws.sets, "\xD7", ws.reps, " @ ", ws.weight, "kg")) : /*#__PURE__*/React.createElement("div", {
+    }, fmtSetLine(ws))) : /*#__PURE__*/React.createElement("div", {
       key: ws.id || wi,
       style: {
         display: "grid",
@@ -3098,7 +3168,13 @@ function GymSection(props) {
       color: T.text2,
       paddingTop: 8
     }
-  }, "No exercises tracked yet.") : (gymData.exercises || []).map(function (ex, ei) {
+  }, "No exercises tracked yet.") : /*#__PURE__*/React.createElement(React.Fragment, null, activeExList.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: T.text2,
+      paddingTop: 8
+    }
+  }, "No current-program exercises logged yet."), activeExList.map(function (ex, ei) {
     var logs = ex.logs || [];
     var last = logs.length > 0 ? logs[logs.length - 1] : null;
     var prev2 = logs.length > 1 ? logs[logs.length - 2] : null;
@@ -3153,7 +3229,75 @@ function GymSection(props) {
         if (onLogW) onLogW(ex);
       }
     }, "Log"));
-  }))), /*#__PURE__*/React.createElement("div", {
+  }), legacyExList.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 8,
+      paddingTop: 8,
+      borderTop: "0.5px solid " + T.border
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      cursor: "pointer"
+    },
+    onClick: function onClick() {
+      setShowLegacyEx(function (v) {
+        return !v;
+      });
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: T.text3
+    }
+  }, "Older exercises (", legacyExList.length, ") \xB7 not in your current program"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: T.text3,
+      fontSize: 11
+    }
+  }, showLegacyEx ? "▾" : "▸")), showLegacyEx && legacyExList.map(function (ex) {
+    var logs = ex.logs || [];
+    var last = logs.length > 0 ? logs[logs.length - 1] : null;
+    return /*#__PURE__*/React.createElement("div", {
+      key: ex.id,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "8px 0",
+        borderTop: "0.5px solid " + T.border,
+        opacity: 0.6
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        fontWeight: 500,
+        color: T.text,
+        marginBottom: 1
+      }
+    }, ex.name), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3
+      }
+    }, last ? last.weight + "kg" : "no data")), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, gs.btn), {}, {
+        fontSize: 10,
+        padding: "2px 7px",
+        flexShrink: 0
+      }),
+      onClick: function onClick() {
+        if (onLogW) onLogW(ex);
+      }
+    }, "Log"));
+  }))))), /*#__PURE__*/React.createElement("div", {
     className: "card-rim",
     style: gs.card
   }, /*#__PURE__*/React.createElement("div", {
@@ -3289,6 +3433,8 @@ function GymSection(props) {
           rFocus: r.focus || "",
           exercises: exs
         });
+        setBulkMode(false);
+        setBulkText("");
       },
       style: editRotIdx === i ? _objectSpread(_objectSpread({}, editPill), {}, {
         color: T.accent,
@@ -3362,11 +3508,70 @@ function GymSection(props) {
       }
     }))), /*#__PURE__*/React.createElement("div", {
       style: {
-        fontSize: 10,
-        color: T.text2,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
         marginBottom: 4
       }
-    }, "Exercises"), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text2
+      }
+    }, "Exercises"), /*#__PURE__*/React.createElement("button", {
+      style: {
+        background: "none",
+        border: "none",
+        color: T.accent,
+        cursor: "pointer",
+        fontSize: 10,
+        padding: 0
+      },
+      onClick: function onClick() {
+        setBulkMode(function (v) {
+          return !v;
+        });
+      }
+    }, bulkMode ? "Row editor instead" : "New program? Paste a list")), bulkMode ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginBottom: 8
+      }
+    }, /*#__PURE__*/React.createElement("textarea", {
+      style: _objectSpread(_objectSpread({}, gs.inp), {}, {
+        resize: "vertical",
+        fontFamily: "monospace",
+        fontSize: 11,
+        lineHeight: 1.5
+      }),
+      rows: 5,
+      placeholder: "One exercise per line, replaces the list below:\nIncline dumbbell press\nCable fly | 4 | 10 | 12\nOverhead press",
+      value: bulkText,
+      onChange: function onChange(ev) {
+        setBulkText(ev.target.value);
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 9,
+        color: T.text3,
+        margin: "4px 0 6px"
+      }
+    }, "Optional: \"Exercise | sets | reps | kg\" per line."), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, gs.btnP), {}, {
+        fontSize: 10,
+        padding: "3px 10px"
+      }),
+      onClick: function onClick() {
+        var parsed = parseBulkExercises(bulkText);
+        if (!parsed.length) return;
+        setEditRotForm(function (f) {
+          return _objectSpread(_objectSpread({}, f), {}, {
+            exercises: parsed
+          });
+        });
+        setBulkMode(false);
+        setBulkText("");
+      }
+    }, "Replace exercises with this list")) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
       style: {
         display: "grid",
         gridTemplateColumns: "1fr 44px 44px 52px 24px",
@@ -3489,13 +3694,13 @@ function GymSection(props) {
           });
         }
       }, "\xD7"));
-    }), /*#__PURE__*/React.createElement("div", {
+    })), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         gap: 6,
         marginTop: 6
       }
-    }, /*#__PURE__*/React.createElement("button", {
+    }, !bulkMode && /*#__PURE__*/React.createElement("button", {
       style: _objectSpread(_objectSpread({}, gs.btn), {}, {
         fontSize: 10,
         padding: "2px 8px"
@@ -3531,6 +3736,7 @@ function GymSection(props) {
         });
         if (onUpdateRot) onUpdateRot(nr, rotIdx);
         setEditRotIdx(null);
+        setBulkMode(false);
         if (window.showToast) window.showToast("Template saved!", "success");
       }
     }, "Save template"), /*#__PURE__*/React.createElement("button", {
@@ -3540,6 +3746,7 @@ function GymSection(props) {
       }),
       onClick: function onClick() {
         setEditRotIdx(null);
+        setBulkMode(false);
       }
     }, "Cancel"))));
   }), /*#__PURE__*/React.createElement("div", {
@@ -3721,7 +3928,7 @@ function GymSection(props) {
           style: {
             color: T.text3
           }
-        }, ws.sets, "\xD7", ws.reps, " @ ", ws.weight, "kg"));
+        }, fmtSetLine(ws)));
       })));
     })));
   }))));
@@ -3733,60 +3940,60 @@ function FinanceSection(_ref) {
     gcalEvents = _ref.gcalEvents,
     work = _ref.work;
   mob = mob || false;
-  var _useState37 = useState(todayStr().slice(0, 7)),
-    _useState38 = _slicedToArray(_useState37, 2),
-    month = _useState38[0],
-    setMonth = _useState38[1];
-  var _useState39 = useState({
-      name: "",
-      amount: "",
-      cat: "Other"
-    }),
-    _useState40 = _slicedToArray(_useState39, 2),
-    expForm = _useState40[0],
-    setExpForm = _useState40[1];
-  var _useState41 = useState(null),
-    _useState42 = _slicedToArray(_useState41, 2),
-    editExpId = _useState42[0],
-    setEditExpId = _useState42[1];
-  var _useState43 = useState({
-      name: "",
-      amount: "",
-      cat: "Other"
-    }),
+  var _useState43 = useState(todayStr().slice(0, 7)),
     _useState44 = _slicedToArray(_useState43, 2),
-    editExpForm = _useState44[0],
-    setEditExpForm = _useState44[1];
-  var _useState45 = useState(false),
+    month = _useState44[0],
+    setMonth = _useState44[1];
+  var _useState45 = useState({
+      name: "",
+      amount: "",
+      cat: "Other"
+    }),
     _useState46 = _slicedToArray(_useState45, 2),
-    editSrc = _useState46[0],
-    setEditSrc = _useState46[1];
-  var _useState47 = useState(false),
+    expForm = _useState46[0],
+    setExpForm = _useState46[1];
+  var _useState47 = useState(null),
     _useState48 = _slicedToArray(_useState47, 2),
-    showRecMgr = _useState48[0],
-    setShowRecMgr = _useState48[1];
-  var _useState49 = useState(null),
+    editExpId = _useState48[0],
+    setEditExpId = _useState48[1];
+  var _useState49 = useState({
+      name: "",
+      amount: "",
+      cat: "Other"
+    }),
     _useState50 = _slicedToArray(_useState49, 2),
-    editRecId = _useState50[0],
-    setEditRecId = _useState50[1];
-  var _useState51 = useState({
-      name: "",
-      amount: "",
-      cat: "Bills",
-      dueDay: ""
-    }),
+    editExpForm = _useState50[0],
+    setEditExpForm = _useState50[1];
+  var _useState51 = useState(false),
     _useState52 = _slicedToArray(_useState51, 2),
-    editRecForm = _useState52[0],
-    setEditRecForm = _useState52[1];
-  var _useState53 = useState({
+    editSrc = _useState52[0],
+    setEditSrc = _useState52[1];
+  var _useState53 = useState(false),
+    _useState54 = _slicedToArray(_useState53, 2),
+    showRecMgr = _useState54[0],
+    setShowRecMgr = _useState54[1];
+  var _useState55 = useState(null),
+    _useState56 = _slicedToArray(_useState55, 2),
+    editRecId = _useState56[0],
+    setEditRecId = _useState56[1];
+  var _useState57 = useState({
       name: "",
       amount: "",
       cat: "Bills",
       dueDay: ""
     }),
-    _useState54 = _slicedToArray(_useState53, 2),
-    recForm = _useState54[0],
-    setRecForm = _useState54[1];
+    _useState58 = _slicedToArray(_useState57, 2),
+    editRecForm = _useState58[0],
+    setEditRecForm = _useState58[1];
+  var _useState59 = useState({
+      name: "",
+      amount: "",
+      cat: "Bills",
+      dueDay: ""
+    }),
+    _useState60 = _slicedToArray(_useState59, 2),
+    recForm = _useState60[0],
+    setRecForm = _useState60[1];
   var fBtnP = _objectSpread({}, btnGlassP);
   var fInp = {
     width: "100%",
@@ -4135,7 +4342,10 @@ function FinanceSection(_ref) {
     if (!dueDay) return null;
     var td = new Date();
     var d = Number(dueDay);
-    var pad = d < 10 ? "0" + d : String(d);
+    var parts = monthStr.split("-");
+    var lastDay = new Date(Number(parts[0]), Number(parts[1]), 0).getDate();
+    var clamped = Math.min(d, lastDay);
+    var pad = clamped < 10 ? "0" + clamped : String(clamped);
     var due = new Date(monthStr + "-" + pad + "T12:00:00");
     return Math.round((due - td) / 864e5);
   }
@@ -4810,7 +5020,7 @@ function FinanceSection(_ref) {
     }
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: fST
-  }, "Expenses \u2014 ", fmtM(month)), /*#__PURE__*/React.createElement("div", {
+  }, "Expenses \xB7 ", fmtM(month)), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
       color: T.text3,
@@ -4967,7 +5177,7 @@ function FinanceSection(_ref) {
       color: T.text3,
       marginBottom: 6
     }
-  }, "SKIPPED THIS MONTH \u2014 tap to restore"), skippedThisMonth.map(function (t) {
+  }, "SKIPPED THIS MONTH \xB7 tap to restore"), skippedThisMonth.map(function (t) {
     return /*#__PURE__*/React.createElement("button", {
       key: t.id,
       onClick: function onClick() {
@@ -5192,7 +5402,7 @@ function FinanceSection(_ref) {
       color: T.text3,
       padding: "4px 0 8px"
     }
-  }, "No recurring entries yet \u2014 add one below."), showRecMgr && /*#__PURE__*/React.createElement("div", {
+  }, "No recurring entries yet. Add one below."), showRecMgr && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
       paddingTop: 10,
@@ -5282,7 +5492,7 @@ function FinanceSection(_ref) {
       color: T.text3,
       padding: "6px 0"
     }
-  }, "Nothing added yet \u2014 use the form above"), oneOffThisMonth.map(function (e) {
+  }, "Nothing added yet. Use the form above"), oneOffThisMonth.map(function (e) {
     if (editExpId === e.id) {
       return mob ? /*#__PURE__*/React.createElement("div", {
         key: e.id,
@@ -5563,7 +5773,7 @@ function FinanceSection(_ref) {
       color: T.text3,
       marginBottom: 12
     }
-  }, "Name your goal and set a target \u2014 we'll show how much to put away each month and how many shifts that takes."), /*#__PURE__*/React.createElement("div", {
+  }, "Name your goal and set a target, and we'll show how much to put away each month and how many shifts that takes."), /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 8
     }
@@ -6217,140 +6427,145 @@ function InvestSection(_ref2) {
   var notes = data.notes || {};
   var manualPx = data.manualPx || {}; // symbol -> price in the holding's native ccy (for assets the free APIs can't reach, e.g. ASX)
   var baseCcy = data.baseCurrency || "AUD";
-  var _useState55 = useState({}),
-    _useState56 = _slicedToArray(_useState55, 2),
-    quotes = _useState56[0],
-    setQuotes = _useState56[1];
-  var _useState57 = useState({}),
-    _useState58 = _slicedToArray(_useState57, 2),
-    profiles = _useState58[0],
-    setProfiles = _useState58[1];
-  var _useState59 = useState({}),
-    _useState60 = _slicedToArray(_useState59, 2),
-    candleMap = _useState60[0],
-    setCandleMap = _useState60[1]; // symbol -> closes[]
   var _useState61 = useState({}),
     _useState62 = _slicedToArray(_useState61, 2),
-    fxRates = _useState62[0],
-    setFxRates = _useState62[1]; // ccy -> rate to base
+    quotes = _useState62[0],
+    setQuotes = _useState62[1];
   var _useState63 = useState({}),
     _useState64 = _slicedToArray(_useState63, 2),
-    metrics = _useState64[0],
-    setMetrics = _useState64[1];
+    profiles = _useState64[0],
+    setProfiles = _useState64[1];
   var _useState65 = useState({}),
     _useState66 = _slicedToArray(_useState65, 2),
-    rec = _useState66[0],
-    setRec = _useState66[1];
+    candleMap = _useState66[0],
+    setCandleMap = _useState66[1]; // symbol -> closes[]
   var _useState67 = useState({}),
     _useState68 = _slicedToArray(_useState67, 2),
-    ptarget = _useState68[0],
-    setPtarget = _useState68[1];
+    fxRates = _useState68[0],
+    setFxRates = _useState68[1]; // ccy -> rate to base
   var _useState69 = useState({}),
     _useState70 = _slicedToArray(_useState69, 2),
-    earnings = _useState70[0],
-    setEarnings = _useState70[1];
-  var _useState71 = useState(null),
+    metrics = _useState70[0],
+    setMetrics = _useState70[1];
+  var _useState71 = useState({}),
     _useState72 = _slicedToArray(_useState71, 2),
-    benchCloses = _useState72[0],
-    setBenchCloses = _useState72[1];
-  var _useState73 = useState(false),
+    rec = _useState72[0],
+    setRec = _useState72[1];
+  var _useState73 = useState({}),
     _useState74 = _slicedToArray(_useState73, 2),
-    loading = _useState74[0],
-    setLoading = _useState74[1];
-  var _useState75 = useState(watchlist[0] ? watchlist[0].symbol : holdings[0] ? holdings[0].symbol : null),
+    ptarget = _useState74[0],
+    setPtarget = _useState74[1];
+  var _useState75 = useState({}),
     _useState76 = _slicedToArray(_useState75, 2),
-    selected = _useState76[0],
-    setSelected = _useState76[1];
-  var _useState77 = useState([]),
+    earnings = _useState76[0],
+    setEarnings = _useState76[1];
+  var _useState77 = useState(null),
     _useState78 = _slicedToArray(_useState77, 2),
-    news = _useState78[0],
-    setNews = _useState78[1];
-  var _useState79 = useState({
+    benchCloses = _useState78[0],
+    setBenchCloses = _useState78[1];
+  var _useState79 = useState(false),
+    _useState80 = _slicedToArray(_useState79, 2),
+    loading = _useState80[0],
+    setLoading = _useState80[1];
+  var _useState81 = useState(watchlist[0] ? watchlist[0].symbol : holdings[0] ? holdings[0].symbol : null),
+    _useState82 = _slicedToArray(_useState81, 2),
+    selected = _useState82[0],
+    setSelected = _useState82[1];
+  var _useState83 = useState([]),
+    _useState84 = _slicedToArray(_useState83, 2),
+    news = _useState84[0],
+    setNews = _useState84[1];
+  var _useState85 = useState({
       loading: false,
       text: "",
       err: "",
       title: ""
     }),
-    _useState80 = _slicedToArray(_useState79, 2),
-    ai = _useState80[0],
-    setAi = _useState80[1];
-  var _useState81 = useState(""),
-    _useState82 = _slicedToArray(_useState81, 2),
-    addSym = _useState82[0],
-    setAddSym = _useState82[1];
-  var _useState83 = useState([]),
-    _useState84 = _slicedToArray(_useState83, 2),
-    searchRes = _useState84[0],
-    setSearchRes = _useState84[1];
-  var _useState85 = useState(false),
     _useState86 = _slicedToArray(_useState85, 2),
-    searching = _useState86[0],
-    setSearching = _useState86[1];
-  var _useState87 = useState({
+    ai = _useState86[0],
+    setAi = _useState86[1];
+  var _useState87 = useState(""),
+    _useState88 = _slicedToArray(_useState87, 2),
+    addSym = _useState88[0],
+    setAddSym = _useState88[1];
+  var _useState89 = useState([]),
+    _useState90 = _slicedToArray(_useState89, 2),
+    searchRes = _useState90[0],
+    setSearchRes = _useState90[1];
+  var _useState91 = useState(false),
+    _useState92 = _slicedToArray(_useState91, 2),
+    searching = _useState92[0],
+    setSearching = _useState92[1];
+  var _useState93 = useState({
       symbol: "",
       shares: "",
       cost: "",
       ccy: "USD",
       date: ""
     }),
-    _useState88 = _slicedToArray(_useState87, 2),
-    lotForm = _useState88[0],
-    setLotForm = _useState88[1];
-  var _useState89 = useState(null),
-    _useState90 = _slicedToArray(_useState89, 2),
-    sellFor = _useState90[0],
-    setSellFor = _useState90[1];
-  var _useState91 = useState({
+    _useState94 = _slicedToArray(_useState93, 2),
+    lotForm = _useState94[0],
+    setLotForm = _useState94[1];
+  var _useState95 = useState(null),
+    _useState96 = _slicedToArray(_useState95, 2),
+    sellFor = _useState96[0],
+    setSellFor = _useState96[1];
+  var _useState97 = useState({
       shares: "",
       price: ""
     }),
-    _useState92 = _slicedToArray(_useState91, 2),
-    sellForm = _useState92[0],
-    setSellForm = _useState92[1];
-  var _useState93 = useState(null),
-    _useState94 = _slicedToArray(_useState93, 2),
-    expanded = _useState94[0],
-    setExpanded = _useState94[1];
-  var _useState95 = useState(false),
-    _useState96 = _slicedToArray(_useState95, 2),
-    showKey = _useState96[0],
-    setShowKey = _useState96[1];
-  var _useState97 = useState(""),
     _useState98 = _slicedToArray(_useState97, 2),
-    finnKey = _useState98[0],
-    setFinnKey = _useState98[1];
-  var _useState99 = useState(""),
+    sellForm = _useState98[0],
+    setSellForm = _useState98[1];
+  var _useState99 = useState(null),
     _useState100 = _slicedToArray(_useState99, 2),
-    tdKey = _useState100[0],
-    setTdKey = _useState100[1];
-  var _useState101 = useState(MS ? MS.isDemo() : true),
+    expanded = _useState100[0],
+    setExpanded = _useState100[1];
+  var _useState101 = useState(false),
     _useState102 = _slicedToArray(_useState101, 2),
-    demo = _useState102[0],
-    setDemo = _useState102[1];
-  var _useState103 = useState(90),
+    showKey = _useState102[0],
+    setShowKey = _useState102[1];
+  var _useState103 = useState(""),
     _useState104 = _slicedToArray(_useState103, 2),
-    range = _useState104[0],
-    setRange = _useState104[1];
-  var _useState105 = useState("position"),
+    finnKey = _useState104[0],
+    setFinnKey = _useState104[1];
+  var _useState105 = useState(""),
     _useState106 = _slicedToArray(_useState105, 2),
-    allocMode = _useState106[0],
-    setAllocMode = _useState106[1];
-  var _useState107 = useState("SPY"),
+    tdKey = _useState106[0],
+    setTdKey = _useState106[1];
+  var _useState107 = useState(MS ? MS.isDemo() : true),
     _useState108 = _slicedToArray(_useState107, 2),
-    bench = _useState108[0],
-    setBench = _useState108[1];
+    demo = _useState108[0],
+    setDemo = _useState108[1];
   var _useState109 = useState(null),
     _useState110 = _slicedToArray(_useState109, 2),
-    noteDraft = _useState110[0],
-    setNoteDraft = _useState110[1];
-  var _useState111 = useState({}),
+    keyIssue = _useState110[0],
+    setKeyIssue = _useState110[1];
+  var searchTimerRef = useRef(null);
+  var _useState111 = useState(90),
     _useState112 = _slicedToArray(_useState111, 2),
-    mDraft = _useState112[0],
-    setMDraft = _useState112[1];
-  var _useState113 = useState(null),
+    range = _useState112[0],
+    setRange = _useState112[1];
+  var _useState113 = useState("position"),
     _useState114 = _slicedToArray(_useState113, 2),
-    refreshedAt = _useState114[0],
-    setRefreshedAt = _useState114[1];
+    allocMode = _useState114[0],
+    setAllocMode = _useState114[1];
+  var _useState115 = useState("SPY"),
+    _useState116 = _slicedToArray(_useState115, 2),
+    bench = _useState116[0],
+    setBench = _useState116[1];
+  var _useState117 = useState(null),
+    _useState118 = _slicedToArray(_useState117, 2),
+    noteDraft = _useState118[0],
+    setNoteDraft = _useState118[1];
+  var _useState119 = useState({}),
+    _useState120 = _slicedToArray(_useState119, 2),
+    mDraft = _useState120[0],
+    setMDraft = _useState120[1];
+  var _useState121 = useState(null),
+    _useState122 = _slicedToArray(_useState121, 2),
+    refreshedAt = _useState122[0],
+    setRefreshedAt = _useState122[1];
   var allSymbols = invUniq([].concat(watchlist.map(function (w) {
     return w.symbol;
   }), holdings.map(function (h) {
@@ -6482,13 +6697,15 @@ function InvestSection(_ref2) {
     return p.netShares > 0.0001;
   });
 
-  // realized P&L (average-cost, in base ccy)
+  // realized P&L (in base ccy) — uses the cost basis captured on the sale record at
+  // sale time; falls back to today's live average-cost for legacy sales saved before
+  // costBasis was recorded (so a lot deleted afterward can't rewrite past P&L).
   var realized = 0;
   sales.forEach(function (s) {
     var pos = positions.filter(function (p) {
       return p.symbol === s.symbol;
     })[0];
-    var avg = pos ? pos.avgCost : 0;
+    var avg = s.costBasis != null ? s.costBasis : pos ? pos.avgCost : 0;
     realized += ((Number(s.price) || 0) - avg) * (Number(s.shares) || 0) * fx(s.ccy || pos && pos.ccy || "USD");
   });
 
@@ -6524,18 +6741,25 @@ function InvestSection(_ref2) {
     setLoading(true);
     Promise.all(allSymbols.map(function (sym) {
       return MS.getQuote(sym).then(function (q) {
-        return [sym, q];
-      })["catch"](function () {
-        return [sym, null];
+        return [sym, q, null];
+      })["catch"](function (e) {
+        return [sym, null, e && e.message ? e.message : String(e)];
       });
-    })).then(function (pairs) {
+    })).then(function (triples) {
       setQuotes(function (prev) {
         var nq = _objectSpread({}, prev);
-        pairs.forEach(function (pr) {
+        triples.forEach(function (pr) {
           if (pr[1]) nq[pr[0]] = pr[1];
         });
         return nq;
       });
+      var keyErr = triples.map(function (t) {
+        return t[2];
+      }).filter(Boolean).find(function (m) {
+        return /denied|invalid|expired/i.test(m);
+      });
+      setKeyIssue(keyErr || null);
+      if (keyErr) toast(keyErr, "warn");
     }).then(function () {
       setRefreshedAt(new Date());
     })["catch"](function () {}).then(function () {
@@ -6686,18 +6910,21 @@ function InvestSection(_ref2) {
   }
   function runSearch(q) {
     setAddSym(q);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     if (!MS || !q || q.trim().length < 1) {
       setSearchRes([]);
       return;
     }
-    setSearching(true);
-    MS.searchSymbols(q.trim()).then(function (r) {
-      setSearchRes((r || []).slice(0, 6));
-    })["catch"](function () {
-      setSearchRes([]);
-    }).then(function () {
-      setSearching(false);
-    });
+    searchTimerRef.current = setTimeout(function () {
+      setSearching(true);
+      MS.searchSymbols(q.trim()).then(function (r) {
+        setSearchRes((r || []).slice(0, 6));
+      })["catch"](function () {
+        setSearchRes([]);
+      }).then(function () {
+        setSearching(false);
+      });
+    }, 300);
   }
   function addLot() {
     var sym = (lotForm.symbol || "").trim().toUpperCase();
@@ -6763,7 +6990,8 @@ function InvestSection(_ref2) {
       shares: sh,
       price: px,
       ccy: pos && pos.ccy || "USD",
-      date: todayStr()
+      date: todayStr(),
+      costBasis: pos ? pos.avgCost : 0
     };
     onUpdate(_objectSpread(_objectSpread({}, data), {}, {
       sales: sales.concat([sale])
@@ -6824,7 +7052,7 @@ function InvestSection(_ref2) {
     if (MS && MS.clearCache) MS.clearCache();
     setCandleMap({});
     setQuotes({});
-    toast("Keys saved — loading live data", "success");
+    toast("Keys saved · loading live data", "success");
     setTimeout(loadQuotes, 80);
   }
   function clearKeys() {
@@ -6921,7 +7149,7 @@ function InvestSection(_ref2) {
       return "- " + (x.headline || "");
     }).join("\n");
     var prompt = "You are a skeptical devil's-advocate analyst. The user's investment thesis for " + selected + " is:\n\"" + (note || "(none written)") + "\"\n\nCurrent: price " + invFmt(invQPrice(q)) + " (" + invPct(invQPct(q)) + " today), P/E " + (m.peTTM != null ? m.peTTM : "?") + ", rev growth " + (m.revenueGrowth != null ? m.revenueGrowth + "%" : "?") + ".\nRecent headlines:\n" + heads + "\n\nIn 4-6 bullets: does the thesis still hold? What would challenge it? What's the strongest bear case? Plain English. End with: 'Not financial advice.'";
-    askGemini("Thesis check — " + selected, prompt);
+    askGemini("Thesis check · " + selected, prompt);
   }
   function aiDailyDigest() {
     var movers = allSymbols.map(function (s) {
@@ -6945,7 +7173,7 @@ function InvestSection(_ref2) {
       var e = earnings[s];
       return e && e.next ? "- " + s + " earnings " + e.next.date : null;
     }).filter(Boolean).join("\n");
-    var prompt = "You are a calm morning-briefing writer for a personal investing dashboard. Summarize today's watchlist & holdings in 3-5 short bullets — what moved and any notable context. Keep it low-anxiety, factual.\n\nMovers:\n" + body + (earn ? "\n\nUpcoming earnings:\n" + earn : "") + "\n\nEnd with: 'Not financial advice.'";
+    var prompt = "You are a calm morning-briefing writer for a personal investing dashboard. Summarize today's watchlist & holdings in 3-5 short bullets: what moved and any notable context. Keep it low-anxiety, factual.\n\nMovers:\n" + body + (earn ? "\n\nUpcoming earnings:\n" + earn : "") + "\n\nEnd with: 'Not financial advice.'";
     askGemini("Daily digest", prompt);
   }
 
@@ -7041,7 +7269,7 @@ function InvestSection(_ref2) {
       letterSpacing: "-0.02em"
     }
   }, "Invest"), /*#__PURE__*/React.createElement("span", {
-    title: demo ? "No keys — demo data" : "Live data",
+    title: demo ? "No keys · demo data" : keyIssue ? keyIssue : "Live data",
     style: {
       fontSize: 9.5,
       fontWeight: 700,
@@ -7049,11 +7277,11 @@ function InvestSection(_ref2) {
       letterSpacing: "0.06em",
       padding: "3px 8px",
       borderRadius: 999,
-      border: "0.5px solid " + (demo ? "rgba(255,209,102,0.4)" : "rgba(105,240,174,0.4)"),
-      background: demo ? "rgba(255,209,102,0.12)" : "rgba(105,240,174,0.12)",
-      color: demo ? T.warn : T.success
+      border: "0.5px solid " + (demo ? "rgba(255,209,102,0.4)" : keyIssue ? "rgba(255,107,107,0.4)" : "rgba(105,240,174,0.4)"),
+      background: demo ? "rgba(255,209,102,0.12)" : keyIssue ? "rgba(255,107,107,0.12)" : "rgba(105,240,174,0.12)",
+      color: demo ? T.warn : keyIssue ? T.danger : T.success
     }
-  }, demo ? "Demo data" : "Live · delayed")), /*#__PURE__*/React.createElement("div", {
+  }, demo ? "Demo data" : keyIssue ? "Key rejected" : "Live · delayed")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
@@ -7105,7 +7333,7 @@ function InvestSection(_ref2) {
       color: T.text3,
       marginBottom: 6
     }
-  }, "Finnhub \u2014 quotes, fundamentals, ratings, news (finnhub.io, free 60/min)"), /*#__PURE__*/React.createElement("input", {
+  }, "Finnhub \xB7 quotes, fundamentals, ratings, news (finnhub.io, free 60/min)"), /*#__PURE__*/React.createElement("input", {
     style: _objectSpread(_objectSpread({}, iInp), {}, {
       marginBottom: 10
     }),
@@ -7121,7 +7349,7 @@ function InvestSection(_ref2) {
       color: T.text3,
       marginBottom: 6
     }
-  }, "Twelve Data \u2014 price charts & benchmarks (twelvedata.com, free 800/day). Finnhub's chart endpoint is premium, so charts use this."), /*#__PURE__*/React.createElement("input", {
+  }, "Twelve Data \xB7 price charts & benchmarks (twelvedata.com, free 800/day). Finnhub's chart endpoint is premium, so charts use this."), /*#__PURE__*/React.createElement("input", {
     style: _objectSpread(_objectSpread({}, iInp), {}, {
       marginBottom: 10
     }),
@@ -7228,7 +7456,7 @@ function InvestSection(_ref2) {
       color: T.text3,
       marginTop: 8
     }
-  }, "Add a Twelve Data key for a live portfolio trend chart.")), openPositions.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, keyIssue ? "Twelve Data key rejected · check Settings." : "Add a Twelve Data key for a live portfolio trend chart.")), openPositions.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: iCard()
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -7331,13 +7559,13 @@ function InvestSection(_ref2) {
       fontSize: 10,
       color: T.text3
     }
-  }, openPositions.length, " open", holdings.length > priced && priced < openPositions.length ? " · " + (openPositions.length - priced) + " unpriced" : "")), openPositions.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }, openPositions.length, " open", priced < openPositions.length ? " · " + (openPositions.length - priced) + " unpriced" : "")), openPositions.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: T.text3,
       padding: "4px 2px 10px"
     }
-  }, "No holdings yet. Add a lot below \u2014 enter each buy separately to track cost basis."), openPositions.map(function (p) {
+  }, "No holdings yet. Add a lot below, entering each buy separately to track cost basis."), openPositions.map(function (p) {
     var q = quotes[p.symbol];
     var px = effPx(p.symbol);
     var r = fx(p.ccy);
@@ -7647,7 +7875,7 @@ function InvestSection(_ref2) {
       color: T.text3,
       marginTop: 8
     }
-  }, "Non-US? Add the exchange suffix \u2014 e.g. ", /*#__PURE__*/React.createElement("b", null, "CBA.AX"), " for ASX (also .L London, .TO Toronto, .HK Hong Kong). Needs a Twelve Data key.")), /*#__PURE__*/React.createElement("div", {
+  }, "Non-US? Add the exchange suffix, e.g. ", /*#__PURE__*/React.createElement("b", null, "CBA.AX"), " for ASX (also .L London, .TO Toronto, .HK Hong Kong). Needs a Twelve Data key.")), /*#__PURE__*/React.createElement("div", {
     style: iCard()
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -7895,7 +8123,7 @@ function InvestSection(_ref2) {
       gap: 6
     }),
     onClick: function onClick() {
-      askGemini("Explain — " + selected, "Explain " + selected + " (" + (selProf && selProf.name || selected) + ") to a long-term retail investor in 4-6 short bullets: what it does, what the price move & headlines suggest, and what to watch. End with 'Not financial advice.'");
+      askGemini("Explain · " + selected, "Explain " + selected + " (" + (selProf && selProf.name || selected) + ") to a long-term retail investor in 4-6 short bullets: what it does, what the price move & headlines suggest, and what to watch. End with 'Not financial advice.'");
     },
     disabled: ai.loading
   }, /*#__PURE__*/React.createElement(UIcon, {
@@ -7960,7 +8188,7 @@ function InvestSection(_ref2) {
       fontSize: 12,
       textAlign: "center"
     }
-  }, "No chart data. ", demo ? "" : "Add a Twelve Data key for live charts."), selM && /*#__PURE__*/React.createElement("div", {
+  }, "No chart data. ", demo ? "" : keyIssue ? "Twelve Data key rejected · check Settings." : "Add a Twelve Data key for live charts."), selM && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 14
     }
@@ -8070,7 +8298,7 @@ function InvestSection(_ref2) {
         color: T.text3,
         marginTop: 2
       }
-    }, "Range $", invFmt(t.targetLow), " \u2013 $", invFmt(t.targetHigh)));
+    }, "Range $", invFmt(t.targetLow), " to $", invFmt(t.targetHigh)));
   }()), earnings[selected] && (earnings[selected].next || earnings[selected].recent && earnings[selected].recent.length) && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 16
@@ -8272,7 +8500,7 @@ function InvestSection(_ref2) {
       padding: "6px 0 20px",
       lineHeight: 1.5
     }
-  }, "Data ", demo ? "is simulated (demo mode)" : "via Finnhub + Twelve Data, delayed ≥15 min", ". Realized P&L uses average-cost basis. Personal, informational use only \u2014 not investment advice."));
+  }, "Data ", demo ? "is simulated (demo mode)" : "via Finnhub + Twelve Data, delayed ≥15 min", ". Realized P&L uses average-cost basis. Personal, informational use only, not investment advice."));
 }
 function WorkSection(_ref3) {
   var data = _ref3.data,
@@ -8281,44 +8509,44 @@ function WorkSection(_ref3) {
     onFlush = _ref3.onFlush,
     gcalEvents = _ref3.gcalEvents;
   mob = mob || false;
-  var _useState115 = useState(null),
-    _useState116 = _slicedToArray(_useState115, 2),
-    expandedShift = _useState116[0],
-    setExpandedShift = _useState116[1];
-  var _useState117 = useState({
+  var _useState123 = useState(null),
+    _useState124 = _slicedToArray(_useState123, 2),
+    expandedShift = _useState124[0],
+    setExpandedShift = _useState124[1];
+  var _useState125 = useState({
       notes: ""
     }),
-    _useState118 = _slicedToArray(_useState117, 2),
-    logDraft = _useState118[0],
-    setLogDraft = _useState118[1];
+    _useState126 = _slicedToArray(_useState125, 2),
+    logDraft = _useState126[0],
+    setLogDraft = _useState126[1];
   // Live refs so the draft-autosave (which fires on close/unmount) reads current
   // values instead of stale closure values captured when the shift was opened.
   var _draftRef = useRef(logDraft);
   _draftRef.current = logDraft;
-  var _useState119 = useState(""),
-    _useState120 = _slicedToArray(_useState119, 2),
-    goalInput = _useState120[0],
-    setGoalInput = _useState120[1];
-  var _useState121 = useState(false),
-    _useState122 = _slicedToArray(_useState121, 2),
-    showSettings = _useState122[0],
-    setShowSettings = _useState122[1];
-  var _useState123 = useState(0),
-    _useState124 = _slicedToArray(_useState123, 2),
-    cycleOffset = _useState124[0],
-    setCycleOffset = _useState124[1];
-  var _useState125 = useState(""),
-    _useState126 = _slicedToArray(_useState125, 2),
-    taskInput = _useState126[0],
-    setTaskInput = _useState126[1];
-  var _useState127 = useState(null),
+  var _useState127 = useState(""),
     _useState128 = _slicedToArray(_useState127, 2),
-    taskTag = _useState128[0],
-    setTaskTag = _useState128[1];
-  var _useState129 = useState(todayStr()),
+    goalInput = _useState128[0],
+    setGoalInput = _useState128[1];
+  var _useState129 = useState(false),
     _useState130 = _slicedToArray(_useState129, 2),
-    taskShiftDate = _useState130[0],
-    setTaskShiftDate = _useState130[1];
+    showSettings = _useState130[0],
+    setShowSettings = _useState130[1];
+  var _useState131 = useState(0),
+    _useState132 = _slicedToArray(_useState131, 2),
+    cycleOffset = _useState132[0],
+    setCycleOffset = _useState132[1];
+  var _useState133 = useState(""),
+    _useState134 = _slicedToArray(_useState133, 2),
+    taskInput = _useState134[0],
+    setTaskInput = _useState134[1];
+  var _useState135 = useState(null),
+    _useState136 = _slicedToArray(_useState135, 2),
+    taskTag = _useState136[0],
+    setTaskTag = _useState136[1];
+  var _useState137 = useState(todayStr()),
+    _useState138 = _slicedToArray(_useState137, 2),
+    taskShiftDate = _useState138[0],
+    setTaskShiftDate = _useState138[1];
   useEffect(function () {
     var first = (gcalEvents || []).filter(isGoTabEvent).sort(function (a, b) {
       return b.date.localeCompare(a.date);
@@ -8519,11 +8747,9 @@ function WorkSection(_ref3) {
   }, 0);
   var projectedPay = hrRate > 0 ? projectedEquiv * hrRate : null;
   function estimateTax(gross) {
-    if (gross <= 18200) return gross * 0.02;
-    if (gross <= 45000) return (gross - 18200) * 0.19 + gross * 0.02;
-    if (gross <= 135000) return 5092 + (gross - 45000) * 0.30 + gross * 0.02;
-    if (gross <= 190000) return 32092 + (gross - 135000) * 0.37 + gross * 0.02;
-    return 52442 + (gross - 190000) * 0.45 + gross * 0.02;
+    var incomeTax = gross <= 18200 ? 0 : gross <= 45000 ? (gross - 18200) * 0.16 : gross <= 135000 ? 4288 + (gross - 45000) * 0.30 : gross <= 190000 ? 31288 + (gross - 135000) * 0.37 : 51638 + (gross - 190000) * 0.45;
+    var levy = gross <= 27222 ? 0 : gross <= 34027 ? (gross - 27222) * 0.10 : gross * 0.02;
+    return incomeTax + levy;
   }
   var periodDays = Math.max(1, Math.round((new Date(periodEnd) - new Date(periodStart)) / 864e5) + 1);
   var annualGross = estimatedPay != null ? estimatedPay / periodDays * 365 : 0;
@@ -8548,7 +8774,7 @@ function WorkSection(_ref3) {
     return s.toLocaleDateString("en-AU", {
       day: "numeric",
       month: "short"
-    }) + " – " + e.toLocaleDateString("en-AU", {
+    }) + " · " + e.toLocaleDateString("en-AU", {
       day: "numeric",
       month: "short",
       year: "numeric"
@@ -8857,7 +9083,7 @@ function WorkSection(_ref3) {
     label: "Standard hrs",
     value: periodNorm.toFixed(1) + "h",
     sub: "before 7pm · 1×",
-    edge: "rgba(255,255,255,0.15)"
+    edge: "#ffffff"
   }, {
     label: "Penalty hrs",
     value: periodPen.toFixed(1) + "h",
@@ -8867,7 +9093,7 @@ function WorkSection(_ref3) {
     label: "Shifts",
     value: workedShiftCount + "/" + scheduledShiftCount,
     sub: scheduledMeetingCount > 0 ? attendedMeetingCount + "/" + scheduledMeetingCount + " meeting" + (scheduledMeetingCount !== 1 ? "s" : "") + " attended" : "worked / scheduled",
-    edge: "rgba(255,255,255,0.15)"
+    edge: "#ffffff"
   }, {
     label: "Tasks",
     value: String(periodTaskCount),
@@ -8908,7 +9134,7 @@ function WorkSection(_ref3) {
       color: T.text3,
       marginTop: 10
     }
-  }, "Tax estimate only \u2014 actual PAYG may differ")), /*#__PURE__*/React.createElement("div", {
+  }, "Tax estimate only. Actual PAYG may differ")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: mob ? "1fr" : "2fr 1fr",
@@ -8942,7 +9168,7 @@ function WorkSection(_ref3) {
       padding: "20px 0",
       textAlign: "center"
     }
-  }, gcalEvents && gcalEvents.length > 0 ? "No GoTab shifts this period — use prev to look back" : "Connect Google Calendar to see shifts") : /*#__PURE__*/React.createElement("div", null, periodShifts.map(function (ev) {
+  }, gcalEvents && gcalEvents.length > 0 ? "No GoTab shifts this period. Use prev to look back" : "Connect Google Calendar to see shifts") : /*#__PURE__*/React.createElement("div", null, periodShifts.map(function (ev) {
     var past = daysBetween(ev.date) < 0;
     var pay = shiftPay(ev.time);
     var rowPay = hrRate > 0 && pay ? fmt$(pay.totalEquiv * hrRate) : "—";
@@ -9137,7 +9363,7 @@ function WorkSection(_ref3) {
         marginBottom: 6,
         letterSpacing: "0.02em"
       }
-    }, "Shift diary \u2014 a note marks this shift as worked & counts its pay"), /*#__PURE__*/React.createElement("textarea", {
+    }, "Shift diary \xB7 a note marks this shift as worked & counts its pay"), /*#__PURE__*/React.createElement("textarea", {
       rows: 4,
       placeholder: "What did you do this shift? Incidents, wins, patterns worth remembering.",
       value: logDraft.notes,
@@ -9252,7 +9478,7 @@ function WorkSection(_ref3) {
       textAlign: "center",
       padding: "18px 0 14px"
     }
-  }, "No goals yet \u2014 add something you are working towards") : /*#__PURE__*/React.createElement("div", {
+  }, "No goals yet. Add something you are working towards") : /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 14
     }
@@ -9462,7 +9688,7 @@ function WorkSection(_ref3) {
       textAlign: "center",
       padding: "28px 0"
     }
-  }, "No tasks logged yet \u2014 pick a tag above and describe what you did") : /*#__PURE__*/React.createElement("div", {
+  }, "No tasks logged yet. Pick a tag above and describe what you did") : /*#__PURE__*/React.createElement("div", {
     style: {
       borderLeft: "1px solid rgba(255,255,255,0.07)",
       paddingLeft: 16
@@ -9647,7 +9873,7 @@ function parseProjectImport(text) {
       stage = {
         id: nid("st"),
         title: sp2[0].trim(),
-        subtitle: sp2.slice(1).join(" — ").trim(),
+        subtitle: sp2.slice(1).join(" · ").trim(),
         steps: []
       };
       stages.push(stage);
@@ -9797,32 +10023,36 @@ function ProjectsSection(_ref4) {
     onAddShopping = _ref4.onAddShopping,
     mob = _ref4.mob;
   var projects = Array.isArray(data) ? data : [];
-  var _useState131 = useState(null),
-    _useState132 = _slicedToArray(_useState131, 2),
-    openId = _useState132[0],
-    setOpenId = _useState132[1];
-  var _useState133 = useState(false),
-    _useState134 = _slicedToArray(_useState133, 2),
-    showImport = _useState134[0],
-    setShowImport = _useState134[1];
-  var _useState135 = useState(""),
-    _useState136 = _slicedToArray(_useState135, 2),
-    txt = _useState136[0],
-    setTxt = _useState136[1];
+  var _useState139 = useState(null),
+    _useState140 = _slicedToArray(_useState139, 2),
+    openId = _useState140[0],
+    setOpenId = _useState140[1];
+  var _useState141 = useState(false),
+    _useState142 = _slicedToArray(_useState141, 2),
+    showImport = _useState142[0],
+    setShowImport = _useState142[1];
+  var _useState143 = useState(""),
+    _useState144 = _slicedToArray(_useState143, 2),
+    txt = _useState144[0],
+    setTxt = _useState144[1];
+  var _useState145 = useState(false),
+    _useState146 = _slicedToArray(_useState145, 2),
+    confirmDel = _useState146[0],
+    setConfirmDel = _useState146[1];
   function toast(m, t) {
     if (window.showToast) window.showToast(m, t);
   }
   function doImport() {
     var p = parseProjectImport(txt);
     if (!p) {
-      toast("Couldn't read that — needs a '# Title' line and at least one '- step'.", "error");
+      toast("Couldn't read that. Needs a '# Title' line and at least one '- step'.", "error");
       return;
     }
     onUpdate(projects.concat([p]));
     setTxt("");
     setShowImport(false);
     setOpenId(p.id);
-    toast("Project added — " + p.title, "success");
+    toast("Project added: " + p.title, "success");
   }
   function toggleStep(pid, sid) {
     onUpdate(projects.map(function (p) {
@@ -9941,7 +10171,7 @@ function ProjectsSection(_ref4) {
         color: T.success,
         fontWeight: 600
       }
-    }, "\uD83C\uDF89 Every step done \u2014 nice work.")), open.stages.map(function (st, si) {
+    }, "\uD83C\uDF89 Every step done. Nice work.")), open.stages.map(function (st, si) {
       return /*#__PURE__*/React.createElement("div", {
         key: st.id,
         className: "card-rim",
@@ -10056,18 +10286,26 @@ function ProjectsSection(_ref4) {
             color: T.success,
             fontWeight: 600
           }
-        }, "Skip this \u2014 just tick to acknowledge")));
+        }, "Skip this, just tick to acknowledge")));
       }));
     }), /*#__PURE__*/React.createElement("button", {
       onClick: function onClick() {
+        if (!confirmDel) {
+          setConfirmDel(true);
+          setTimeout(function () {
+            setConfirmDel(false);
+          }, 3000);
+          return;
+        }
         removeProject(open.id);
+        setConfirmDel(false);
       },
       style: _objectSpread(_objectSpread({}, editPill), {}, {
         color: T.danger,
         borderColor: "rgba(255,107,107,0.4)",
         marginTop: 4
       })
-    }, "Delete project"));
+    }, confirmDel ? "Tap again to confirm delete" : "Delete project"));
   }
   var active = projects.filter(function (p) {
     return !p.archived;
@@ -10131,7 +10369,7 @@ function ProjectsSection(_ref4) {
       setTxt(e.target.value);
     },
     rows: mob ? 7 : 9,
-    placeholder: "# 🔑 Anime Keychain\n## Stage 1 — Buy 4 things\n- Buy the main board | where: Amazon.com.au | price: ~$40",
+    placeholder: "# 🔑 Anime Keychain\n## Stage 1 - Buy 4 things\n- Buy the main board | where: Amazon.com.au | price: ~$40",
     style: _objectSpread(_objectSpread({}, PINP), {}, {
       resize: "vertical",
       fontFamily: MONO,
@@ -10322,16 +10560,27 @@ function ShoppingSection(_ref5) {
     onUpdate = _ref5.onUpdate,
     mob = _ref5.mob;
   var items = Array.isArray(data) ? data : [];
-  var _useState137 = useState(""),
-    _useState138 = _slicedToArray(_useState137, 2),
-    inp = _useState138[0],
-    setInp = _useState138[1];
+  var _useState147 = useState(""),
+    _useState148 = _slicedToArray(_useState147, 2),
+    inp = _useState148[0],
+    setInp = _useState148[1];
+  var _useState149 = useState(false),
+    _useState150 = _slicedToArray(_useState149, 2),
+    confirmClear = _useState150[0],
+    setConfirmClear = _useState150[1];
   function toast(m, t) {
     if (window.showToast) window.showToast(m, t);
   }
   function add() {
     var v = inp.trim();
     if (!v) return;
+    if (items.some(function (x) {
+      return !x.done && x.text.trim().toLowerCase() === v.toLowerCase();
+    })) {
+      toast(v + " is already on the list", "warn");
+      setInp("");
+      return;
+    }
     onUpdate(items.concat([{
       id: nid("shp"),
       key: null,
@@ -10356,9 +10605,17 @@ function ShoppingSection(_ref5) {
     }));
   }
   function clearBought() {
+    if (!confirmClear) {
+      setConfirmClear(true);
+      setTimeout(function () {
+        setConfirmClear(false);
+      }, 3000);
+      return;
+    }
     onUpdate(items.filter(function (x) {
       return !x.done;
     }));
+    setConfirmClear(false);
     toast("Cleared bought items", "success");
   }
   var todo = items.filter(function (x) {
@@ -10391,7 +10648,7 @@ function ShoppingSection(_ref5) {
   }, todo.length, " to buy", bought.length ? " · " + bought.length + " in cart" : "")), bought.length > 0 && /*#__PURE__*/React.createElement("button", {
     style: editPill,
     onClick: clearBought
-  }, "Clear bought")), /*#__PURE__*/React.createElement("div", {
+  }, confirmClear ? "Tap again to confirm" : "Clear bought")), /*#__PURE__*/React.createElement("div", {
     className: "card-rim",
     style: PCARD
   }, /*#__PURE__*/React.createElement("div", {
@@ -10465,16 +10722,23 @@ function ShoppingHomeCard(_ref6) {
     cardStyle = _ref6.cardStyle,
     mob = _ref6.mob;
   var list = Array.isArray(items) ? items : [];
-  var _useState139 = useState(""),
-    _useState140 = _slicedToArray(_useState139, 2),
-    inp = _useState140[0],
-    setInp = _useState140[1];
+  var _useState151 = useState(""),
+    _useState152 = _slicedToArray(_useState151, 2),
+    inp = _useState152[0],
+    setInp = _useState152[1];
   var todo = list.filter(function (x) {
     return !x.done;
   });
   function add() {
     var v = inp.trim();
     if (!v) return;
+    if (list.some(function (x) {
+      return !x.done && x.text.trim().toLowerCase() === v.toLowerCase();
+    })) {
+      if (window.showToast) window.showToast(v + " is already on the list", "warn");
+      setInp("");
+      return;
+    }
     onUpdate(list.concat([{
       id: nid("shp"),
       key: null,
@@ -10609,11 +10873,11 @@ function ShoppingHomeCard(_ref6) {
   }, "Add")));
 }
 function App() {
-  var _useState141 = useState("Dashboard"),
-    _useState142 = _slicedToArray(_useState141, 2),
-    page = _useState142[0],
-    setPage = _useState142[1];
-  var _useState143 = useState(function () {
+  var _useState153 = useState("Dashboard"),
+    _useState154 = _slicedToArray(_useState153, 2),
+    page = _useState154[0],
+    setPage = _useState154[1];
+  var _useState155 = useState(function () {
       try {
         var s = localStorage.getItem("dash_v1");
         if (!s) return mergeWithDefaults(_objectSpread(_objectSpread({}, INIT), {}, {
@@ -10634,26 +10898,26 @@ function App() {
         }));
       }
     }),
-    _useState144 = _slicedToArray(_useState143, 2),
-    data = _useState144[0],
-    setData = _useState144[1];
-  var _useState145 = useState(0),
-    _useState146 = _slicedToArray(_useState145, 2),
-    wkOff = _useState146[0],
-    setWkOff = _useState146[1];
-  var _useState147 = useState(todayStr()),
-    _useState148 = _slicedToArray(_useState147, 2),
-    activeDay = _useState148[0],
-    setActiveDay = _useState148[1];
-  var _useState149 = useState([]),
-    _useState150 = _slicedToArray(_useState149, 2),
-    checkinBlocks = _useState150[0],
-    setCheckinBlocks = _useState150[1];
-  var _useState151 = useState(false),
-    _useState152 = _slicedToArray(_useState151, 2),
-    checkinOpen = _useState152[0],
-    setCheckinOpen = _useState152[1];
-  var _useState153 = useState([{
+    _useState156 = _slicedToArray(_useState155, 2),
+    data = _useState156[0],
+    setData = _useState156[1];
+  var _useState157 = useState(0),
+    _useState158 = _slicedToArray(_useState157, 2),
+    wkOff = _useState158[0],
+    setWkOff = _useState158[1];
+  var _useState159 = useState(todayStr()),
+    _useState160 = _slicedToArray(_useState159, 2),
+    activeDay = _useState160[0],
+    setActiveDay = _useState160[1];
+  var _useState161 = useState([]),
+    _useState162 = _slicedToArray(_useState161, 2),
+    checkinBlocks = _useState162[0],
+    setCheckinBlocks = _useState162[1];
+  var _useState163 = useState(false),
+    _useState164 = _slicedToArray(_useState163, 2),
+    checkinOpen = _useState164[0],
+    setCheckinOpen = _useState164[1];
+  var _useState165 = useState([{
       id: 1,
       exercise: "",
       sets: "",
@@ -10672,9 +10936,9 @@ function App() {
       reps: "",
       weight: ""
     }]),
-    _useState154 = _slicedToArray(_useState153, 2),
-    nxtRows = _useState154[0],
-    setNxtRows = _useState154[1];
+    _useState166 = _slicedToArray(_useState165, 2),
+    nxtRows = _useState166[0],
+    setNxtRows = _useState166[1];
   // Pre-fill nxtRows — check for a saved draft first, then fall back to rotation template
   useEffect(function () {
     var gr = data.gym.rotation || [];
@@ -10727,221 +10991,221 @@ function App() {
       }));
     } catch (_) {}
   }, [nxtRows]);
-  var _useState155 = useState(""),
-    _useState156 = _slicedToArray(_useState155, 2),
-    bwIn = _useState156[0],
-    setBwIn = _useState156[1];
-  var _useState157 = useState(todayStr()),
-    _useState158 = _slicedToArray(_useState157, 2),
-    bwDate = _useState158[0],
-    setBwDate = _useState158[1];
-  var _useState159 = useState(false),
-    _useState160 = _slicedToArray(_useState159, 2),
-    bwEditing = _useState160[0],
-    setBwEditing = _useState160[1];
-  var _useState161 = useState(false),
-    _useState162 = _slicedToArray(_useState161, 2),
-    showCapture = _useState162[0],
-    setShowCapture = _useState162[1];
-  var _useState163 = useState(""),
-    _useState164 = _slicedToArray(_useState163, 2),
-    captureText = _useState164[0],
-    setCaptureText = _useState164[1];
-  var _useState165 = useState(false),
-    _useState166 = _slicedToArray(_useState165, 2),
-    captureLoading = _useState166[0],
-    setCaptureLoading = _useState166[1];
-  var _useState167 = useState(null),
+  var _useState167 = useState(""),
     _useState168 = _slicedToArray(_useState167, 2),
-    captureResult = _useState168[0],
-    setCaptureResult = _useState168[1];
-  var _useState169 = useState(false),
+    bwIn = _useState168[0],
+    setBwIn = _useState168[1];
+  var _useState169 = useState(todayStr()),
     _useState170 = _slicedToArray(_useState169, 2),
-    showBoardroom = _useState170[0],
-    setShowBoardroom = _useState170[1];
-  var _useState171 = useState([]),
+    bwDate = _useState170[0],
+    setBwDate = _useState170[1];
+  var _useState171 = useState(false),
     _useState172 = _slicedToArray(_useState171, 2),
-    brMessages = _useState172[0],
-    setBrMessages = _useState172[1];
-  var _useState173 = useState(""),
+    bwEditing = _useState172[0],
+    setBwEditing = _useState172[1];
+  var _useState173 = useState(false),
     _useState174 = _slicedToArray(_useState173, 2),
-    brInput = _useState174[0],
-    setBrInput = _useState174[1];
-  var _useState175 = useState(false),
+    showCapture = _useState174[0],
+    setShowCapture = _useState174[1];
+  var _useState175 = useState(""),
     _useState176 = _slicedToArray(_useState175, 2),
-    brLoading = _useState176[0],
-    setBrLoading = _useState176[1];
-  var _useState177 = useState(null),
+    captureText = _useState176[0],
+    setCaptureText = _useState176[1];
+  var _useState177 = useState(false),
     _useState178 = _slicedToArray(_useState177, 2),
-    brLastSpeaker = _useState178[0],
-    setBrLastSpeaker = _useState178[1]; // kept for Firestore compat only
-  var _useState179 = useState([]),
+    captureLoading = _useState178[0],
+    setCaptureLoading = _useState178[1];
+  var _useState179 = useState(null),
     _useState180 = _slicedToArray(_useState179, 2),
-    brGoalProposals = _useState180[0],
-    setBrGoalProposals = _useState180[1];
-  var _useState181 = useState([]),
+    captureResult = _useState180[0],
+    setCaptureResult = _useState180[1];
+  var _useState181 = useState(false),
     _useState182 = _slicedToArray(_useState181, 2),
-    brTaskProposals = _useState182[0],
-    setBrTaskProposals = _useState182[1]; // commitments from the last session, addable as real tasks
-  var _useState183 = useState(false),
+    showBoardroom = _useState182[0],
+    setShowBoardroom = _useState182[1];
+  var _useState183 = useState([]),
     _useState184 = _slicedToArray(_useState183, 2),
-    brClosing = _useState184[0],
-    setBrClosing = _useState184[1];
-  var _useState185 = useState(null),
+    brMessages = _useState184[0],
+    setBrMessages = _useState184[1];
+  var _useState185 = useState(""),
     _useState186 = _slicedToArray(_useState185, 2),
-    brIntentMode = _useState186[0],
-    setBrIntentMode = _useState186[1]; // 'howto' | 'direction' — for header badge / loading copy
-  var _useState187 = useState(null),
+    brInput = _useState186[0],
+    setBrInput = _useState186[1];
+  var _useState187 = useState(false),
     _useState188 = _slicedToArray(_useState187, 2),
-    brPendingIntent = _useState188[0],
-    setBrPendingIntent = _useState188[1]; // {text, reconfirmed} awaiting a one-tap mode choice
-  var _useState189 = useState(false),
+    brLoading = _useState188[0],
+    setBrLoading = _useState188[1];
+  var _useState189 = useState(null),
     _useState190 = _slicedToArray(_useState189, 2),
-    brShowProjCtx = _useState190[0],
-    setBrShowProjCtx = _useState190[1]; // project-context panel open/closed
-  var brMigrationRef = React.useRef(false);
+    brLastSpeaker = _useState190[0],
+    setBrLastSpeaker = _useState190[1]; // kept for Firestore compat only
   var _useState191 = useState([]),
     _useState192 = _slicedToArray(_useState191, 2),
-    capturesData = _useState192[0],
-    setCapturesData = _useState192[1];
-  var _useState193 = useState(false),
+    brGoalProposals = _useState192[0],
+    setBrGoalProposals = _useState192[1];
+  var _useState193 = useState([]),
     _useState194 = _slicedToArray(_useState193, 2),
-    capturesLoading = _useState194[0],
-    setCapturesLoading = _useState194[1];
-  var _useState195 = useState("all"),
+    brTaskProposals = _useState194[0],
+    setBrTaskProposals = _useState194[1]; // commitments from the last session, addable as real tasks
+  var _useState195 = useState(false),
     _useState196 = _slicedToArray(_useState195, 2),
-    capturesFilter = _useState196[0],
-    setCapturesFilter = _useState196[1];
-  var _useState197 = useState("captures"),
+    brClosing = _useState196[0],
+    setBrClosing = _useState196[1];
+  var _useState197 = useState(null),
     _useState198 = _slicedToArray(_useState197, 2),
-    journalTab = _useState198[0],
-    setJournalTab = _useState198[1];
-  var _useState199 = useState(""),
+    brIntentMode = _useState198[0],
+    setBrIntentMode = _useState198[1]; // 'howto' | 'direction' — for header badge / loading copy
+  var _useState199 = useState(null),
     _useState200 = _slicedToArray(_useState199, 2),
-    capturesSearch = _useState200[0],
-    setCapturesSearch = _useState200[1];
-  var _useState201 = useState(null),
+    brPendingIntent = _useState200[0],
+    setBrPendingIntent = _useState200[1]; // {text, reconfirmed} awaiting a one-tap mode choice
+  var _useState201 = useState(false),
     _useState202 = _slicedToArray(_useState201, 2),
-    expandedCapture = _useState202[0],
-    setExpandedCapture = _useState202[1];
-  var _useState203 = useState(null),
+    brShowProjCtx = _useState202[0],
+    setBrShowProjCtx = _useState202[1]; // project-context panel open/closed
+  var brMigrationRef = React.useRef(false);
+  var _useState203 = useState([]),
     _useState204 = _slicedToArray(_useState203, 2),
-    expandedRefl = _useState204[0],
-    setExpandedRefl = _useState204[1];
-  var _useState205 = useState(null),
+    capturesData = _useState204[0],
+    setCapturesData = _useState204[1];
+  var _useState205 = useState(false),
     _useState206 = _slicedToArray(_useState205, 2),
-    editCaptureData = _useState206[0],
-    setEditCaptureData = _useState206[1];
-  var _useState207 = useState(""),
+    capturesLoading = _useState206[0],
+    setCapturesLoading = _useState206[1];
+  var _useState207 = useState("all"),
     _useState208 = _slicedToArray(_useState207, 2),
-    editCaptureTagStr = _useState208[0],
-    setEditCaptureTagStr = _useState208[1];
-  var _useState209 = useState(null),
+    capturesFilter = _useState208[0],
+    setCapturesFilter = _useState208[1];
+  var _useState209 = useState("captures"),
     _useState210 = _slicedToArray(_useState209, 2),
-    appVersion = _useState210[0],
-    setAppVersion = _useState210[1];
-  var _useState211 = useState(null),
+    journalTab = _useState210[0],
+    setJournalTab = _useState210[1];
+  var _useState211 = useState(""),
     _useState212 = _slicedToArray(_useState211, 2),
-    editTaskId = _useState212[0],
-    setEditTaskId = _useState212[1];
-  var _useState213 = useState({}),
+    capturesSearch = _useState212[0],
+    setCapturesSearch = _useState212[1];
+  var _useState213 = useState(null),
     _useState214 = _slicedToArray(_useState213, 2),
-    editTaskForm = _useState214[0],
-    setEditTaskForm = _useState214[1];
-  var _useState215 = useState(false),
+    expandedCapture = _useState214[0],
+    setExpandedCapture = _useState214[1];
+  var _useState215 = useState(null),
     _useState216 = _slicedToArray(_useState215, 2),
-    gymDraftBanner = _useState216[0],
-    setGymDraftBanner = _useState216[1];
+    expandedRefl = _useState216[0],
+    setExpandedRefl = _useState216[1];
   var _useState217 = useState(null),
     _useState218 = _slicedToArray(_useState217, 2),
-    scheduleTaskId = _useState218[0],
-    setScheduleTaskId = _useState218[1];
-  var _useState219 = useState(null),
+    editCaptureData = _useState218[0],
+    setEditCaptureData = _useState218[1];
+  var _useState219 = useState(""),
     _useState220 = _slicedToArray(_useState219, 2),
-    scheduleForDay = _useState220[0],
-    setScheduleForDay = _useState220[1];
-  var _useState221 = useState("09:00"),
+    editCaptureTagStr = _useState220[0],
+    setEditCaptureTagStr = _useState220[1];
+  var _useState221 = useState(null),
     _useState222 = _slicedToArray(_useState221, 2),
-    scheduleTime = _useState222[0],
-    setScheduleTime = _useState222[1];
-  var _useState223 = useState(60),
+    appVersion = _useState222[0],
+    setAppVersion = _useState222[1];
+  var _useState223 = useState(null),
     _useState224 = _slicedToArray(_useState223, 2),
-    scheduleDuration = _useState224[0],
-    setScheduleDuration = _useState224[1];
-  var _useState225 = useState(false),
+    editTaskId = _useState224[0],
+    setEditTaskId = _useState224[1];
+  var _useState225 = useState({}),
     _useState226 = _slicedToArray(_useState225, 2),
-    showTimePicker = _useState226[0],
-    setShowTimePicker = _useState226[1];
+    editTaskForm = _useState226[0],
+    setEditTaskForm = _useState226[1];
   var _useState227 = useState(false),
     _useState228 = _slicedToArray(_useState227, 2),
-    showArch = _useState228[0],
-    setShowArch = _useState228[1];
-  var _useState229 = useState(0),
+    gymDraftBanner = _useState228[0],
+    setGymDraftBanner = _useState228[1];
+  var _useState229 = useState(null),
     _useState230 = _slicedToArray(_useState229, 2),
-    reflStep = _useState230[0],
-    setReflStep = _useState230[1];
-  var _useState231 = useState([]),
+    scheduleTaskId = _useState230[0],
+    setScheduleTaskId = _useState230[1];
+  var _useState231 = useState(null),
     _useState232 = _slicedToArray(_useState231, 2),
-    reflAns = _useState232[0],
-    setReflAns = _useState232[1];
-  var _useState233 = useState(""),
+    scheduleForDay = _useState232[0],
+    setScheduleForDay = _useState232[1];
+  var _useState233 = useState("09:00"),
     _useState234 = _slicedToArray(_useState233, 2),
-    reflIn = _useState234[0],
-    setReflIn = _useState234[1];
-  var _useState235 = useState(null),
+    scheduleTime = _useState234[0],
+    setScheduleTime = _useState234[1];
+  var _useState235 = useState(60),
     _useState236 = _slicedToArray(_useState235, 2),
-    reflAnalysis = _useState236[0],
-    setReflAnalysis = _useState236[1];
-  var _useState237 = useState(null),
+    scheduleDuration = _useState236[0],
+    setScheduleDuration = _useState236[1];
+  var _useState237 = useState(false),
     _useState238 = _slicedToArray(_useState237, 2),
-    modal = _useState238[0],
-    setModal = _useState238[1];
-  var _useState239 = useState({}),
+    showTimePicker = _useState238[0],
+    setShowTimePicker = _useState238[1];
+  var _useState239 = useState(false),
     _useState240 = _slicedToArray(_useState239, 2),
-    mForm = _useState240[0],
-    setMForm = _useState240[1];
-  var _useState241 = useState("loading"),
+    showArch = _useState240[0],
+    setShowArch = _useState240[1];
+  var _useState241 = useState(0),
     _useState242 = _slicedToArray(_useState241, 2),
-    syncStatus = _useState242[0],
-    setSyncStatus = _useState242[1];
-  var _useState243 = useState("idle"),
+    reflStep = _useState242[0],
+    setReflStep = _useState242[1];
+  var _useState243 = useState([]),
     _useState244 = _slicedToArray(_useState243, 2),
-    obsExportStatus = _useState244[0],
-    setObsExportStatus = _useState244[1]; // idle | running | done | error
-  var _useState245 = useState(null),
+    reflAns = _useState244[0],
+    setReflAns = _useState244[1];
+  var _useState245 = useState(""),
     _useState246 = _slicedToArray(_useState245, 2),
-    authUser = _useState246[0],
-    setAuthUser = _useState246[1];
-  var _useState247 = useState(true),
+    reflIn = _useState246[0],
+    setReflIn = _useState246[1];
+  var _useState247 = useState(null),
     _useState248 = _slicedToArray(_useState247, 2),
-    authLoading = _useState248[0],
-    setAuthLoading = _useState248[1];
+    reflAnalysis = _useState248[0],
+    setReflAnalysis = _useState248[1];
+  var _useState249 = useState(null),
+    _useState250 = _slicedToArray(_useState249, 2),
+    modal = _useState250[0],
+    setModal = _useState250[1];
+  var _useState251 = useState({}),
+    _useState252 = _slicedToArray(_useState251, 2),
+    mForm = _useState252[0],
+    setMForm = _useState252[1];
+  var _useState253 = useState("loading"),
+    _useState254 = _slicedToArray(_useState253, 2),
+    syncStatus = _useState254[0],
+    setSyncStatus = _useState254[1];
+  var _useState255 = useState("idle"),
+    _useState256 = _slicedToArray(_useState255, 2),
+    obsExportStatus = _useState256[0],
+    setObsExportStatus = _useState256[1]; // idle | running | done | error
+  var _useState257 = useState(null),
+    _useState258 = _slicedToArray(_useState257, 2),
+    authUser = _useState258[0],
+    setAuthUser = _useState258[1];
+  var _useState259 = useState(true),
+    _useState260 = _slicedToArray(_useState259, 2),
+    authLoading = _useState260[0],
+    setAuthLoading = _useState260[1];
   var _fbReady = useRef(false);
   var _dataLoaded = useRef(false); // only true after we've confirmed Firebase state
   var _saveTimer = useRef(null);
   var _flushNow = useRef(false); // set to skip the 2s debounce for discrete saves (e.g. shift logs)
-  var _useState249 = useState({
+  var _useState261 = useState({
       title: "",
       tags: "",
       content: ""
     }),
-    _useState250 = _slicedToArray(_useState249, 2),
-    docIn = _useState250[0],
-    setDocIn = _useState250[1];
-  var _useState251 = useState(false),
-    _useState252 = _slicedToArray(_useState251, 2),
-    forceMob = _useState252[0],
-    setForceMob = _useState252[1];
-  var _useState253 = useState(function () {
+    _useState262 = _slicedToArray(_useState261, 2),
+    docIn = _useState262[0],
+    setDocIn = _useState262[1];
+  var _useState263 = useState(false),
+    _useState264 = _slicedToArray(_useState263, 2),
+    forceMob = _useState264[0],
+    setForceMob = _useState264[1];
+  var _useState265 = useState(function () {
       try {
         return localStorage.getItem("nav_collapsed") === "1";
       } catch (_) {
         return false;
       }
     }),
-    _useState254 = _slicedToArray(_useState253, 2),
-    navCollapsed = _useState254[0],
-    setNavCollapsed = _useState254[1];
+    _useState266 = _slicedToArray(_useState265, 2),
+    navCollapsed = _useState266[0],
+    setNavCollapsed = _useState266[1];
   function toggleNav() {
     setNavCollapsed(function (c) {
       var nv = !c;
@@ -10953,32 +11217,32 @@ function App() {
   }
   var rawMob = useIsMob();
   var mob = forceMob || rawMob;
-  var _useState255 = useState(false),
-    _useState256 = _slicedToArray(_useState255, 2),
-    checkinLoading = _useState256[0],
-    setCheckinLoading = _useState256[1];
-  var _useState257 = useState(false),
-    _useState258 = _slicedToArray(_useState257, 2),
-    reflAnalysisLoading = _useState258[0],
-    setReflAnalysisLoading = _useState258[1];
-  var _useState259 = useState(false),
-    _useState260 = _slicedToArray(_useState259, 2),
-    showMonitor = _useState260[0],
-    setShowMonitor = _useState260[1];
-  var _useState261 = useState(null),
-    _useState262 = _slicedToArray(_useState261, 2),
-    toast = _useState262[0],
-    setToast = _useState262[1]; // {msg,type:'error'|'success'|'warn'}
-  var _useState263 = useState([]),
-    _useState264 = _slicedToArray(_useState263, 2),
-    errLog = _useState264[0],
-    setErrLog = _useState264[1];
-  var _useState265 = useState(false),
-    _useState266 = _slicedToArray(_useState265, 2),
-    showErrPanel = _useState266[0],
-    setShowErrPanel = _useState266[1];
+  var _useState267 = useState(false),
+    _useState268 = _slicedToArray(_useState267, 2),
+    checkinLoading = _useState268[0],
+    setCheckinLoading = _useState268[1];
+  var _useState269 = useState(false),
+    _useState270 = _slicedToArray(_useState269, 2),
+    reflAnalysisLoading = _useState270[0],
+    setReflAnalysisLoading = _useState270[1];
+  var _useState271 = useState(false),
+    _useState272 = _slicedToArray(_useState271, 2),
+    showMonitor = _useState272[0],
+    setShowMonitor = _useState272[1];
+  var _useState273 = useState(null),
+    _useState274 = _slicedToArray(_useState273, 2),
+    toast = _useState274[0],
+    setToast = _useState274[1]; // {msg,type:'error'|'success'|'warn'}
+  var _useState275 = useState([]),
+    _useState276 = _slicedToArray(_useState275, 2),
+    errLog = _useState276[0],
+    setErrLog = _useState276[1];
+  var _useState277 = useState(false),
+    _useState278 = _slicedToArray(_useState277, 2),
+    showErrPanel = _useState278[0],
+    setShowErrPanel = _useState278[1];
   // Google Calendar sync state
-  var _useState267 = useState(function () {
+  var _useState279 = useState(function () {
       try {
         var c = localStorage.getItem('__gcal_events__');
         return c ? JSON.parse(c) : [];
@@ -10986,18 +11250,18 @@ function App() {
         return [];
       }
     }),
-    _useState268 = _slicedToArray(_useState267, 2),
-    gcalEvents = _useState268[0],
-    setGcalEvents = _useState268[1];
-  var _useState269 = useState(false),
-    _useState270 = _slicedToArray(_useState269, 2),
-    gcalConnected = _useState270[0],
-    setGcalConnected = _useState270[1];
-  var _useState271 = useState([]),
-    _useState272 = _slicedToArray(_useState271, 2),
-    gcalCalendars = _useState272[0],
-    setGcalCalendars = _useState272[1];
-  var _useState273 = useState(function () {
+    _useState280 = _slicedToArray(_useState279, 2),
+    gcalEvents = _useState280[0],
+    setGcalEvents = _useState280[1];
+  var _useState281 = useState(false),
+    _useState282 = _slicedToArray(_useState281, 2),
+    gcalConnected = _useState282[0],
+    setGcalConnected = _useState282[1];
+  var _useState283 = useState([]),
+    _useState284 = _slicedToArray(_useState283, 2),
+    gcalCalendars = _useState284[0],
+    setGcalCalendars = _useState284[1];
+  var _useState285 = useState(function () {
       try {
         var s = localStorage.getItem('__gcal_selected__');
         return s ? JSON.parse(s) : [];
@@ -11005,72 +11269,72 @@ function App() {
         return [];
       }
     }),
-    _useState274 = _slicedToArray(_useState273, 2),
-    gcalSelectedIds = _useState274[0],
-    setGcalSelectedIds = _useState274[1];
-  var _useState275 = useState(false),
-    _useState276 = _slicedToArray(_useState275, 2),
-    gcalReady = _useState276[0],
-    setGcalReady = _useState276[1];
-  var _useState277 = useState(false),
-    _useState278 = _slicedToArray(_useState277, 2),
-    showCalPicker = _useState278[0],
-    setShowCalPicker = _useState278[1];
+    _useState286 = _slicedToArray(_useState285, 2),
+    gcalSelectedIds = _useState286[0],
+    setGcalSelectedIds = _useState286[1];
+  var _useState287 = useState(false),
+    _useState288 = _slicedToArray(_useState287, 2),
+    gcalReady = _useState288[0],
+    setGcalReady = _useState288[1];
+  var _useState289 = useState(false),
+    _useState290 = _slicedToArray(_useState289, 2),
+    showCalPicker = _useState290[0],
+    setShowCalPicker = _useState290[1];
   // Syllabus / assessment hub state
-  var _useState279 = useState(false),
-    _useState280 = _slicedToArray(_useState279, 2),
-    showSyllabusImport = _useState280[0],
-    setShowSyllabusImport = _useState280[1];
-  var _useState281 = useState(""),
-    _useState282 = _slicedToArray(_useState281, 2),
-    syllabusText = _useState282[0],
-    setSyllabusText = _useState282[1];
-  var _useState283 = useState("2026-04-20"),
-    _useState284 = _slicedToArray(_useState283, 2),
-    syllabusStart = _useState284[0],
-    setSyllabusStart = _useState284[1];
-  var _useState285 = useState(function () {
+  var _useState291 = useState(false),
+    _useState292 = _slicedToArray(_useState291, 2),
+    showSyllabusImport = _useState292[0],
+    setShowSyllabusImport = _useState292[1];
+  var _useState293 = useState(""),
+    _useState294 = _slicedToArray(_useState293, 2),
+    syllabusText = _useState294[0],
+    setSyllabusText = _useState294[1];
+  var _useState295 = useState(""),
+    _useState296 = _slicedToArray(_useState295, 2),
+    syllabusStart = _useState296[0],
+    setSyllabusStart = _useState296[1];
+  var _useState297 = useState(function () {
       try {
         return localStorage.getItem('__gemini_key__') || "";
       } catch (_) {
         return "";
       }
     }),
-    _useState286 = _slicedToArray(_useState285, 2),
-    geminiKey = _useState286[0],
-    setGeminiKey = _useState286[1];
-  var _useState287 = useState(function () {
+    _useState298 = _slicedToArray(_useState297, 2),
+    geminiKey = _useState298[0],
+    setGeminiKey = _useState298[1];
+  var _useState299 = useState(function () {
       try {
         return localStorage.getItem('__groq_key__') || "";
       } catch (_) {
         return "";
       }
     }),
-    _useState288 = _slicedToArray(_useState287, 2),
-    groqKey = _useState288[0],
-    setGroqKey = _useState288[1];
-  var _useState289 = useState(false),
-    _useState290 = _slicedToArray(_useState289, 2),
-    geminiLoading = _useState290[0],
-    setGeminiLoading = _useState290[1];
-  var _useState291 = useState(null),
-    _useState292 = _slicedToArray(_useState291, 2),
-    geminiPreview = _useState292[0],
-    setGeminiPreview = _useState292[1];
-  var _useState293 = useState(false),
-    _useState294 = _slicedToArray(_useState293, 2),
-    showAddAssess = _useState294[0],
-    setShowAddAssess = _useState294[1];
-  var _useState295 = useState({
-      subject: "WIA&B",
+    _useState300 = _slicedToArray(_useState299, 2),
+    groqKey = _useState300[0],
+    setGroqKey = _useState300[1];
+  var _useState301 = useState(false),
+    _useState302 = _slicedToArray(_useState301, 2),
+    geminiLoading = _useState302[0],
+    setGeminiLoading = _useState302[1];
+  var _useState303 = useState(null),
+    _useState304 = _slicedToArray(_useState303, 2),
+    geminiPreview = _useState304[0],
+    setGeminiPreview = _useState304[1];
+  var _useState305 = useState(false),
+    _useState306 = _slicedToArray(_useState305, 2),
+    showAddAssess = _useState306[0],
+    setShowAddAssess = _useState306[1];
+  var _useState307 = useState({
+      subject: data.uni.subjects && data.uni.subjects[0] && data.uni.subjects[0].name || "",
       name: "",
       type: "SUBMISSION",
       date: todayStr()
     }),
-    _useState296 = _slicedToArray(_useState295, 2),
-    addAssessForm = _useState296[0],
-    setAddAssessForm = _useState296[1];
-  var _useState297 = useState(function () {
+    _useState308 = _slicedToArray(_useState307, 2),
+    addAssessForm = _useState308[0],
+    setAddAssessForm = _useState308[1];
+  var _useState309 = useState(function () {
       try {
         var x = localStorage.getItem('__gcal_excluded__');
         return x ? JSON.parse(x) : [];
@@ -11078,9 +11342,9 @@ function App() {
         return [];
       }
     }),
-    _useState298 = _slicedToArray(_useState297, 2),
-    gcalExcludedIds = _useState298[0],
-    setGcalExcludedIds = _useState298[1];
+    _useState310 = _slicedToArray(_useState309, 2),
+    gcalExcludedIds = _useState310[0],
+    setGcalExcludedIds = _useState310[1];
 
   // Call this anywhere in App to show a brief auto-dismissing notification.
   // Child components can call window.showToast() which is wired up below.
@@ -11417,7 +11681,7 @@ function App() {
         } else {
           setSyncStatus("offline");
           try {
-            showToast("Cloud data field missing — saves disabled. Contact dev to investigate.", "error");
+            showToast("Cloud data field missing. Saves disabled. Contact dev to investigate.", "error");
           } catch (_) {}
         }
       })["catch"](function (err) {
@@ -11464,7 +11728,7 @@ function App() {
         setData(mergeWithDefaults(parsed));
       })["catch"](function (err) {
         console.error("[Migration] Upload failed:", err);
-        showToast("Migration failed — your data is still saved locally.", "error");
+        showToast("Migration failed. Your data is still saved locally.", "error");
         // Do NOT set _fbReady on migration failure — local data is still in dash_v1
         // and we don't want to risk overwriting Firestore with anything
         setSyncStatus("offline");
@@ -11488,7 +11752,7 @@ function App() {
     if (isLikelySeedState(data)) {
       console.error("[SAFETY] Refused to save seed-shaped state to Firestore — would have wiped real data. State:", data);
       try {
-        showToast("Refused to save empty state — possible bug, data not synced.", "error");
+        showToast("Refused to save empty state. Possible bug, data not synced.", "error");
       } catch (_) {}
       setSyncStatus("offline");
       return;
@@ -11719,8 +11983,8 @@ function App() {
     }).join(', ');
 
     // ── Build context string ─────────────────────────────────────────────────
-    var ctx = 'WHO: Jayden — TAFE Melbourne accounting student. Subjects: ' + subjects + '.\n';
-    if (workedYesterday) ctx += 'WORK: Had a GoTab shift yesterday — energy may be lower today.\n';
+    var ctx = 'WHO: Jayden, TAFE Melbourne accounting student. Subjects: ' + subjects + '.\n';
+    if (workedYesterday) ctx += 'WORK: Had a GoTab shift yesterday, energy may be lower today.\n';
     if (workingToday) ctx += 'WORK: GoTab shift today.\n';
     ctx += '\nCALENDAR TODAY:\n' + (nonWorkEvs.length > 0 ? nonWorkEvs.map(function (ev) {
       return '- ' + ev.title + (ev.time ? ' at ' + ev.time : '');
@@ -11742,7 +12006,7 @@ function App() {
     }
     if (nextGym) {
       var gymLine = 'Next: ' + nextGym.name + (nextGym.focus ? ' (' + nextGym.focus + ')' : '');
-      if (daysSinceGym === 0) gymLine += ' — logged today';else if (daysSinceGym === 1) gymLine += ' — last session yesterday';else if (daysSinceGym !== null) gymLine += ' — ' + daysSinceGym + 'd since last session';
+      if (daysSinceGym === 0) gymLine += ', logged today';else if (daysSinceGym === 1) gymLine += ', last session yesterday';else if (daysSinceGym !== null) gymLine += ', ' + daysSinceGym + 'd since last session';
       ctx += '\nGYM: ' + gymLine + '\n';
     }
     if (!bwThisWeek) ctx += 'GYM: Body weight not yet logged this week.\n';
@@ -11758,7 +12022,7 @@ function App() {
     }
 
     // ── Prompt ───────────────────────────────────────────────────────────────
-    var prompt = 'You are Jayden\'s personal coach. You know him — TAFE accounting student, works GoTab shifts, trains at the gym, does weekly reflections.\n\n' + ctx + '\nWrite a personalised morning check-in. Exactly 3 lines:\nLine 1: Acknowledge his specific day — name actual assessments, work, or events if present\nLine 2: One concrete suggestion tied to his context (if reflection data present, connect to the identified pattern or recommendation)\nLine 3: A question that feels personal to his actual situation — not generic\n\nRules: under 65 words. Use his name once. Warm and direct — not cheesy. Plain lines, no bullets or numbers.';
+    var prompt = 'You are Jayden\'s personal coach. You know him: TAFE accounting student, works GoTab shifts, trains at the gym, does weekly reflections.\n\n' + ctx + '\nWrite a personalised morning check-in. Exactly 3 lines:\nLine 1: Acknowledge his specific day, name actual assessments, work, or events if present\nLine 2: One concrete suggestion tied to his context (if reflection data present, connect to the identified pattern or recommendation)\nLine 3: A question that feels personal to his actual situation, not generic\n\nRules: under 65 words. Use his name once. Warm and direct, not cheesy. Plain lines, no bullets or numbers.';
     fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + key, {
       method: 'POST',
       headers: {
@@ -11824,7 +12088,7 @@ function App() {
       return [{
         role: "assistant",
         persona: "Chris",
-        text: "Walk me through your day. What actually happened — not the highlight reel?",
+        text: "Walk me through your day. What actually happened, not the highlight reel?",
         ts: Date.now()
       }];
     }
@@ -11861,7 +12125,7 @@ function App() {
       setBrMessages([{
         role: "assistant",
         persona: "Chris",
-        text: "Before we get into tasks — I want to understand you, not just your to-do list. What does \"better\" actually look like for you right now?",
+        text: "Before we get into tasks, I want to understand you, not just your to-do list. What does \"better\" actually look like for you right now?",
         ts: Date.now()
       }]);
       setBrLastSpeaker("Chris");
@@ -11994,7 +12258,7 @@ function App() {
           });
         });
       }
-      if (e && e.rateLimited) showToast("Boardroom paused — Groq's free limit was hit. Wait ~30s, then continue.", "warn");else showToast("Boardroom: " + (e && e.message || "error"), "error");
+      if (e && e.rateLimited) showToast("Boardroom paused. Groq's free limit was hit. Wait ~30s, then continue.", "warn");else showToast("Boardroom: " + (e && e.message || "error"), "error");
       setBrLoading(false);
     });
   }
@@ -12003,6 +12267,10 @@ function App() {
       return m.role === "user";
     }).length < 1) {
       setShowBoardroom(false);
+      return;
+    }
+    if (!groqKey.trim()) {
+      showToast("Groq API key missing or invalid · session couldn't be saved. Add it in Settings, then end the session again.", "warn");
       return;
     }
     setBrLoading(true);
@@ -12111,10 +12379,10 @@ function App() {
           });
         }
       });
-    })["catch"](function () {
+    })["catch"](function (e) {
       setBrClosing(false);
       setBrLoading(false);
-      setShowBoardroom(false);
+      showToast("Couldn't save the session: " + (e && e.message || "unknown error") + ". Try ending it again.", "error");
     });
   }
   function brAcceptGoal(proposed) {
@@ -12284,7 +12552,7 @@ function App() {
     });
   }
   function brRedoConsultation() {
-    if (!window.confirm("Start a fresh consultation? It sets a new North Star — your current one is kept in the Session Log below, and your goals and history stay untouched.")) return;
+    if (!window.confirm("Start a fresh consultation? It sets a new North Star. Your current one is kept in the Session Log below, and your goals and history stay untouched.")) return;
     trk("boardroom.redo");
     setData(function (p) {
       return _objectSpread(_objectSpread({}, p), {}, {
@@ -12299,7 +12567,7 @@ function App() {
     setBrMessages([{
       role: "assistant",
       persona: "Chris",
-      text: "Let's reset and go deep again. What does \"better\" actually look like for you right now — today, not in theory?",
+      text: "Let's reset and go deep again. What does \"better\" actually look like for you right now, today, not in theory?",
       ts: Date.now()
     }]);
     setBrLastSpeaker("Chris");
@@ -12356,7 +12624,7 @@ function App() {
     a.href = URL.createObjectURL(blob);
     a.download = "obsidian-export.json";
     a.click();
-    showToast("Downloaded — move to my-project folder then run: node export-to-obsidian.js", "success");
+    showToast("Downloaded. Move to my-project folder then run: node export-to-obsidian.js", "success");
   }
   function restoreFromBackup() {
     var bk = getLatestBackup();
@@ -12374,7 +12642,7 @@ function App() {
         showToast("Restored from backup (" + bk.key.replace("dash_backup_", "") + ") and saved to cloud", "success");
         setSyncStatus("synced");
       })["catch"](function () {
-        showToast("Restored locally — cloud sync failed", "warn");
+        showToast("Restored locally, cloud sync failed", "warn");
       });
     } else {
       showToast("Restored from backup (" + bk.key.replace("dash_backup_", "") + "). Reconnect to sync to cloud.", "success");
@@ -12406,6 +12674,17 @@ function App() {
       });
     });
   }
+  function removeSubject(id) {
+    setData(function (p) {
+      return _objectSpread(_objectSpread({}, p), {}, {
+        uni: _objectSpread(_objectSpread({}, p.uni), {}, {
+          subjects: (p.uni.subjects || []).filter(function (s) {
+            return s.id !== id;
+          })
+        })
+      });
+    });
+  }
   function addAssessment() {
     if (!addAssessForm.name || !addAssessForm.date) return;
     var na = {
@@ -12424,7 +12703,7 @@ function App() {
       });
     });
     setAddAssessForm({
-      subject: "WIA&B",
+      subject: addAssessForm.subject,
       name: "",
       type: "SUBMISSION",
       date: todayStr()
@@ -12436,7 +12715,7 @@ function App() {
   }
   function _parseWithGemini() {
     _parseWithGemini = _asyncToGenerator( /*#__PURE__*/_regeneratorRuntime().mark(function _callee2() {
-      var key, prompt, resp, json, text, match, parsed;
+      var key, existingSubjects, subjectInstruction, prompt, resp, json, text, match, parsed;
       return _regeneratorRuntime().wrap(function _callee2$(_context2) {
         while (1) switch (_context2.prev = _context2.next) {
           case 0:
@@ -12454,14 +12733,25 @@ function App() {
             showToast("Paste your Gemini API key first", "error");
             return _context2.abrupt("return");
           case 6:
+            if (syllabusStart) {
+              _context2.next = 9;
+              break;
+            }
+            showToast("Set the semester start date first", "error");
+            return _context2.abrupt("return");
+          case 9:
             try {
               localStorage.setItem('__gemini_key__', key);
             } catch (_) {}
             setGeminiLoading(true);
             setGeminiPreview(null);
-            _context2.prev = 9;
-            prompt = "Parse this university syllabus. Extract ONLY formal graded assessments (NOT quizzes, NOT self-testing exercises, NOT review questions, NOT resubmissions).\n\nSemester starts: " + syllabusStart + "\nWeek 1 = week of " + syllabusStart + "\nToday: " + todayStr() + "\n\nSubjects (use exact keys): WIA&B, POB, BAS/IAS, FinStmts NRE, Payroll, PFR, Law\n\nFor each assessment:\n- subject: one of the exact keys above\n- name: short descriptive name\n- type: IN-CLASS (supervised/in-class) | SUBMISSION (online submission/assignment) | EXAM\n- date: YYYY-MM-DD calculated from week number and semester start\n- done: false\n- id: short unique slug like 'wiab-at1'\n\nReturn ONLY a raw JSON array. No markdown, no explanation.\n\nSyllabus:\n" + syllabusText;
-            _context2.next = 13;
+            _context2.prev = 12;
+            existingSubjects = (data.uni.subjects || []).map(function (s) {
+              return s.name;
+            });
+            subjectInstruction = existingSubjects.length > 0 ? "Subjects (use exact names, reuse these if they match): " + existingSubjects.join(", ") + ". If a unit in the syllabus isn't in this list, invent a short, clear subject code for it from the unit's own name." : "No subjects are set up yet. Invent a short, clear subject code for each unit from its own name or unit code in the syllabus (e.g. an abbreviated unit title).";
+            prompt = "Parse this university syllabus. Extract ONLY formal graded assessments (NOT quizzes, NOT self-testing exercises, NOT review questions, NOT resubmissions).\n\nSemester starts: " + syllabusStart + "\nWeek 1 = week of " + syllabusStart + "\nToday: " + todayStr() + "\n\n" + subjectInstruction + "\n\nFor each assessment:\n- subject: a short subject code per the instruction above (keep the SAME subject string consistent across all assessments for that unit)\n- name: short descriptive name\n- type: IN-CLASS (supervised/in-class) | SUBMISSION (online submission/assignment) | EXAM\n- date: YYYY-MM-DD calculated from week number and semester start\n- done: false\n- id: short unique slug like 'unit-at1'\n\nReturn ONLY a raw JSON array. No markdown, no explanation.\n\nSyllabus:\n" + syllabusText;
+            _context2.next = 18;
             return fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + key, {
               method: "POST",
               headers: {
@@ -12478,91 +12768,137 @@ function App() {
                 }
               })
             });
-          case 13:
+          case 18:
             resp = _context2.sent;
             if (resp.ok) {
-              _context2.next = 16;
+              _context2.next = 21;
               break;
             }
             throw new Error("Gemini API error " + resp.status);
-          case 16:
-            _context2.next = 18;
+          case 21:
+            _context2.next = 23;
             return resp.json();
-          case 18:
+          case 23:
             json = _context2.sent;
             text = json.candidates[0].content.parts[0].text;
             match = text.match(/\[[\s\S]*\]/);
             if (match) {
-              _context2.next = 23;
+              _context2.next = 28;
               break;
             }
             throw new Error("No JSON array in response");
-          case 23:
+          case 28:
             parsed = JSON.parse(match[0]);
             setGeminiPreview(parsed);
-            _context2.next = 30;
+            _context2.next = 35;
             break;
-          case 27:
-            _context2.prev = 27;
-            _context2.t0 = _context2["catch"](9);
+          case 32:
+            _context2.prev = 32;
+            _context2.t0 = _context2["catch"](12);
             showToast("Gemini error: " + _context2.t0.message, "error");
-          case 30:
+          case 35:
             setGeminiLoading(false);
-          case 31:
+          case 36:
           case "end":
             return _context2.stop();
         }
-      }, _callee2, null, [[9, 27]]);
+      }, _callee2, null, [[12, 32]]);
     }));
     return _parseWithGemini.apply(this, arguments);
   }
   function saveGeminiPreview() {
     if (!geminiPreview || geminiPreview.length === 0) return;
     setData(function (p) {
+      var subs = (p.uni.subjects || []).slice();
+      geminiPreview.forEach(function (a) {
+        var name = (a.subject || "").trim();
+        if (name && !subs.some(function (s) {
+          return s.name.toLowerCase() === name.toLowerCase();
+        })) {
+          subs.push({
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            name: name,
+            color: nextSubjectColor(subs)
+          });
+        }
+      });
+      var existingAssess = p.uni.assessments || [];
+      var existingIds = {};
+      existingAssess.forEach(function (a) {
+        existingIds[a.id] = true;
+      });
+      var newOnes = geminiPreview.map(function (a) {
+        var id = a.id;
+        while (existingIds[id]) {
+          id = id + "-2";
+        }
+        existingIds[id] = true;
+        return _objectSpread(_objectSpread({}, a), {}, {
+          id: id,
+          done: a.done || false
+        });
+      });
       return _objectSpread(_objectSpread({}, p), {}, {
         uni: _objectSpread(_objectSpread({}, p.uni), {}, {
-          assessments: geminiPreview.map(function (a) {
-            return _objectSpread(_objectSpread({}, a), {}, {
-              done: a.done || false
-            });
-          })
+          subjects: subs,
+          assessments: existingAssess.concat(newOnes)
         })
       });
     });
     setGeminiPreview(null);
     setSyllabusText("");
     setShowSyllabusImport(false);
-    showToast("Assessments saved!", "success");
+    showToast(geminiPreview.length + " assessment" + (geminiPreview.length !== 1 ? "s" : "") + " added", "success");
   }
-  function updateProg(id, val) {
+  // Plain checkbox click = instant complete, dated today (fast path). The clock icon
+  // next to each task opens the same modal for backdating instead, when that matters.
+  function toggleTask(id) {
+    var cur = (data.personal.tasks || []).find(function (t) {
+      return t.id === id;
+    });
+    if (cur && !cur.done) {
+      completeTask(id, todayStr(), "");
+      return;
+    }
+    trk("task.uncomplete");
     setData(function (p) {
+      var ts = p.personal.tasks || [];
       return _objectSpread(_objectSpread({}, p), {}, {
-        uni: _objectSpread(_objectSpread({}, p.uni), {}, {
-          subjects: p.uni.subjects.map(function (s) {
-            return s.id === id ? _objectSpread(_objectSpread({}, s), {}, {
-              progress: Number(val)
-            }) : s;
+        personal: _objectSpread(_objectSpread({}, p.personal), {}, {
+          tasks: ts.map(function (t) {
+            return t.id === id ? _objectSpread(_objectSpread({}, t), {}, {
+              done: false,
+              completedAt: null,
+              completedTime: null
+            }) : t;
           })
         })
       });
     });
   }
-  function toggleTask(id) {
+  function completeTask(id, dateStr, timeStr) {
+    trk("task.complete");
     setData(function (p) {
       var ts = p.personal.tasks || [];
-      var cur = ts.find(function (t) {
-        return t.id === id;
-      });
-      trk(cur && cur.done ? "task.uncomplete" : "task.complete");
       return _objectSpread(_objectSpread({}, p), {}, {
         personal: _objectSpread(_objectSpread({}, p.personal), {}, {
           tasks: ts.map(function (t) {
             return t.id === id ? _objectSpread(_objectSpread({}, t), {}, {
-              done: !t.done
+              done: true,
+              completedAt: dateStr || todayStr(),
+              completedTime: timeStr || null
             }) : t;
           })
         })
       });
+    });
+  }
+  function openBackdateModal(id) {
+    setModal("complete_task");
+    setMForm({
+      taskId: id,
+      date: todayStr(),
+      time: ""
     });
   }
   function archiveDone() {
@@ -12599,7 +12935,9 @@ function App() {
         personal: _objectSpread(_objectSpread({}, p.personal), {}, {
           tasks: ts.concat([_objectSpread(_objectSpread({}, match[0]), {}, {
             done: false,
-            archivedAt: undefined
+            archivedAt: undefined,
+            completedAt: null,
+            completedTime: null
           })]),
           archived: arch.filter(function (x) {
             return x.id !== id;
@@ -12716,7 +13054,7 @@ function App() {
         }).then(function () {
           setCaptureText("");
         })["catch"](function (e) {
-          showToast("Save failed — " + (e.message || "check connection."), "error");
+          showToast("Save failed: " + (e.message || "check connection."), "error");
         });
       }
     })["catch"](function (e) {
@@ -12755,7 +13093,7 @@ function App() {
           });
         });
       });
-      showToast("Capture updated — will re-export on next sync", "success");
+      showToast("Capture updated, will re-export on next sync", "success");
       setEditCaptureData(null);
     })["catch"](function (e) {
       showToast("Save failed: " + e.message, "error");
@@ -12957,7 +13295,7 @@ function App() {
             return;
           }
         }
-        if (modal === "add_subject") {
+        if (modal === "add_subject" || modal === "edit_subject") {
           if (!mForm.name || !mForm.name.trim()) {
             showToast("Subject name can't be empty.");
             return;
@@ -12983,13 +13321,32 @@ function App() {
       if (modal === "add_subject") {
         trk("uni.subject_add");
         setData(function (p) {
+          var subs = p.uni.subjects || [];
+          if (subs.some(function (s) {
+            return s.name.toLowerCase() === mForm.name.trim().toLowerCase();
+          })) return p;
           return _objectSpread(_objectSpread({}, p), {}, {
             uni: _objectSpread(_objectSpread({}, p.uni), {}, {
-              subjects: p.uni.subjects.concat([{
+              subjects: subs.concat([{
                 id: Date.now(),
-                name: mForm.name,
-                progress: 0
+                name: mForm.name.trim(),
+                color: mForm.color || nextSubjectColor(subs)
               }])
+            })
+          });
+        });
+      } else if (modal === "edit_subject") {
+        trk("uni.subject_edit");
+        setData(function (p) {
+          var subs = p.uni.subjects || [];
+          return _objectSpread(_objectSpread({}, p), {}, {
+            uni: _objectSpread(_objectSpread({}, p.uni), {}, {
+              subjects: subs.map(function (s) {
+                return s.id === mForm.editId ? _objectSpread(_objectSpread({}, s), {}, {
+                  name: mForm.name.trim(),
+                  color: mForm.color || s.color
+                }) : s;
+              })
             })
           });
         });
@@ -13060,6 +13417,12 @@ function App() {
         setMForm({});
         showToast("Template updated!", "success");
         return;
+      } else if (modal === "complete_task") {
+        completeTask(mForm.taskId, mForm.date, mForm.time);
+        setModal(null);
+        setMForm({});
+        showToast("Task completed!", "success");
+        return;
       }
       setModal(null);
       setMForm({});
@@ -13108,7 +13471,7 @@ function App() {
     setData(function (p) {
       var cur = Array.isArray(p.shopping) ? p.shopping : [];
       if (item.key && cur.some(function (x) {
-        return x.key === item.key && !x.done;
+        return x.key === item.key;
       })) return p;
       return _objectSpread(_objectSpread({}, p), {}, {
         shopping: cur.concat([item])
@@ -13167,7 +13530,7 @@ function App() {
         });
       })["catch"](function () {
         setReflAnalysisLoading(false);
-        showToast("Analysis failed — reflection was still saved.", "warn");
+        showToast("Analysis failed. Reflection was still saved.", "warn");
       });
     }
   }
@@ -13175,9 +13538,11 @@ function App() {
     return ev.calColor || "#4285F4";
   }
   function evLabel(ev) {
-    var keys = Object.keys(SUBJECTS);
+    var keys = (data.uni.subjects || []).map(function (s) {
+      return s.name;
+    });
     var match = keys.find(function (k) {
-      return ev.title && ev.title.toUpperCase().includes(k.toUpperCase());
+      return ev.title && k && ev.title.toUpperCase().includes(k.toUpperCase());
     });
     return match || ev.calName || "Google";
   }
@@ -13624,7 +13989,7 @@ function App() {
     padding: "2px 9px",
     borderRadius: 999,
     background: "rgba(91,140,255,0.16)",
-    color: T.accentSoft || "#8fb0ff",
+    color: "#8fb0ff",
     border: "1px solid rgba(120,150,255,0.4)"
   };
   var glassMini = {
@@ -14200,7 +14565,7 @@ function App() {
     onClick: function onClick() {
       var pat = (data.settings && data.settings.githubPAT || "").trim();
       if (!pat) {
-        showToast("GitHub PAT not set — add it in Settings.", "error");
+        showToast("GitHub PAT not set. Add it in Settings.", "error");
         return;
       }
       trk("export.manual");
@@ -14218,7 +14583,7 @@ function App() {
       }).then(function (r) {
         if (r.status === 204) {
           setObsExportStatus("done");
-          showToast("Export triggered — notes will appear in Obsidian in ~30s", "success");
+          showToast("Export triggered, notes will appear in Obsidian in ~30s", "success");
           setTimeout(function () {
             setObsExportStatus("idle");
           }, 4000);
@@ -14231,7 +14596,7 @@ function App() {
         }
       })["catch"](function () {
         setObsExportStatus("error");
-        showToast("Export trigger failed — check connection", "error");
+        showToast("Export trigger failed, check connection", "error");
         setTimeout(function () {
           setObsExportStatus("idle");
         }, 3000);
@@ -14549,7 +14914,7 @@ function App() {
       color: T.text3,
       marginTop: 1
     }
-  }, fmtDate(dStr(weekDates[0])), " \u2014 ", fmtDate(dStr(weekDates[6])))), /*#__PURE__*/React.createElement("div", {
+  }, fmtDate(dStr(weekDates[0])), " \xB7 ", fmtDate(dStr(weekDates[6])))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 5,
@@ -14663,52 +15028,7 @@ function App() {
     }
   }, /*#__PURE__*/React.createElement(WeatherWidget, {
     mob: mob
-  })), nextRot && /*#__PURE__*/React.createElement("div", {
-    className: "card-rim",
-    style: _objectSpread(_objectSpread({}, card({
-      breakInside: "avoid"
-    })), {}, {
-      padding: "14px 16px"
-    })
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "flex-start",
-      marginBottom: 6
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: "#eef3fb",
-      fontWeight: 700,
-      letterSpacing: 0.2
-    }
-  }, "Next session"), /*#__PURE__*/React.createElement("button", {
-    style: editPill,
-    onClick: function onClick() {
-      setPage("Gym");
-    }
-  }, "Open \u2192")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 14,
-      fontWeight: 700,
-      color: T.text,
-      marginBottom: 3
-    }
-  }, nextRot.name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: T.text2,
-      lineHeight: 1.4
-    }
-  }, nextRot.focus), nextRot.exercises && nextRot.exercises.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: T.text3,
-      marginTop: 4
-    }
-  }, nextRot.exercises.length, " exercise", nextRot.exercises.length !== 1 ? "s" : "", " planned")), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
     className: "card-rim",
     style: _objectSpread(_objectSpread({}, card({
       breakInside: "avoid"
@@ -14959,7 +15279,7 @@ function App() {
     }
   }, "All clear \u2713") : upcoming.map(function (a) {
     var days = daysBetween(a.date);
-    var col = SC[a.subject] || T.accent;
+    var col = subjectColor(data.uni.subjects, a.subject) || T.accent;
     var dayLabel = days === 0 ? "Today" : days === 1 ? "Tomorrow" : days <= 13 ? WX_DAYS[new Date(a.date + "T00:00").getDay()] + " · " + days + " days" : fmtDate(a.date);
     return /*#__PURE__*/React.createElement("div", {
       key: a.id,
@@ -15000,7 +15320,7 @@ function App() {
         color: col,
         fontWeight: 700
       }
-    }, a.subject), " — ", a.title), /*#__PURE__*/React.createElement("div", {
+    }, a.subject), " · ", a.title), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 10,
         color: days <= 3 ? T.danger : T.text2,
@@ -15015,8 +15335,26 @@ function App() {
       breakInside: "avoid"
     })
   }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      marginBottom: nextRot ? 4 : 0
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: sT
-  }, "Next session \u2014 pre-fill weights"), !nextRot && /*#__PURE__*/React.createElement("div", {
+  }, "Next session \xB7 pre-fill weights"), nextRot && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: T.text2,
+      marginTop: 2
+    }
+  }, nextRot.name, nextRot.focus ? " · " + nextRot.focus : "")), /*#__PURE__*/React.createElement("button", {
+    style: editPill,
+    onClick: function onClick() {
+      setPage("Gym");
+    }
+  }, "Open \u2192")), !nextRot && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: T.text2,
@@ -15040,7 +15378,7 @@ function App() {
       fontSize: 11,
       color: T.warn
     }
-  }, "Unfinished session restored \u2014 keep logging or discard"), /*#__PURE__*/React.createElement("button", {
+  }, "Unfinished session restored \xB7 keep logging or discard"), /*#__PURE__*/React.createElement("button", {
     onClick: function onClick() {
       try {
         localStorage.removeItem('gym_draft');
@@ -15404,7 +15742,7 @@ function App() {
       color: T.text3,
       marginBottom: 8
     }
-  }, bwEditing ? "Update your entry or add a past entry below" : dLeft <= 1 ? "Last chance — ends tomorrow!" : dLeft <= 3 ? "Log before the week ends" : "Log once this week"), /*#__PURE__*/React.createElement("div", {
+  }, bwEditing ? "Update your entry or add a past entry below" : dLeft <= 1 ? "Last chance, ends tomorrow!" : dLeft <= 3 ? "Log before the week ends" : "Log once this week"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -15569,6 +15907,26 @@ function App() {
         border: "none",
         padding: "2px 4px",
         cursor: "pointer",
+        color: T.text3,
+        flexShrink: 0,
+        opacity: 0.45,
+        display: "flex",
+        transition: "opacity 0.15s"
+      },
+      title: "Mark done on a different day",
+      onClick: function onClick(e) {
+        e.stopPropagation();
+        openBackdateModal(t.id);
+      }
+    }, /*#__PURE__*/React.createElement(UIcon, {
+      name: "clock",
+      size: 12
+    })), /*#__PURE__*/React.createElement("button", {
+      style: {
+        background: "none",
+        border: "none",
+        padding: "2px 4px",
+        cursor: "pointer",
         color: scheduleTaskId === t.id ? T.accent : T.text3,
         fontSize: 14,
         flexShrink: 0,
@@ -15651,6 +16009,26 @@ function App() {
         border: "none",
         padding: "2px 4px",
         cursor: "pointer",
+        color: T.text3,
+        flexShrink: 0,
+        opacity: 0.45,
+        display: "flex",
+        transition: "opacity 0.15s"
+      },
+      title: "Mark done on a different day",
+      onClick: function onClick(e) {
+        e.stopPropagation();
+        openBackdateModal(t.id);
+      }
+    }, /*#__PURE__*/React.createElement(UIcon, {
+      name: "clock",
+      size: 12
+    })), /*#__PURE__*/React.createElement("button", {
+      style: {
+        background: "none",
+        border: "none",
+        padding: "2px 4px",
+        cursor: "pointer",
         color: scheduleTaskId === t.id ? T.accent : T.text3,
         fontSize: 14,
         flexShrink: 0,
@@ -15704,9 +16082,17 @@ function App() {
       style: {
         fontSize: 11,
         color: T.text3,
-        textDecoration: "line-through"
+        textDecoration: "line-through",
+        flex: 1,
+        minWidth: 0
       }
-    }, t.name));
+    }, t.name), t.completedAt && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 9,
+        color: T.text3,
+        flexShrink: 0
+      }
+    }, fmtDate(t.completedAt), t.completedTime ? " · " + fmtTime12(t.completedTime) : ""));
   })))), appVersion && /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
@@ -15914,6 +16300,15 @@ function App() {
           }
         }, /*#__PURE__*/React.createElement("span", {
           style: {
+            display: "inline-block",
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: subjectColor(data.uni.subjects, a.subject) || T.text3,
+            marginRight: 6
+          }
+        }), /*#__PURE__*/React.createElement("span", {
+          style: {
             fontSize: 9,
             fontWeight: 700,
             color: T.text3,
@@ -15982,6 +16377,98 @@ function App() {
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
+        marginBottom: (data.uni.subjects || []).length > 0 ? 10 : 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: sT
+    }, "Subjects"), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 10
+      }),
+      onClick: function onClick() {
+        setModal("add_subject");
+        setMForm({
+          color: nextSubjectColor(data.uni.subjects || [])
+        });
+      }
+    }, "+ Subject")), (data.uni.subjects || []).length === 0 ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text2
+      }
+    }, "No subjects yet. Add one, or import a syllabus below and they'll be created for you.") : /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 8
+      }
+    }, data.uni.subjects.map(function (s) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: s.id,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "5px 10px",
+          borderRadius: 999,
+          background: T.bg3,
+          border: "0.5px solid " + T.border
+        }
+      }, /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: function onClick() {
+          setModal("edit_subject");
+          setMForm({
+            editId: s.id,
+            name: s.name,
+            color: s.color || nextSubjectColor(data.uni.subjects || [])
+          });
+        },
+        style: {
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          padding: 0
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: s.color || T.text3,
+          flexShrink: 0
+        }
+      }), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 11,
+          color: T.text
+        }
+      }, s.name)), /*#__PURE__*/React.createElement("button", {
+        style: {
+          background: "none",
+          border: "none",
+          color: T.text3,
+          cursor: "pointer",
+          fontSize: 12,
+          padding: 0,
+          opacity: 0.5,
+          lineHeight: 1
+        },
+        onClick: function onClick() {
+          removeSubject(s.id);
+        }
+      }, "\xD7"));
+    }))), /*#__PURE__*/React.createElement("div", {
+      className: "card-rim",
+      style: card()
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
         marginBottom: 8
       }
     }, /*#__PURE__*/React.createElement("div", {
@@ -16015,7 +16502,7 @@ function App() {
             paddingTop: 8,
             borderTop: "0.5px solid " + T.border
           }
-        }, isToday ? "Today — " : "", new Date(ev.date + "T12:00:00").toLocaleDateString("en-AU", {
+        }, isToday ? "Today · " : "", new Date(ev.date + "T12:00:00").toLocaleDateString("en-AU", {
           weekday: "long",
           day: "numeric",
           month: "short"
@@ -16314,7 +16801,7 @@ function App() {
     }
   }, "No tasks yet."), ["urgent", "normal"].map(function (pri) {
     var tasks = data.personal.tasks.filter(function (t) {
-      return t.priority === pri;
+      return t.priority === pri && !t.done;
     }).sort(function (a, b) {
       return new Date(a.due || "9999") - new Date(b.due || "9999");
     });
@@ -16379,6 +16866,24 @@ function App() {
           marginTop: 1
         }
       }, t.cat, " \xB7 ", taskLabel(t))), /*#__PURE__*/React.createElement("button", {
+        style: {
+          background: "none",
+          border: "none",
+          padding: "2px 4px",
+          cursor: "pointer",
+          color: T.text3,
+          flexShrink: 0,
+          opacity: 0.5,
+          display: "flex"
+        },
+        title: "Mark done on a different day",
+        onClick: function onClick() {
+          openBackdateModal(t.id);
+        }
+      }, /*#__PURE__*/React.createElement(UIcon, {
+        name: "clock",
+        size: 13
+      })), /*#__PURE__*/React.createElement("button", {
         onClick: function onClick() {
           setEditTaskId(t.id);
           setEditTaskForm({
@@ -16394,7 +16899,65 @@ function App() {
         })
       }, "Edit"));
     }));
-  })), (data.personal.archived || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+  }), function () {
+    var doneP = data.personal.tasks.filter(function (t) {
+      return t.done;
+    });
+    if (doneP.length === 0) return null;
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginBottom: 14
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 9,
+        fontWeight: 700,
+        color: T.text3,
+        marginBottom: 8,
+        textTransform: "uppercase",
+        letterSpacing: 0.5
+      }
+    }, "Done"), doneP.map(function (t) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: t.id,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 9,
+          marginBottom: 6,
+          padding: "9px 13px",
+          borderRadius: 12,
+          background: "rgba(225,234,255,0.02)",
+          border: "1px solid rgba(255,255,255,0.05)",
+          opacity: 0.55
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        type: "checkbox",
+        checked: true,
+        onChange: function onChange() {
+          toggleTask(t.id);
+        },
+        style: {
+          accentColor: T.accent,
+          flexShrink: 0
+        }
+      }), /*#__PURE__*/React.createElement("div", {
+        style: {
+          flex: 1,
+          minWidth: 0,
+          fontSize: 12,
+          color: T.text3,
+          textDecoration: "line-through"
+        }
+      }, t.name), t.completedAt && /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 10,
+          color: T.text3,
+          flexShrink: 0
+        }
+      }, fmtDate(t.completedAt), t.completedTime ? " · " + fmtTime12(t.completedTime) : ""));
+    }));
+  }()), (data.personal.archived || []).length > 0 && /*#__PURE__*/React.createElement("div", {
     className: "card-rim",
     style: card()
   }, /*#__PURE__*/React.createElement("div", {
@@ -17042,7 +17605,7 @@ function App() {
       fontSize: 13,
       lineHeight: 1.6
     }),
-    placeholder: "Be honest \u2014 this is only visible to you..."
+    placeholder: "Be honest, this is only visible to you..."
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -17393,7 +17956,7 @@ function App() {
       padding: "20px 0",
       textAlign: "center"
     }
-  }, "No captures yet \u2014 hit Capture to add your first one."), !capturesLoading && function () {
+  }, "No captures yet. Hit Capture to add your first one."), !capturesLoading && function () {
     var filtered = capturesData.filter(function (c) {
       if (capturesFilter !== "all" && c.type !== capturesFilter) return false;
       if (capturesSearch.trim()) {
@@ -17601,7 +18164,7 @@ function App() {
       marginBottom: 16,
       color: T.text
     }
-  }, modal === "add_subject" && "Add subject", modal === "add_exercise" && "Add exercise", modal === "log_weight" && "Log weight — " + (mForm.exName || ""), modal === "add_task" && "Add task", modal === "edit_rotation" && "Edit rotation template"), modal === "add_exercise" && function () {
+  }, modal === "add_subject" && "Add subject", modal === "add_exercise" && "Add exercise", modal === "log_weight" && "Log weight · " + (mForm.exName || ""), modal === "add_task" && "Add task", modal === "edit_rotation" && "Edit rotation template", modal === "complete_task" && "Mark task done", modal === "edit_subject" && "Edit subject"), modal === "add_exercise" && function () {
     var names = [];
     var seen = {};
     (data.gym.exercises || []).forEach(function (ex) {
@@ -17669,7 +18232,7 @@ function App() {
         }
       }, n);
     })));
-  }(), (modal === "add_subject" || modal === "add_exercise" || modal === "add_task") && /*#__PURE__*/React.createElement("div", {
+  }(), (modal === "add_subject" || modal === "add_exercise" || modal === "add_task" || modal === "edit_subject") && /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 12
     }
@@ -17693,7 +18256,61 @@ function App() {
       });
     },
     placeholder: "Enter name..."
-  })), modal === "log_weight" && /*#__PURE__*/React.createElement("div", {
+  })), (modal === "add_subject" || modal === "edit_subject") && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: T.text2,
+      marginBottom: 6
+    }
+  }, "Color"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 7,
+      flexWrap: "wrap"
+    }
+  }, SUBJECT_PALETTE.map(function (c) {
+    var active = mForm.color === c;
+    return /*#__PURE__*/React.createElement("button", {
+      key: c,
+      type: "button",
+      onClick: function onClick() {
+        setMForm(function (f) {
+          return _objectSpread(_objectSpread({}, f), {}, {
+            color: c
+          });
+        });
+      },
+      style: {
+        width: 24,
+        height: 24,
+        borderRadius: "50%",
+        background: c,
+        border: active ? "2px solid #fff" : "2px solid transparent",
+        boxShadow: active ? "0 0 0 2px " + c + ", 0 0 8px " + c : "none",
+        cursor: "pointer",
+        padding: 0
+      }
+    });
+  }))), modal === "edit_subject" && /*#__PURE__*/React.createElement("button", {
+    style: {
+      background: "none",
+      border: "none",
+      color: T.danger,
+      cursor: "pointer",
+      fontSize: 11,
+      padding: 0,
+      marginBottom: 4
+    },
+    onClick: function onClick() {
+      removeSubject(mForm.editId);
+      setModal(null);
+      setMForm({});
+    }
+  }, "Delete subject"), modal === "log_weight" && /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 12
     }
@@ -17827,6 +18444,88 @@ function App() {
       setMForm(function (f) {
         return _objectSpread(_objectSpread({}, f), {}, {
           due: ev.target.value
+        });
+      });
+    }
+  }))), modal === "complete_task" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: T.text2,
+      marginBottom: 6
+    }
+  }, "Completed"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 5,
+      flexWrap: "wrap",
+      marginBottom: 8
+    }
+  }, [["Today", 0], ["Yesterday", 1], ["2 days ago", 2], ["3 days ago", 3]].map(function (item) {
+    var label = item[0];
+    var n = item[1];
+    var val = pastDateStr(n);
+    var active = mForm.date === val;
+    return /*#__PURE__*/React.createElement("button", {
+      key: label,
+      type: "button",
+      onClick: function onClick() {
+        setMForm(function (f) {
+          return _objectSpread(_objectSpread({}, f), {}, {
+            date: val
+          });
+        });
+      },
+      style: {
+        padding: "5px 10px",
+        borderRadius: 99,
+        border: active ? "1px solid " + T.accent : "0.5px solid " + T.border,
+        background: active ? T.accentBg : "transparent",
+        color: active ? T.accent : T.text2,
+        fontSize: 11,
+        cursor: "pointer",
+        fontWeight: active ? 600 : 400
+      }
+    }, label);
+  })), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    style: _objectSpread(_objectSpread({}, inp), {}, {
+      padding: "10px 12px",
+      fontSize: 14
+    }),
+    value: mForm.date || todayStr(),
+    onChange: function onChange(ev) {
+      setMForm(function (f) {
+        return _objectSpread(_objectSpread({}, f), {}, {
+          date: ev.target.value
+        });
+      });
+    }
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: T.text2,
+      marginBottom: 6
+    }
+  }, "Time ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: T.text3,
+      fontWeight: 400
+    }
+  }, "(optional)")), /*#__PURE__*/React.createElement("input", {
+    type: "time",
+    style: _objectSpread(_objectSpread({}, inp), {}, {
+      padding: "10px 12px",
+      fontSize: 14
+    }),
+    value: mForm.time || "",
+    onChange: function onChange(ev) {
+      setMForm(function (f) {
+        return _objectSpread(_objectSpread({}, f), {}, {
+          time: ev.target.value
         });
       });
     }
@@ -18632,11 +19331,13 @@ function App() {
         });
       });
     }
-  }, Object.keys(SUBJECTS).map(function (s) {
+  }, (data.uni.subjects || []).length === 0 && /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "Add a subject first \u2193"), (data.uni.subjects || []).map(function (s) {
     return /*#__PURE__*/React.createElement("option", {
-      key: s,
-      value: s
-    }, s);
+      key: s.id,
+      value: s.name
+    }, s.name);
   }), /*#__PURE__*/React.createElement("option", {
     value: "Other"
   }, "Other"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -18802,7 +19503,7 @@ function App() {
   }, /*#__PURE__*/React.createElement(UIcon, {
     name: "warn",
     size: 12
-  }), "No Gemini API key set \u2014 add it in ", /*#__PURE__*/React.createElement("button", {
+  }), "No Gemini API key set. Add it in ", /*#__PURE__*/React.createElement("button", {
     onClick: function onClick() {
       setShowSyllabusImport(false);
       setShowMonitor(true);
@@ -18858,7 +19559,7 @@ function App() {
       lineHeight: 1.5
     }),
     rows: 8,
-    placeholder: "Paste your subject outline here...\nE.g.:\nWeek 5 — Assessment 1 due\nWeek 7 — Supervised exam (AT2)\n...",
+    placeholder: "Paste your subject outline here...\nE.g.:\nWeek 5: Assessment 1 due\nWeek 7: Supervised exam (AT2)\n...",
     value: syllabusText,
     onChange: function onChange(ev) {
       setSyllabusText(ev.target.value);
@@ -18890,7 +19591,7 @@ function App() {
       color: T.success,
       marginBottom: 8
     }
-  }, "\u2713 ", geminiPreview.length, " assessments found \u2014 review before saving:"), /*#__PURE__*/React.createElement("div", {
+  }, "\u2713 ", geminiPreview.length, " assessments found. Review before saving:"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -20032,7 +20733,7 @@ function App() {
       borderRadius: 14,
       fontSize: 13
     }
-  }, "Quick check \u2014 want us to talk this through, or walk you through the actual steps?", /*#__PURE__*/React.createElement("div", {
+  }, "Quick check: want us to talk this through, or walk you through the actual steps?", /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -20269,7 +20970,7 @@ function App() {
       fontFamily: "monospace",
       width: "100%"
     }),
-    placeholder: "e.g. Revenue \u2013 Expenses = Profit"
+    placeholder: "e.g. Revenue - Expenses = Profit"
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 14
@@ -20372,9 +21073,10 @@ function App() {
       backdropFilter: "blur(20px)",
       WebkitBackdropFilter: "blur(20px)",
       borderTop: "0.5px solid rgba(91,140,255,0.18)",
-      justifyContent: "space-around",
       alignItems: "stretch",
-      boxShadow: "0 -4px 24px rgba(0,0,0,0.5)"
+      boxShadow: "0 -4px 24px rgba(0,0,0,0.5)",
+      overflowX: "auto",
+      WebkitOverflowScrolling: "touch"
     }
   }, NAV_PAGES.map(function (name) {
     var active = page === name;
@@ -20392,9 +21094,10 @@ function App() {
         alignItems: "center",
         justifyContent: "center",
         gap: 3,
-        padding: "8px 4px",
+        padding: "8px 10px",
         color: active ? T.accent : T.text3,
-        flex: 1,
+        flex: "0 0 auto",
+        minWidth: 60,
         minHeight: 54,
         position: "relative"
       }
@@ -20423,7 +21126,8 @@ function App() {
       style: {
         fontSize: 9,
         fontWeight: active ? 700 : 400,
-        letterSpacing: 0.2
+        letterSpacing: 0.2,
+        whiteSpace: "nowrap"
       }
     }, name));
   })));
