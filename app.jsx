@@ -2722,6 +2722,34 @@ function ShoppingHomeCard({items,onUpdate,onOpen,cardStyle,mob}){
   </div>;
 }
 
+// Masonry-on-CSS-Grid: a card's rendered height is measured and converted into a
+// row span against a fine grid-auto-rows unit, so cards pack tightly upward while
+// keeping an explicit column position. This is what CSS multi-column could not do.
+const GRID_ROW_UNIT=8;   // px per implicit row
+const GRID_GAP=18;       // px between cards, both axes
+
+function HomeGridCard({span,children}){
+  const ref=React.useRef(null);
+  const [rows,setRows]=React.useState(20);
+  React.useLayoutEffect(function(){
+    const el=ref.current;
+    if(!el||typeof ResizeObserver==="undefined")return;
+    function measure(){
+      const h=el.getBoundingClientRect().height;
+      setRows(Math.max(1,Math.ceil((h+GRID_GAP)/(GRID_ROW_UNIT+GRID_GAP))));
+    }
+    measure();
+    const ro=new ResizeObserver(measure);
+    ro.observe(el);
+    return function(){ro.disconnect();};
+  },[children]);
+  return(
+    <div style={{gridColumn:"span "+span,gridRow:"span "+rows}}>
+      <div ref={ref} style={{marginBottom:0}}>{children}</div>
+    </div>
+  );
+}
+
 function App(){
   const [page,setPage]=useState("Dashboard");
   const [data,setData]=useState(function(){try{const s=localStorage.getItem("dash_v1");if(!s)return mergeWithDefaults({...INIT,reflections:SEED_REFL});const saved=JSON.parse(s);const fin=saved.finance||{};let out=saved;if(!fin.financeVersion||fin.financeVersion<2){out={...out,finance:INIT.finance};}return mergeWithDefaults(out);}catch(_){return mergeWithDefaults({...INIT,reflections:SEED_REFL});}});
@@ -3202,6 +3230,9 @@ function App(){
   const normTasks=activeTasks.filter(function(t){return t.priority==="normal";}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});
   const todayEvs=visibleGcalEvents.filter(function(ev){return ev.date===todayStr()&&!ev.allDay;}).sort(function(a,b){return(a.time||"").localeCompare(b.time||"");});
   const shifts=visibleGcalEvents.filter(isGoTabEvent);
+  const homeLayout=React.useMemo(function(){
+    return window.HomeLayout.normalizeLayout(data.homeLayout);
+  },[data.homeLayout]);
 
   function doCheckin(){
     setCheckinLoading(true);setCheckinBlocks([]);
@@ -3986,6 +4017,185 @@ function App(){
     </div>
   );}
 
+  function renderCalendarCard(){
+    return(<React.Fragment>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:T.text,letterSpacing:"-0.01em"}}>{new Date(dStr(weekDates[0])).toLocaleDateString("en-AU",{month:"long",year:"numeric"})}</div>
+          <div style={{fontSize:10,color:T.text3,marginTop:1}}>{fmtDate(dStr(weekDates[0]))} · {fmtDate(dStr(weekDates[6]))}</div>
+        </div>
+        <div style={{display:"flex",gap:5,alignItems:"center"}}>
+          {gcalReady&&!gcalConnected&&<button style={{...btn,fontSize:10,color:"#4285F4",border:"0.5px solid rgba(66,133,244,0.35)",display:"inline-flex",alignItems:"center",gap:4}} onClick={function(){window.GCalSync&&window.GCalSync.connect();}}><UIcon name="calendar" size={10}/>Connect</button>}
+          {gcalConnected&&<button style={{...btn,fontSize:10,color:T.text2,display:"inline-flex",alignItems:"center",gap:4}} onClick={function(){setShowCalPicker(true);}}><UIcon name="calendar" size={10}/>{gcalEvents.length}</button>}
+          <button style={{...btn,padding:"4px 10px",fontSize:13}} onClick={function(){setWkOff(function(o){return o-1;});}}>←</button>
+          <button style={{...btn,padding:"4px 10px",color:wkOff===0?T.accent:T.text2,border:wkOff===0?"0.5px solid rgba(91,140,255,0.4)":"0.5px solid rgba(255,255,255,0.12)"}} onClick={function(){setWkOff(0);setActiveDay(todayStr());}}>Today</button>
+          <button style={{...btn,padding:"4px 10px",fontSize:13}} onClick={function(){setWkOff(function(o){return o+1;});}}>→</button>
+        </div>
+      </div>
+      {renderWeek()}
+      {gcalCalendars.length>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10,paddingTop:8,borderTop:"0.5px solid "+T.border}}>
+        {gcalCalendars.slice(0,6).map(function(cal){return<div key={cal.id} style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:6,height:6,borderRadius:2,background:cal.backgroundColor||"#4285F4"}}/><span style={{fontSize:9,color:T.text3}}>{cal.summary}</span></div>;})}
+      </div>}
+    </React.Fragment>);
+  }
+
+  function renderCheckinCard(){
+    return(
+      <div className="card-rim" style={card()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:16,marginBottom:(checkinOpen||todayEvs.length>0)?10:0}}>
+          <div style={{fontSize:10,color:T.text3,display:"flex",alignItems:"center",gap:5}}><div style={{width:5,height:5,borderRadius:"50%",background:T.accent}}/>Daily Check-in · {new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long"})}</div>
+          {checkinOpen
+            ?<div style={{display:"flex",gap:6}}><button style={{...btn,fontSize:11}} onClick={function(){trk("checkin.generate");doCheckin();}}>Refresh</button><button style={{...btn,fontSize:11}} onClick={function(){setCheckinOpen(false);}}>Hide</button></div>
+            :<button style={{...btnP,fontSize:11,padding:"5px 12px"}} onClick={function(){setCheckinOpen(true);if(checkinBlocks.length===0&&!checkinLoading){trk("checkin.generate");doCheckin();}}}>Generate check-in</button>}
+        </div>
+        {checkinOpen&&(checkinLoading?<div style={{fontSize:12,color:T.accent,display:"flex",alignItems:"center",gap:6}}><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:T.accent,animation:"pulse 1.2s ease-in-out infinite"}}/>AI is thinking...</div>:checkinBlocks.length===0?<div style={{fontSize:12,color:T.text3}}>Generating today's check-in…</div>:checkinBlocks.map(function(block,bi){return(<div key={bi} style={{marginBottom:10}}>{block.header&&<div style={{fontSize:11,fontWeight:600,color:T.accent,marginBottom:4}}>{block.header}</div>}{block.items.map(function(item,ii){return<div key={ii} style={{fontSize:13,lineHeight:1.7,color:T.text}}>{item}</div>;})}</div>);}))}
+        {todayEvs.length>0&&<div style={{marginTop:12,paddingTop:10,borderTop:"0.5px solid "+T.border,display:"flex",gap:6,flexWrap:"wrap"}}>{todayEvs.map(function(ev){const col=evColor(ev);return(<div key={ev.id} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 9px",borderRadius:6,background:col+"18",border:"0.5px solid "+col+"40",flexShrink:0}}><div><div style={{fontSize:10,fontWeight:600,color:col}}>{evLabel(ev)}<span style={{fontWeight:400,color:T.text3}}> · {ev.time}</span></div><div style={{fontSize:9,color:T.text2}}>{ev.title.slice(0,32)}</div></div></div>);})}</div>}
+      </div>
+    );
+  }
+
+  function renderGoalsCard(){
+    var b=data.boardroom||{};
+    if(!b.onboarded) return null;
+    var ag=(b.goals||[]).filter(function(g){return g.status==="active";});
+    var ns=b.northStar||"";
+    if(!ag.length&&!ns) return null;
+    return(
+      <div className="card-rim" style={{...card(),borderLeft:"3px solid rgba(91,140,255,0.6)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:ns?10:12}}>
+          <div style={sT}>Goals</div>
+          <button onClick={function(){setPage("Boardroom");}} style={{...btnGlass,fontSize:11,padding:"3px 10px"}}>Boardroom →</button>
+        </div>
+        {ns&&<div style={{fontSize:12,color:"rgba(255,255,255,0.42)",fontStyle:"italic",lineHeight:1.65,marginBottom:ag.length?14:4,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>"{ns}"</div>}
+        {ag.length===0&&<div style={{fontSize:12,color:T.text3,marginTop:4}}>Start a session to set your first goal.</div>}
+        {ag.map(function(g,i){
+          var ts=getTagStyle(g.area);
+          return(
+            <div key={g.id} style={{display:"flex",alignItems:"center",gap:9,padding:"7px 0",borderBottom:i<ag.length-1?"0.5px solid rgba(255,255,255,0.06)":"none"}}>
+              <span style={{width:6,height:6,borderRadius:"50%",flexShrink:0,background:ts.color,boxShadow:"0 0 6px "+ts.color}}/>
+              <span style={{fontSize:10,padding:"2px 6px",borderRadius:4,...ts,flexShrink:0}}>{g.area}</span>
+              <span style={{fontSize:13,color:"rgba(255,255,255,0.82)",lineHeight:1.4}}>{g.title}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderAssessmentsCard(){
+    return(
+      <div className="card-rim" style={card()}>
+          <div style={sT}>Upcoming assessments</div>
+          {upcoming.length===0?<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>:upcoming.map(function(a){const days=daysBetween(a.date);const col=subjectColor(data.uni.subjects,a.subject)||T.accent;const dayLabel=days===0?"Today":days===1?"Tomorrow":days<=13?WX_DAYS[new Date(a.date+"T00:00").getDay()]+" · "+days+" days":fmtDate(a.date);return(<div key={a.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:6,cursor:"pointer"}} onClick={function(){setPage("Uni");}}>
+            <div style={{width:7,height:7,borderRadius:"50%",background:col,flexShrink:0}}/>
+            <div style={{flex:1,minWidth:0,fontSize:12,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:col,fontWeight:700}}>{a.subject}</span>{" · "}{a.title}</div>
+            <div style={{fontSize:10,color:days<=3?T.danger:T.text2,fontWeight:600,flexShrink:0,whiteSpace:"nowrap"}}>{dayLabel}</div>
+          </div>);})}
+        </div>
+    );
+  }
+
+  function renderGymNextCard(){
+    return(
+      <div className="card-rim" style={card()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:nextRot?4:0}}>
+              <div>
+                <div style={sT}>Next session · pre-fill weights</div>
+                {nextRot&&<div style={{fontSize:11,color:T.text2,marginTop:2}}>{nextRot.name}{nextRot.focus?" · "+nextRot.focus:""}</div>}
+              </div>
+              <button style={editPill} onClick={function(){setPage("Gym");}}>Open →</button>
+            </div>
+            {!nextRot&&<div style={{fontSize:11,color:T.text2,marginBottom:8}}>Set up your rotation in the Gym tab.</div>}
+            {gymDraftBanner&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 13px",borderRadius:12,background:"rgba(225,234,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",boxShadow:"0 0 20px rgba(255,209,102,0.3),inset 0 1px 0 rgba(255,255,255,0.05)",marginBottom:10}}>
+              <span style={{fontSize:11,color:T.warn}}>Unfinished session restored · keep logging or discard</span>
+              <button onClick={function(){try{localStorage.removeItem('gym_draft');}catch(_){}setGymDraftBanner(false);setNxtRows(nextRot&&nextRot.exercises&&nextRot.exercises.length>0?nextRot.exercises.map(function(ex,i){return{id:ex.id||i+1,exercise:ex.exercise||"",sets:ex.sets||"",reps:ex.reps||"",weight:ex.weight||""};}):[{id:1,exercise:"",sets:"",reps:"",weight:""},{id:2,exercise:"",sets:"",reps:"",weight:""},{id:3,exercise:"",sets:"",reps:"",weight:""}]);}} style={{...btnGlass,fontSize:10,padding:"3px 10px"}}>Discard</button>
+            </div>}
+            <datalist id="homeExSuggestions">{(function(){var seen={};var names=[];((data.gym||{}).exercises||[]).forEach(function(ex){var n=(ex.name||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});((data.gym||{}).rotation||[]).forEach(function(r){(r.exercises||[]).forEach(function(ex){var n=(ex.exercise||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});});return names;})().map(function(n){return React.createElement("option",{key:n,value:n});})}</datalist>
+            {mob?nxtRows.map(function(row,i){return(<div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 52px 52px 64px",gap:5,marginBottom:6}}>
+              <input style={{...inp,padding:"8px 8px",fontSize:12}} list="homeExSuggestions" placeholder={["Bench Press","Squat","OHP"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
+              <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="Sets" value={row.sets} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,sets:ev.target.value}:x;});});}}/>
+              <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="Reps" value={row.reps} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,reps:ev.target.value}:x;});});}}/>
+              <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="kg" value={row.weight} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,weight:ev.target.value}:x;});});}}/>
+            </div>);}):(
+            <div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 50px 50px 60px",gap:6,marginBottom:4}}>{["Exercise","Sets","Reps","kg"].map(function(h){return<div key={h} style={{fontSize:9,color:T.text3}}>{h}</div>;})}</div>
+            {nxtRows.map(function(row,i){return(<div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 50px 50px 60px",gap:6,marginBottom:6}}>
+              <input style={inp} list="homeExSuggestions" placeholder={["Bench Press","Squat","Overhead Press"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
+              <input style={inp} type="number" placeholder="4" value={row.sets} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,sets:ev.target.value}:x;});});}}/>
+              <input style={inp} type="number" placeholder="8" value={row.reps} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,reps:ev.target.value}:x;});});}}/>
+              <input style={inp} type="number" placeholder="80" value={row.weight} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,weight:ev.target.value}:x;});});}}/>
+            </div>);})}
+            </div>)}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4}}>
+              <button style={btn} onClick={function(){setNxtRows(function(r){return r.concat([{id:Date.now(),exercise:"",sets:"",reps:"",weight:""}]);});}}>+ Row</button>
+              <button style={btnP} onClick={saveNextSess}>Save to Gym →</button>
+            </div>
+          </div>
+    );
+  }
+
+  function renderBodyweightCard(){
+    return(
+      <div className="card-rim" style={card((!bwLogged&&dLeft<=3)?{boxShadow:"0 0 26px "+bwColMap[bwUrg]+"55,"+cardShadow}:{})}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontSize:12,fontWeight:600,color:"#f3f7fd"}}>Weekly body weight</div>
+          {!bwLogged&&<div style={{fontSize:10,color:bwColMap[bwUrg],fontWeight:600,padding:"2px 7px",borderRadius:99,background:bwColMap[bwUrg]+"18"}}>{dLeft}d left</div>}
+        </div>
+        {bwLogged&&!bwEditing
+          ?<div>
+            <div style={{display:"flex",alignItems:"center",gap:12,padding:"4px 0 8px"}}>
+              <div style={{fontSize:32,color:T.success,lineHeight:1,fontWeight:700}}>✓</div>
+              <div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{fontSize:22,fontWeight:700,color:T.success,lineHeight:1.1}}>{(function(){const e=(data.gym.bodyWeight||[]).find(function(e){return e.date>=thisWeek;});return e?e.weight+" kg":"Logged";})()}</div>
+                  <button style={{background:"none",border:"none",cursor:"pointer",color:T.text3,fontSize:16,opacity:0.45,lineHeight:1,padding:"0 2px"}} title="Delete this entry" onClick={function(){const e=(data.gym.bodyWeight||[]).find(function(en){return en.date>=thisWeek;});if(e)deleteBWEntry(e.date);}}>×</button>
+                </div>
+                <div style={{fontSize:10,color:T.success,opacity:0.75,marginTop:2}}>Logged this week</div>
+              </div>
+            </div>
+            {(data.gym.bodyWeight||[]).length>=2&&<Sparkline data={data.gym.bodyWeight} color={T.success} width={180} height={40}/>}
+            <button style={{...btn,fontSize:10,padding:"4px 10px",marginTop:8}} onClick={function(){const e=(data.gym.bodyWeight||[]).find(function(e){return e.date>=thisWeek;});if(e){setBwIn(String(e.weight));setBwDate(e.date);}else{setBwIn("");setBwDate(todayStr());}setBwEditing(true);}}>Edit / add past entry</button>
+          </div>
+          :<div>
+            <div style={{fontSize:10,color:T.text3,marginBottom:8}}>{bwEditing?"Update your entry or add a past entry below":dLeft<=1?"Last chance, ends tomorrow!":dLeft<=3?"Log before the week ends":"Log once this week"}</div>
+            <div style={{display:"flex",gap:6,marginBottom:6}}><input style={{...inp,flex:1}} type="number" step="0.1" placeholder="e.g. 81.2 kg" value={bwIn} onChange={function(ev){setBwIn(ev.target.value);}}/><button style={btnP} onClick={logBW}>Log</button></div>
+            <input type="date" style={{...inp,padding:"6px 10px",fontSize:11,color:T.text3}} value={bwDate} onChange={function(ev){setBwDate(ev.target.value);}}/>
+            {bwLogged&&bwEditing&&<button style={{...btn,fontSize:10,padding:"4px 10px",marginTop:6,opacity:0.6}} onClick={function(){setBwEditing(false);setBwIn("");setBwDate(todayStr());}}>Cancel</button>}
+          </div>
+        }
+      </div>
+    );
+  }
+
+  function renderTasksCard(){
+    return(
+      <div className="card-rim" style={card()}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={sT}>Tasks</div><button style={{...editPill,fontSize:14,padding:"2px 12px"}} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+</button></div>
+          {urgTasks.length===0&&normTasks.length===0&&doneTasks.length===0&&<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>}
+          {scheduleTaskId&&<div style={{fontSize:9,color:T.accent,marginBottom:6,padding:"3px 8px",borderRadius:6,background:T.accentBg,border:"0.5px solid rgba(91,140,255,0.3)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}><span>Tap a calendar day to schedule (or ESC)</span><button onClick={function(){setScheduleTaskId(null);}} title="Cancel scheduling" style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:14,padding:"0 4px",lineHeight:1,fontWeight:700}}>×</button></div>}
+          {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:9,marginBottom:7,alignItems:"flex-start",padding:"10px 12px",borderRadius:12,background:isActive?"rgba(91,140,255,0.12)":"rgba(225,234,255,0.04)",border:"1px solid "+(isActive?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.07)"),boxShadow:"inset 10px 0 9px -8px "+TUC[urg],cursor:"default",transition:"background 0.15s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:T.text3,flexShrink:0,opacity:0.45,display:"flex",transition:"opacity 0.15s"}} title="Mark done on a different day" onClick={function(e){e.stopPropagation();openBackdateModal(t.id);}}><UIcon name="clock" size={12}/></button><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();if(scheduleTaskId===t.id){setScheduleTaskId(null);}else{trk("task.schedule");setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button></div>);})}</div>}
+          {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:9,marginBottom:7,alignItems:"flex-start",padding:"10px 12px",borderRadius:12,background:isActive?"rgba(91,140,255,0.12)":"rgba(225,234,255,0.04)",border:"1px solid "+(isActive?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.07)"),boxShadow:"inset 10px 0 9px -8px "+TUC[urg],cursor:"default",transition:"background 0.15s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:T.text3,flexShrink:0,opacity:0.45,display:"flex",transition:"opacity 0.15s"}} title="Mark done on a different day" onClick={function(e){e.stopPropagation();openBackdateModal(t.id);}}><UIcon name="clock" size={12}/></button><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();if(scheduleTaskId===t.id){setScheduleTaskId(null);}else{trk("task.schedule");setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button></div>);})}</div>}
+          {doneTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneTasks.map(function(t){return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:5,alignItems:"center",opacity:0.45}}><input type="checkbox" checked={true} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,flexShrink:0}}/><div style={{fontSize:11,color:T.text3,textDecoration:"line-through",flex:1,minWidth:0}}>{t.name}</div>{t.completedAt&&<div style={{fontSize:9,color:T.text3,flexShrink:0}}>{fmtDate(t.completedAt)}{t.completedTime?" · "+fmtTime12(t.completedTime):""}</div>}</div>);})}</div>}
+        </div>
+    );
+  }
+
+  function renderHomeCard(id){
+    switch(id){
+      case "shopping":    return <ErrorBoundary name="ShoppingHome"><ShoppingHomeCard items={data.shopping||[]} onUpdate={updateShopping} onOpen={function(){setPage("Shopping");}} cardStyle={card()} mob={mob}/></ErrorBoundary>;
+      case "weather":     return <WeatherWidget mob={mob}/>;
+      case "checkin":     return renderCheckinCard();
+      case "goals":       return renderGoalsCard();       // returns null when not onboarded
+      case "assessments": return renderAssessmentsCard();
+      case "gym-next":    return renderGymNextCard();
+      case "bodyweight":  return renderBodyweightCard();
+      case "tasks":       return renderTasksCard();
+      case "classes":     return null;                    // Task 7
+      case "necessities": return null;                    // Task 8
+      default:            return null;
+    }
+  }
+
   return(
     <div className="dashboard-reveal" style={{fontFamily:"'Geist',system-ui,sans-serif",minHeight:"100vh",background:"transparent",color:T.text,position:"relative",boxSizing:"border-box",paddingLeft:mob?0:(navCollapsed?80:230),transition:"padding-left 0.22s cubic-bezier(0.23,1,0.32,1)"}}>
       {/* Status info lives in the sidebar sync dot + Logs button */}
@@ -4106,153 +4316,22 @@ function App(){
             <div style={{fontSize:mob?20:24,fontWeight:800,letterSpacing:"-0.02em",color:"#eef3fb"}}>{(function(){var h=new Date().getHours();return h<12?"Good morning":h<18?"Good afternoon":"Good evening";})()}, Ashley</div>
             <div style={{fontSize:13,color:"#7a85a0",marginTop:4}}>{new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
           </div>
-          {/* Bento masonry — cards pack by height, no dead gaps */}
-          <div style={{columnCount:mob?1:3,columnGap:18}}>
-            <div className="card-rim" style={card({columnSpan:"all",breakInside:"avoid",padding:"16px 20px"})}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                <div>
-                  <div style={{fontSize:13,fontWeight:700,color:T.text,letterSpacing:"-0.01em"}}>{new Date(dStr(weekDates[0])).toLocaleDateString("en-AU",{month:"long",year:"numeric"})}</div>
-                  <div style={{fontSize:10,color:T.text3,marginTop:1}}>{fmtDate(dStr(weekDates[0]))} · {fmtDate(dStr(weekDates[6]))}</div>
-                </div>
-                <div style={{display:"flex",gap:5,alignItems:"center"}}>
-                  {gcalReady&&!gcalConnected&&<button style={{...btn,fontSize:10,color:"#4285F4",border:"0.5px solid rgba(66,133,244,0.35)",display:"inline-flex",alignItems:"center",gap:4}} onClick={function(){window.GCalSync&&window.GCalSync.connect();}}><UIcon name="calendar" size={10}/>Connect</button>}
-                  {gcalConnected&&<button style={{...btn,fontSize:10,color:T.text2,display:"inline-flex",alignItems:"center",gap:4}} onClick={function(){setShowCalPicker(true);}}><UIcon name="calendar" size={10}/>{gcalEvents.length}</button>}
-                  <button style={{...btn,padding:"4px 10px",fontSize:13}} onClick={function(){setWkOff(function(o){return o-1;});}}>←</button>
-                  <button style={{...btn,padding:"4px 10px",color:wkOff===0?T.accent:T.text2,border:wkOff===0?"0.5px solid rgba(91,140,255,0.4)":"0.5px solid rgba(255,255,255,0.12)"}} onClick={function(){setWkOff(0);setActiveDay(todayStr());}}>Today</button>
-                  <button style={{...btn,padding:"4px 10px",fontSize:13}} onClick={function(){setWkOff(function(o){return o+1;});}}>→</button>
-                </div>
-              </div>
-              {renderWeek()}
-              {gcalCalendars.length>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10,paddingTop:8,borderTop:"0.5px solid "+T.border}}>
-                {gcalCalendars.slice(0,6).map(function(cal){return<div key={cal.id} style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:6,height:6,borderRadius:2,background:cal.backgroundColor||"#4285F4"}}/><span style={{fontSize:9,color:T.text3}}>{cal.summary}</span></div>;})}
-              </div>}
-            </div>
-            <ErrorBoundary name="ShoppingHome"><ShoppingHomeCard items={data.shopping||[]} onUpdate={updateShopping} onOpen={function(){setPage("Shopping");}} cardStyle={card({breakInside:"avoid"})} mob={mob}/></ErrorBoundary>
-            <div style={{breakInside:"avoid",marginBottom:12}}><WeatherWidget mob={mob}/></div>
-
-          {/* Check-in (slim) */}
-          <div className="card-rim" style={{...card({breakInside:"avoid"}),marginBottom:12}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:16,marginBottom:(checkinOpen||todayEvs.length>0)?10:0}}>
-              <div style={{fontSize:10,color:T.text3,display:"flex",alignItems:"center",gap:5}}><div style={{width:5,height:5,borderRadius:"50%",background:T.accent}}/>Daily Check-in · {new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long"})}</div>
-              {checkinOpen
-                ?<div style={{display:"flex",gap:6}}><button style={{...btn,fontSize:11}} onClick={function(){trk("checkin.generate");doCheckin();}}>Refresh</button><button style={{...btn,fontSize:11}} onClick={function(){setCheckinOpen(false);}}>Hide</button></div>
-                :<button style={{...btnP,fontSize:11,padding:"5px 12px"}} onClick={function(){setCheckinOpen(true);if(checkinBlocks.length===0&&!checkinLoading){trk("checkin.generate");doCheckin();}}}>Generate check-in</button>}
-            </div>
-            {checkinOpen&&(checkinLoading?<div style={{fontSize:12,color:T.accent,display:"flex",alignItems:"center",gap:6}}><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:T.accent,animation:"pulse 1.2s ease-in-out infinite"}}/>AI is thinking...</div>:checkinBlocks.length===0?<div style={{fontSize:12,color:T.text3}}>Generating today's check-in…</div>:checkinBlocks.map(function(block,bi){return(<div key={bi} style={{marginBottom:10}}>{block.header&&<div style={{fontSize:11,fontWeight:600,color:T.accent,marginBottom:4}}>{block.header}</div>}{block.items.map(function(item,ii){return<div key={ii} style={{fontSize:13,lineHeight:1.7,color:T.text}}>{item}</div>;})}</div>);}))}
-            {todayEvs.length>0&&<div style={{marginTop:12,paddingTop:10,borderTop:"0.5px solid "+T.border,display:"flex",gap:6,flexWrap:"wrap"}}>{todayEvs.map(function(ev){const col=evColor(ev);return(<div key={ev.id} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 9px",borderRadius:6,background:col+"18",border:"0.5px solid "+col+"40",flexShrink:0}}><div><div style={{fontSize:10,fontWeight:600,color:col}}>{evLabel(ev)}<span style={{fontWeight:400,color:T.text3}}> · {ev.time}</span></div><div style={{fontSize:9,color:T.text2}}>{ev.title.slice(0,32)}</div></div></div>);})}</div>}
+          {/* Pinned: calendar always spans the full width above the grid */}
+          <div className="card-rim" style={card({padding:"16px 20px",marginBottom:GRID_GAP})}>
+            {renderCalendarCard()}
           </div>
 
-          {/* Goals */}
-          {(function(){
-            var b=data.boardroom||{};
-            if(!b.onboarded) return null;
-            var ag=(b.goals||[]).filter(function(g){return g.status==="active";});
-            var ns=b.northStar||"";
-            if(!ag.length&&!ns) return null;
-            return(
-              <div className="card-rim" style={{...card({breakInside:"avoid"}),borderLeft:"3px solid rgba(91,140,255,0.6)"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:ns?10:12}}>
-                  <div style={sT}>Goals</div>
-                  <button onClick={function(){setPage("Boardroom");}} style={{...btnGlass,fontSize:11,padding:"3px 10px"}}>Boardroom →</button>
-                </div>
-                {ns&&<div style={{fontSize:12,color:"rgba(255,255,255,0.42)",fontStyle:"italic",lineHeight:1.65,marginBottom:ag.length?14:4,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>"{ns}"</div>}
-                {ag.length===0&&<div style={{fontSize:12,color:T.text3,marginTop:4}}>Start a session to set your first goal.</div>}
-                {ag.map(function(g,i){
-                  var ts=getTagStyle(g.area);
-                  return(
-                    <div key={g.id} style={{display:"flex",alignItems:"center",gap:9,padding:"7px 0",borderBottom:i<ag.length-1?"0.5px solid rgba(255,255,255,0.06)":"none"}}>
-                      <span style={{width:6,height:6,borderRadius:"50%",flexShrink:0,background:ts.color,boxShadow:"0 0 6px "+ts.color}}/>
-                      <span style={{fontSize:10,padding:"2px 6px",borderRadius:4,...ts,flexShrink:0}}>{g.area}</span>
-                      <span style={{fontSize:13,color:"rgba(255,255,255,0.82)",lineHeight:1.4}}>{g.title}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-
-          {/* Assessments */}
-          <div className="card-rim" style={card({breakInside:"avoid"})}>
-              <div style={sT}>Upcoming assessments</div>
-              {upcoming.length===0?<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>:upcoming.map(function(a){const days=daysBetween(a.date);const col=subjectColor(data.uni.subjects,a.subject)||T.accent;const dayLabel=days===0?"Today":days===1?"Tomorrow":days<=13?WX_DAYS[new Date(a.date+"T00:00").getDay()]+" · "+days+" days":fmtDate(a.date);return(<div key={a.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:6,cursor:"pointer"}} onClick={function(){setPage("Uni");}}>
-                <div style={{width:7,height:7,borderRadius:"50%",background:col,flexShrink:0}}/>
-                <div style={{flex:1,minWidth:0,fontSize:12,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:col,fontWeight:700}}>{a.subject}</span>{" · "}{a.title}</div>
-                <div style={{fontSize:10,color:days<=3?T.danger:T.text2,fontWeight:600,flexShrink:0,whiteSpace:"nowrap"}}>{dayLabel}</div>
-              </div>);})}
-            </div>
-          {/* Pre-fill weights */}
-          <div className="card-rim" style={card({breakInside:"avoid"})}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:nextRot?4:0}}>
-                  <div>
-                    <div style={sT}>Next session · pre-fill weights</div>
-                    {nextRot&&<div style={{fontSize:11,color:T.text2,marginTop:2}}>{nextRot.name}{nextRot.focus?" · "+nextRot.focus:""}</div>}
-                  </div>
-                  <button style={editPill} onClick={function(){setPage("Gym");}}>Open →</button>
-                </div>
-                {!nextRot&&<div style={{fontSize:11,color:T.text2,marginBottom:8}}>Set up your rotation in the Gym tab.</div>}
-                {gymDraftBanner&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 13px",borderRadius:12,background:"rgba(225,234,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",boxShadow:"0 0 20px rgba(255,209,102,0.3),inset 0 1px 0 rgba(255,255,255,0.05)",marginBottom:10}}>
-                  <span style={{fontSize:11,color:T.warn}}>Unfinished session restored · keep logging or discard</span>
-                  <button onClick={function(){try{localStorage.removeItem('gym_draft');}catch(_){}setGymDraftBanner(false);setNxtRows(nextRot&&nextRot.exercises&&nextRot.exercises.length>0?nextRot.exercises.map(function(ex,i){return{id:ex.id||i+1,exercise:ex.exercise||"",sets:ex.sets||"",reps:ex.reps||"",weight:ex.weight||""};}):[{id:1,exercise:"",sets:"",reps:"",weight:""},{id:2,exercise:"",sets:"",reps:"",weight:""},{id:3,exercise:"",sets:"",reps:"",weight:""}]);}} style={{...btnGlass,fontSize:10,padding:"3px 10px"}}>Discard</button>
-                </div>}
-                <datalist id="homeExSuggestions">{(function(){var seen={};var names=[];((data.gym||{}).exercises||[]).forEach(function(ex){var n=(ex.name||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});((data.gym||{}).rotation||[]).forEach(function(r){(r.exercises||[]).forEach(function(ex){var n=(ex.exercise||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});});return names;})().map(function(n){return React.createElement("option",{key:n,value:n});})}</datalist>
-                {mob?nxtRows.map(function(row,i){return(<div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 52px 52px 64px",gap:5,marginBottom:6}}>
-                  <input style={{...inp,padding:"8px 8px",fontSize:12}} list="homeExSuggestions" placeholder={["Bench Press","Squat","OHP"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
-                  <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="Sets" value={row.sets} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,sets:ev.target.value}:x;});});}}/>
-                  <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="Reps" value={row.reps} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,reps:ev.target.value}:x;});});}}/>
-                  <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="kg" value={row.weight} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,weight:ev.target.value}:x;});});}}/>
-                </div>);}):(
-                <div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 50px 50px 60px",gap:6,marginBottom:4}}>{["Exercise","Sets","Reps","kg"].map(function(h){return<div key={h} style={{fontSize:9,color:T.text3}}>{h}</div>;})}</div>
-                {nxtRows.map(function(row,i){return(<div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 50px 50px 60px",gap:6,marginBottom:6}}>
-                  <input style={inp} list="homeExSuggestions" placeholder={["Bench Press","Squat","Overhead Press"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
-                  <input style={inp} type="number" placeholder="4" value={row.sets} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,sets:ev.target.value}:x;});});}}/>
-                  <input style={inp} type="number" placeholder="8" value={row.reps} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,reps:ev.target.value}:x;});});}}/>
-                  <input style={inp} type="number" placeholder="80" value={row.weight} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,weight:ev.target.value}:x;});});}}/>
-                </div>);})}
-                </div>)}
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4}}>
-                  <button style={btn} onClick={function(){setNxtRows(function(r){return r.concat([{id:Date.now(),exercise:"",sets:"",reps:"",weight:""}]);});}}>+ Row</button>
-                  <button style={btnP} onClick={saveNextSess}>Save to Gym →</button>
-                </div>
-              </div>
-              <div className="card-rim" style={card((!bwLogged&&dLeft<=3)?{boxShadow:"0 0 26px "+bwColMap[bwUrg]+"55,"+cardShadow,breakInside:"avoid"}:{breakInside:"avoid"})}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                  <div style={{fontSize:12,fontWeight:600,color:"#f3f7fd"}}>Weekly body weight</div>
-                  {!bwLogged&&<div style={{fontSize:10,color:bwColMap[bwUrg],fontWeight:600,padding:"2px 7px",borderRadius:99,background:bwColMap[bwUrg]+"18"}}>{dLeft}d left</div>}
-                </div>
-                {bwLogged&&!bwEditing
-                  ?<div>
-                    <div style={{display:"flex",alignItems:"center",gap:12,padding:"4px 0 8px"}}>
-                      <div style={{fontSize:32,color:T.success,lineHeight:1,fontWeight:700}}>✓</div>
-                      <div>
-                        <div style={{display:"flex",alignItems:"center",gap:8}}>
-                          <div style={{fontSize:22,fontWeight:700,color:T.success,lineHeight:1.1}}>{(function(){const e=(data.gym.bodyWeight||[]).find(function(e){return e.date>=thisWeek;});return e?e.weight+" kg":"Logged";})()}</div>
-                          <button style={{background:"none",border:"none",cursor:"pointer",color:T.text3,fontSize:16,opacity:0.45,lineHeight:1,padding:"0 2px"}} title="Delete this entry" onClick={function(){const e=(data.gym.bodyWeight||[]).find(function(en){return en.date>=thisWeek;});if(e)deleteBWEntry(e.date);}}>×</button>
-                        </div>
-                        <div style={{fontSize:10,color:T.success,opacity:0.75,marginTop:2}}>Logged this week</div>
-                      </div>
-                    </div>
-                    {(data.gym.bodyWeight||[]).length>=2&&<Sparkline data={data.gym.bodyWeight} color={T.success} width={180} height={40}/>}
-                    <button style={{...btn,fontSize:10,padding:"4px 10px",marginTop:8}} onClick={function(){const e=(data.gym.bodyWeight||[]).find(function(e){return e.date>=thisWeek;});if(e){setBwIn(String(e.weight));setBwDate(e.date);}else{setBwIn("");setBwDate(todayStr());}setBwEditing(true);}}>Edit / add past entry</button>
-                  </div>
-                  :<div>
-                    <div style={{fontSize:10,color:T.text3,marginBottom:8}}>{bwEditing?"Update your entry or add a past entry below":dLeft<=1?"Last chance, ends tomorrow!":dLeft<=3?"Log before the week ends":"Log once this week"}</div>
-                    <div style={{display:"flex",gap:6,marginBottom:6}}><input style={{...inp,flex:1}} type="number" step="0.1" placeholder="e.g. 81.2 kg" value={bwIn} onChange={function(ev){setBwIn(ev.target.value);}}/><button style={btnP} onClick={logBW}>Log</button></div>
-                    <input type="date" style={{...inp,padding:"6px 10px",fontSize:11,color:T.text3}} value={bwDate} onChange={function(ev){setBwDate(ev.target.value);}}/>
-                    {bwLogged&&bwEditing&&<button style={{...btn,fontSize:10,padding:"4px 10px",marginTop:6,opacity:0.6}} onClick={function(){setBwEditing(false);setBwIn("");setBwDate(todayStr());}}>Cancel</button>}
-                  </div>
-                }
-              </div>
-          {/* Tasks */}
-          <div className="card-rim" style={card({breakInside:"avoid"})}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={sT}>Tasks</div><button style={{...editPill,fontSize:14,padding:"2px 12px"}} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+</button></div>
-              {urgTasks.length===0&&normTasks.length===0&&doneTasks.length===0&&<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>}
-              {scheduleTaskId&&<div style={{fontSize:9,color:T.accent,marginBottom:6,padding:"3px 8px",borderRadius:6,background:T.accentBg,border:"0.5px solid rgba(91,140,255,0.3)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}><span>Tap a calendar day to schedule (or ESC)</span><button onClick={function(){setScheduleTaskId(null);}} title="Cancel scheduling" style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:14,padding:"0 4px",lineHeight:1,fontWeight:700}}>×</button></div>}
-              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:9,marginBottom:7,alignItems:"flex-start",padding:"10px 12px",borderRadius:12,background:isActive?"rgba(91,140,255,0.12)":"rgba(225,234,255,0.04)",border:"1px solid "+(isActive?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.07)"),boxShadow:"inset 10px 0 9px -8px "+TUC[urg],cursor:"default",transition:"background 0.15s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:T.text3,flexShrink:0,opacity:0.45,display:"flex",transition:"opacity 0.15s"}} title="Mark done on a different day" onClick={function(e){e.stopPropagation();openBackdateModal(t.id);}}><UIcon name="clock" size={12}/></button><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();if(scheduleTaskId===t.id){setScheduleTaskId(null);}else{trk("task.schedule");setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button></div>);})}</div>}
-              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:9,marginBottom:7,alignItems:"flex-start",padding:"10px 12px",borderRadius:12,background:isActive?"rgba(91,140,255,0.12)":"rgba(225,234,255,0.04)",border:"1px solid "+(isActive?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.07)"),boxShadow:"inset 10px 0 9px -8px "+TUC[urg],cursor:"default",transition:"background 0.15s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:T.text3,flexShrink:0,opacity:0.45,display:"flex",transition:"opacity 0.15s"}} title="Mark done on a different day" onClick={function(e){e.stopPropagation();openBackdateModal(t.id);}}><UIcon name="clock" size={12}/></button><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();if(scheduleTaskId===t.id){setScheduleTaskId(null);}else{trk("task.schedule");setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button></div>);})}</div>}
-              {doneTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneTasks.map(function(t){return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:5,alignItems:"center",opacity:0.45}}><input type="checkbox" checked={true} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,flexShrink:0}}/><div style={{fontSize:11,color:T.text3,textDecoration:"line-through",flex:1,minWidth:0}}>{t.name}</div>{t.completedAt&&<div style={{fontSize:9,color:T.text3,flexShrink:0}}>{fmtDate(t.completedAt)}{t.completedTime?" · "+fmtTime12(t.completedTime):""}</div>}</div>);})}</div>}
-            </div>
-          </div>
+          {mob
+            ?<div>{homeLayout.map(function(e){
+                const body=renderHomeCard(e.id);
+                return body?<div key={e.id} style={{marginBottom:12}}>{body}</div>:null;
+              })}</div>
+            :<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gridAutoRows:GRID_ROW_UNIT+"px",gridAutoFlow:"row dense",gap:GRID_GAP,alignItems:"start"}}>
+              {homeLayout.map(function(e){
+                const body=renderHomeCard(e.id);
+                return body?<HomeGridCard key={e.id} span={e.span}>{body}</HomeGridCard>:null;
+              })}
+            </div>}
           {appVersion&&<div style={{textAlign:"center",padding:"10px 0 2px",fontSize:10,color:T.text3,opacity:0.5}}>
             <span onClick={function(){trk("version.click");}} title={"Released "+appVersion.date} style={{cursor:"pointer"}}>{appVersion.version}</span>
             {" · "}<a href={"https://github.com/jaydenpineda30-glitch/Main/releases"} target="_blank" rel="noreferrer" style={{color:T.text3,textDecoration:"none"}}>patch notes ↗</a>

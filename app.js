@@ -10872,6 +10872,47 @@ function ShoppingHomeCard(_ref6) {
     onClick: add
   }, "Add")));
 }
+
+// Masonry-on-CSS-Grid: a card's rendered height is measured and converted into a
+// row span against a fine grid-auto-rows unit, so cards pack tightly upward while
+// keeping an explicit column position. This is what CSS multi-column could not do.
+var GRID_ROW_UNIT = 8; // px per implicit row
+var GRID_GAP = 18; // px between cards, both axes
+
+function HomeGridCard(_ref7) {
+  var span = _ref7.span,
+    children = _ref7.children;
+  var ref = React.useRef(null);
+  var _React$useState = React.useState(20),
+    _React$useState2 = _slicedToArray(_React$useState, 2),
+    rows = _React$useState2[0],
+    setRows = _React$useState2[1];
+  React.useLayoutEffect(function () {
+    var el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    function measure() {
+      var h = el.getBoundingClientRect().height;
+      setRows(Math.max(1, Math.ceil((h + GRID_GAP) / (GRID_ROW_UNIT + GRID_GAP))));
+    }
+    measure();
+    var ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return function () {
+      ro.disconnect();
+    };
+  }, [children]);
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      gridColumn: "span " + span,
+      gridRow: "span " + rows
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    ref: ref,
+    style: {
+      marginBottom: 0
+    }
+  }, children));
+}
 function App() {
   var _useState153 = useState("Dashboard"),
     _useState154 = _slicedToArray(_useState153, 2),
@@ -11924,6 +11965,9 @@ function App() {
     return (a.time || "").localeCompare(b.time || "");
   });
   var shifts = visibleGcalEvents.filter(isGoTabEvent);
+  var homeLayout = React.useMemo(function () {
+    return window.HomeLayout.normalizeLayout(data.homeLayout);
+  }, [data.homeLayout]);
   function doCheckin() {
     setCheckinLoading(true);
     setCheckinBlocks([]);
@@ -14144,6 +14188,1234 @@ function App() {
       d: "M24 48c6.2 0 11.4-2 15.2-5.5l-7.5-5.8c-2 1.4-4.6 2.3-7.7 2.3-6 0-11.1-4-12.9-9.4l-8.3 6.1C6.9 42.6 14.8 48 24 48z"
     })), "Sign in with Google")));
   }
+  function renderCalendarCard() {
+    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 14
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        fontWeight: 700,
+        color: T.text,
+        letterSpacing: "-0.01em"
+      }
+    }, new Date(dStr(weekDates[0])).toLocaleDateString("en-AU", {
+      month: "long",
+      year: "numeric"
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        marginTop: 1
+      }
+    }, fmtDate(dStr(weekDates[0])), " \xB7 ", fmtDate(dStr(weekDates[6])))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 5,
+        alignItems: "center"
+      }
+    }, gcalReady && !gcalConnected && /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 10,
+        color: "#4285F4",
+        border: "0.5px solid rgba(66,133,244,0.35)",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4
+      }),
+      onClick: function onClick() {
+        window.GCalSync && window.GCalSync.connect();
+      }
+    }, /*#__PURE__*/React.createElement(UIcon, {
+      name: "calendar",
+      size: 10
+    }), "Connect"), gcalConnected && /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 10,
+        color: T.text2,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4
+      }),
+      onClick: function onClick() {
+        setShowCalPicker(true);
+      }
+    }, /*#__PURE__*/React.createElement(UIcon, {
+      name: "calendar",
+      size: 10
+    }), gcalEvents.length), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        padding: "4px 10px",
+        fontSize: 13
+      }),
+      onClick: function onClick() {
+        setWkOff(function (o) {
+          return o - 1;
+        });
+      }
+    }, "\u2190"), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        padding: "4px 10px",
+        color: wkOff === 0 ? T.accent : T.text2,
+        border: wkOff === 0 ? "0.5px solid rgba(91,140,255,0.4)" : "0.5px solid rgba(255,255,255,0.12)"
+      }),
+      onClick: function onClick() {
+        setWkOff(0);
+        setActiveDay(todayStr());
+      }
+    }, "Today"), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        padding: "4px 10px",
+        fontSize: 13
+      }),
+      onClick: function onClick() {
+        setWkOff(function (o) {
+          return o + 1;
+        });
+      }
+    }, "\u2192"))), renderWeek(), gcalCalendars.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8,
+        flexWrap: "wrap",
+        marginTop: 10,
+        paddingTop: 8,
+        borderTop: "0.5px solid " + T.border
+      }
+    }, gcalCalendars.slice(0, 6).map(function (cal) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: cal.id,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 4
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          width: 6,
+          height: 6,
+          borderRadius: 2,
+          background: cal.backgroundColor || "#4285F4"
+        }
+      }), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 9,
+          color: T.text3
+        }
+      }, cal.summary));
+    })));
+  }
+  function renderCheckinCard() {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card-rim",
+      style: card()
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 16,
+        marginBottom: checkinOpen || todayEvs.length > 0 ? 10 : 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        display: "flex",
+        alignItems: "center",
+        gap: 5
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 5,
+        height: 5,
+        borderRadius: "50%",
+        background: T.accent
+      }
+    }), "Daily Check-in \xB7 ", new Date().toLocaleDateString("en-AU", {
+      weekday: "long",
+      day: "numeric",
+      month: "long"
+    })), checkinOpen ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 11
+      }),
+      onClick: function onClick() {
+        trk("checkin.generate");
+        doCheckin();
+      }
+    }, "Refresh"), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 11
+      }),
+      onClick: function onClick() {
+        setCheckinOpen(false);
+      }
+    }, "Hide")) : /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btnP), {}, {
+        fontSize: 11,
+        padding: "5px 12px"
+      }),
+      onClick: function onClick() {
+        setCheckinOpen(true);
+        if (checkinBlocks.length === 0 && !checkinLoading) {
+          trk("checkin.generate");
+          doCheckin();
+        }
+      }
+    }, "Generate check-in")), checkinOpen && (checkinLoading ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.accent,
+        display: "flex",
+        alignItems: "center",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        display: "inline-block",
+        width: 8,
+        height: 8,
+        borderRadius: "50%",
+        background: T.accent,
+        animation: "pulse 1.2s ease-in-out infinite"
+      }
+    }), "AI is thinking...") : checkinBlocks.length === 0 ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text3
+      }
+    }, "Generating today's check-in\u2026") : checkinBlocks.map(function (block, bi) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: bi,
+        style: {
+          marginBottom: 10
+        }
+      }, block.header && /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11,
+          fontWeight: 600,
+          color: T.accent,
+          marginBottom: 4
+        }
+      }, block.header), block.items.map(function (item, ii) {
+        return /*#__PURE__*/React.createElement("div", {
+          key: ii,
+          style: {
+            fontSize: 13,
+            lineHeight: 1.7,
+            color: T.text
+          }
+        }, item);
+      }));
+    })), todayEvs.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 12,
+        paddingTop: 10,
+        borderTop: "0.5px solid " + T.border,
+        display: "flex",
+        gap: 6,
+        flexWrap: "wrap"
+      }
+    }, todayEvs.map(function (ev) {
+      var col = evColor(ev);
+      return /*#__PURE__*/React.createElement("div", {
+        key: ev.id,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 5,
+          padding: "4px 9px",
+          borderRadius: 6,
+          background: col + "18",
+          border: "0.5px solid " + col + "40",
+          flexShrink: 0
+        }
+      }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 10,
+          fontWeight: 600,
+          color: col
+        }
+      }, evLabel(ev), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontWeight: 400,
+          color: T.text3
+        }
+      }, " \xB7 ", ev.time)), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 9,
+          color: T.text2
+        }
+      }, ev.title.slice(0, 32))));
+    })));
+  }
+  function renderGoalsCard() {
+    var b = data.boardroom || {};
+    if (!b.onboarded) return null;
+    var ag = (b.goals || []).filter(function (g) {
+      return g.status === "active";
+    });
+    var ns = b.northStar || "";
+    if (!ag.length && !ns) return null;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card-rim",
+      style: _objectSpread(_objectSpread({}, card()), {}, {
+        borderLeft: "3px solid rgba(91,140,255,0.6)"
+      })
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: ns ? 10 : 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: sT
+    }, "Goals"), /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        setPage("Boardroom");
+      },
+      style: _objectSpread(_objectSpread({}, btnGlass), {}, {
+        fontSize: 11,
+        padding: "3px 10px"
+      })
+    }, "Boardroom \u2192")), ns && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: "rgba(255,255,255,0.42)",
+        fontStyle: "italic",
+        lineHeight: 1.65,
+        marginBottom: ag.length ? 14 : 4,
+        display: "-webkit-box",
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: "vertical",
+        overflow: "hidden"
+      }
+    }, "\"", ns, "\""), ag.length === 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text3,
+        marginTop: 4
+      }
+    }, "Start a session to set your first goal."), ag.map(function (g, i) {
+      var ts = getTagStyle(g.area);
+      return /*#__PURE__*/React.createElement("div", {
+        key: g.id,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 9,
+          padding: "7px 0",
+          borderBottom: i < ag.length - 1 ? "0.5px solid rgba(255,255,255,0.06)" : "none"
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          flexShrink: 0,
+          background: ts.color,
+          boxShadow: "0 0 6px " + ts.color
+        }
+      }), /*#__PURE__*/React.createElement("span", {
+        style: _objectSpread(_objectSpread({
+          fontSize: 10,
+          padding: "2px 6px",
+          borderRadius: 4
+        }, ts), {}, {
+          flexShrink: 0
+        })
+      }, g.area), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 13,
+          color: "rgba(255,255,255,0.82)",
+          lineHeight: 1.4
+        }
+      }, g.title));
+    }));
+  }
+  function renderAssessmentsCard() {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card-rim",
+      style: card()
+    }, /*#__PURE__*/React.createElement("div", {
+      style: sT
+    }, "Upcoming assessments"), upcoming.length === 0 ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text2
+      }
+    }, "All clear \u2713") : upcoming.map(function (a) {
+      var days = daysBetween(a.date);
+      var col = subjectColor(data.uni.subjects, a.subject) || T.accent;
+      var dayLabel = days === 0 ? "Today" : days === 1 ? "Tomorrow" : days <= 13 ? WX_DAYS[new Date(a.date + "T00:00").getDay()] + " · " + days + " days" : fmtDate(a.date);
+      return /*#__PURE__*/React.createElement("div", {
+        key: a.id,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "8px 10px",
+          borderRadius: 8,
+          background: T.bg3,
+          border: "0.5px solid " + T.border,
+          marginBottom: 6,
+          cursor: "pointer"
+        },
+        onClick: function onClick() {
+          setPage("Uni");
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          width: 7,
+          height: 7,
+          borderRadius: "50%",
+          background: col,
+          flexShrink: 0
+        }
+      }), /*#__PURE__*/React.createElement("div", {
+        style: {
+          flex: 1,
+          minWidth: 0,
+          fontSize: 12,
+          color: T.text,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap"
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: col,
+          fontWeight: 700
+        }
+      }, a.subject), " · ", a.title), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 10,
+          color: days <= 3 ? T.danger : T.text2,
+          fontWeight: 600,
+          flexShrink: 0,
+          whiteSpace: "nowrap"
+        }
+      }, dayLabel));
+    }));
+  }
+  function renderGymNextCard() {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card-rim",
+      style: card()
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        marginBottom: nextRot ? 4 : 0
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: sT
+    }, "Next session \xB7 pre-fill weights"), nextRot && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: T.text2,
+        marginTop: 2
+      }
+    }, nextRot.name, nextRot.focus ? " · " + nextRot.focus : "")), /*#__PURE__*/React.createElement("button", {
+      style: editPill,
+      onClick: function onClick() {
+        setPage("Gym");
+      }
+    }, "Open \u2192")), !nextRot && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: T.text2,
+        marginBottom: 8
+      }
+    }, "Set up your rotation in the Gym tab."), gymDraftBanner && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+        padding: "10px 13px",
+        borderRadius: 12,
+        background: "rgba(225,234,255,0.04)",
+        border: "1px solid rgba(255,255,255,0.07)",
+        boxShadow: "0 0 20px rgba(255,209,102,0.3),inset 0 1px 0 rgba(255,255,255,0.05)",
+        marginBottom: 10
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: T.warn
+      }
+    }, "Unfinished session restored \xB7 keep logging or discard"), /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        try {
+          localStorage.removeItem('gym_draft');
+        } catch (_) {}
+        setGymDraftBanner(false);
+        setNxtRows(nextRot && nextRot.exercises && nextRot.exercises.length > 0 ? nextRot.exercises.map(function (ex, i) {
+          return {
+            id: ex.id || i + 1,
+            exercise: ex.exercise || "",
+            sets: ex.sets || "",
+            reps: ex.reps || "",
+            weight: ex.weight || ""
+          };
+        }) : [{
+          id: 1,
+          exercise: "",
+          sets: "",
+          reps: "",
+          weight: ""
+        }, {
+          id: 2,
+          exercise: "",
+          sets: "",
+          reps: "",
+          weight: ""
+        }, {
+          id: 3,
+          exercise: "",
+          sets: "",
+          reps: "",
+          weight: ""
+        }]);
+      },
+      style: _objectSpread(_objectSpread({}, btnGlass), {}, {
+        fontSize: 10,
+        padding: "3px 10px"
+      })
+    }, "Discard")), /*#__PURE__*/React.createElement("datalist", {
+      id: "homeExSuggestions"
+    }, function () {
+      var seen = {};
+      var names = [];
+      ((data.gym || {}).exercises || []).forEach(function (ex) {
+        var n = (ex.name || "").trim();
+        if (n && !seen[n.toLowerCase()]) {
+          seen[n.toLowerCase()] = true;
+          names.push(n);
+        }
+      });
+      ((data.gym || {}).rotation || []).forEach(function (r) {
+        (r.exercises || []).forEach(function (ex) {
+          var n = (ex.exercise || "").trim();
+          if (n && !seen[n.toLowerCase()]) {
+            seen[n.toLowerCase()] = true;
+            names.push(n);
+          }
+        });
+      });
+      return names;
+    }().map(function (n) {
+      return React.createElement("option", {
+        key: n,
+        value: n
+      });
+    })), mob ? nxtRows.map(function (row, i) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: row.id,
+        style: {
+          display: "grid",
+          gridTemplateColumns: "1fr 52px 52px 64px",
+          gap: 5,
+          marginBottom: 6
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        style: _objectSpread(_objectSpread({}, inp), {}, {
+          padding: "8px 8px",
+          fontSize: 12
+        }),
+        list: "homeExSuggestions",
+        placeholder: ["Bench Press", "Squat", "OHP"][i] || "Exercise",
+        value: row.exercise,
+        onChange: function onChange(ev) {
+          setNxtRows(function (r) {
+            return r.map(function (x, j) {
+              return j === i ? _objectSpread(_objectSpread({}, x), {}, {
+                exercise: ev.target.value
+              }) : x;
+            });
+          });
+        }
+      }), /*#__PURE__*/React.createElement("input", {
+        style: _objectSpread(_objectSpread({}, inp), {}, {
+          padding: "8px 4px",
+          fontSize: 12
+        }),
+        type: "number",
+        placeholder: "Sets",
+        value: row.sets,
+        onChange: function onChange(ev) {
+          setNxtRows(function (r) {
+            return r.map(function (x, j) {
+              return j === i ? _objectSpread(_objectSpread({}, x), {}, {
+                sets: ev.target.value
+              }) : x;
+            });
+          });
+        }
+      }), /*#__PURE__*/React.createElement("input", {
+        style: _objectSpread(_objectSpread({}, inp), {}, {
+          padding: "8px 4px",
+          fontSize: 12
+        }),
+        type: "number",
+        placeholder: "Reps",
+        value: row.reps,
+        onChange: function onChange(ev) {
+          setNxtRows(function (r) {
+            return r.map(function (x, j) {
+              return j === i ? _objectSpread(_objectSpread({}, x), {}, {
+                reps: ev.target.value
+              }) : x;
+            });
+          });
+        }
+      }), /*#__PURE__*/React.createElement("input", {
+        style: _objectSpread(_objectSpread({}, inp), {}, {
+          padding: "8px 4px",
+          fontSize: 12
+        }),
+        type: "number",
+        placeholder: "kg",
+        value: row.weight,
+        onChange: function onChange(ev) {
+          setNxtRows(function (r) {
+            return r.map(function (x, j) {
+              return j === i ? _objectSpread(_objectSpread({}, x), {}, {
+                weight: ev.target.value
+              }) : x;
+            });
+          });
+        }
+      }));
+    }) : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "1fr 50px 50px 60px",
+        gap: 6,
+        marginBottom: 4
+      }
+    }, ["Exercise", "Sets", "Reps", "kg"].map(function (h) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: h,
+        style: {
+          fontSize: 9,
+          color: T.text3
+        }
+      }, h);
+    })), nxtRows.map(function (row, i) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: row.id,
+        style: {
+          display: "grid",
+          gridTemplateColumns: "1fr 50px 50px 60px",
+          gap: 6,
+          marginBottom: 6
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        style: inp,
+        list: "homeExSuggestions",
+        placeholder: ["Bench Press", "Squat", "Overhead Press"][i] || "Exercise",
+        value: row.exercise,
+        onChange: function onChange(ev) {
+          setNxtRows(function (r) {
+            return r.map(function (x, j) {
+              return j === i ? _objectSpread(_objectSpread({}, x), {}, {
+                exercise: ev.target.value
+              }) : x;
+            });
+          });
+        }
+      }), /*#__PURE__*/React.createElement("input", {
+        style: inp,
+        type: "number",
+        placeholder: "4",
+        value: row.sets,
+        onChange: function onChange(ev) {
+          setNxtRows(function (r) {
+            return r.map(function (x, j) {
+              return j === i ? _objectSpread(_objectSpread({}, x), {}, {
+                sets: ev.target.value
+              }) : x;
+            });
+          });
+        }
+      }), /*#__PURE__*/React.createElement("input", {
+        style: inp,
+        type: "number",
+        placeholder: "8",
+        value: row.reps,
+        onChange: function onChange(ev) {
+          setNxtRows(function (r) {
+            return r.map(function (x, j) {
+              return j === i ? _objectSpread(_objectSpread({}, x), {}, {
+                reps: ev.target.value
+              }) : x;
+            });
+          });
+        }
+      }), /*#__PURE__*/React.createElement("input", {
+        style: inp,
+        type: "number",
+        placeholder: "80",
+        value: row.weight,
+        onChange: function onChange(ev) {
+          setNxtRows(function (r) {
+            return r.map(function (x, j) {
+              return j === i ? _objectSpread(_objectSpread({}, x), {}, {
+                weight: ev.target.value
+              }) : x;
+            });
+          });
+        }
+      }));
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginTop: 4
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      style: btn,
+      onClick: function onClick() {
+        setNxtRows(function (r) {
+          return r.concat([{
+            id: Date.now(),
+            exercise: "",
+            sets: "",
+            reps: "",
+            weight: ""
+          }]);
+        });
+      }
+    }, "+ Row"), /*#__PURE__*/React.createElement("button", {
+      style: btnP,
+      onClick: saveNextSess
+    }, "Save to Gym \u2192")));
+  }
+  function renderBodyweightCard() {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card-rim",
+      style: card(!bwLogged && dLeft <= 3 ? {
+        boxShadow: "0 0 26px " + bwColMap[bwUrg] + "55," + cardShadow
+      } : {})
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        fontWeight: 600,
+        color: "#f3f7fd"
+      }
+    }, "Weekly body weight"), !bwLogged && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: bwColMap[bwUrg],
+        fontWeight: 600,
+        padding: "2px 7px",
+        borderRadius: 99,
+        background: bwColMap[bwUrg] + "18"
+      }
+    }, dLeft, "d left")), bwLogged && !bwEditing ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "4px 0 8px"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 32,
+        color: T.success,
+        lineHeight: 1,
+        fontWeight: 700
+      }
+    }, "\u2713"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 22,
+        fontWeight: 700,
+        color: T.success,
+        lineHeight: 1.1
+      }
+    }, function () {
+      var e = (data.gym.bodyWeight || []).find(function (e) {
+        return e.date >= thisWeek;
+      });
+      return e ? e.weight + " kg" : "Logged";
+    }()), /*#__PURE__*/React.createElement("button", {
+      style: {
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        color: T.text3,
+        fontSize: 16,
+        opacity: 0.45,
+        lineHeight: 1,
+        padding: "0 2px"
+      },
+      title: "Delete this entry",
+      onClick: function onClick() {
+        var e = (data.gym.bodyWeight || []).find(function (en) {
+          return en.date >= thisWeek;
+        });
+        if (e) deleteBWEntry(e.date);
+      }
+    }, "\xD7")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.success,
+        opacity: 0.75,
+        marginTop: 2
+      }
+    }, "Logged this week"))), (data.gym.bodyWeight || []).length >= 2 && /*#__PURE__*/React.createElement(Sparkline, {
+      data: data.gym.bodyWeight,
+      color: T.success,
+      width: 180,
+      height: 40
+    }), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 10,
+        padding: "4px 10px",
+        marginTop: 8
+      }),
+      onClick: function onClick() {
+        var e = (data.gym.bodyWeight || []).find(function (e) {
+          return e.date >= thisWeek;
+        });
+        if (e) {
+          setBwIn(String(e.weight));
+          setBwDate(e.date);
+        } else {
+          setBwIn("");
+          setBwDate(todayStr());
+        }
+        setBwEditing(true);
+      }
+    }, "Edit / add past entry")) : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        marginBottom: 8
+      }
+    }, bwEditing ? "Update your entry or add a past entry below" : dLeft <= 1 ? "Last chance, ends tomorrow!" : dLeft <= 3 ? "Log before the week ends" : "Log once this week"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        marginBottom: 6
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      style: _objectSpread(_objectSpread({}, inp), {}, {
+        flex: 1
+      }),
+      type: "number",
+      step: "0.1",
+      placeholder: "e.g. 81.2 kg",
+      value: bwIn,
+      onChange: function onChange(ev) {
+        setBwIn(ev.target.value);
+      }
+    }), /*#__PURE__*/React.createElement("button", {
+      style: btnP,
+      onClick: logBW
+    }, "Log")), /*#__PURE__*/React.createElement("input", {
+      type: "date",
+      style: _objectSpread(_objectSpread({}, inp), {}, {
+        padding: "6px 10px",
+        fontSize: 11,
+        color: T.text3
+      }),
+      value: bwDate,
+      onChange: function onChange(ev) {
+        setBwDate(ev.target.value);
+      }
+    }), bwLogged && bwEditing && /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 10,
+        padding: "4px 10px",
+        marginTop: 6,
+        opacity: 0.6
+      }),
+      onClick: function onClick() {
+        setBwEditing(false);
+        setBwIn("");
+        setBwDate(todayStr());
+      }
+    }, "Cancel")));
+  }
+  function renderTasksCard() {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card-rim",
+      style: card()
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: sT
+    }, "Tasks"), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, editPill), {}, {
+        fontSize: 14,
+        padding: "2px 12px"
+      }),
+      onClick: function onClick() {
+        setModal("add_task");
+        setMForm({
+          priority: "normal",
+          cat: "Errands"
+        });
+      }
+    }, "+")), urgTasks.length === 0 && normTasks.length === 0 && doneTasks.length === 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text2
+      }
+    }, "All clear \u2713"), scheduleTaskId && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 9,
+        color: T.accent,
+        marginBottom: 6,
+        padding: "3px 8px",
+        borderRadius: 6,
+        background: T.accentBg,
+        border: "0.5px solid rgba(91,140,255,0.3)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "Tap a calendar day to schedule (or ESC)"), /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        setScheduleTaskId(null);
+      },
+      title: "Cancel scheduling",
+      style: {
+        background: "none",
+        border: "none",
+        color: T.accent,
+        cursor: "pointer",
+        fontSize: 14,
+        padding: "0 4px",
+        lineHeight: 1,
+        fontWeight: 700
+      }
+    }, "\xD7")), urgTasks.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 9,
+        color: T.danger,
+        fontWeight: 700,
+        marginBottom: 6,
+        textTransform: "uppercase",
+        letterSpacing: 0.5
+      }
+    }, "Urgent"), urgTasks.map(function (t) {
+      var urg = taskUrg(t);
+      var isActive = scheduleTaskId === t.id;
+      return /*#__PURE__*/React.createElement("div", {
+        key: t.id,
+        className: "glow-item",
+        style: {
+          display: "flex",
+          gap: 9,
+          marginBottom: 7,
+          alignItems: "flex-start",
+          padding: "10px 12px",
+          borderRadius: 12,
+          background: isActive ? "rgba(91,140,255,0.12)" : "rgba(225,234,255,0.04)",
+          border: "1px solid " + (isActive ? "rgba(91,140,255,0.5)" : "rgba(255,255,255,0.07)"),
+          boxShadow: "inset 10px 0 9px -8px " + TUC[urg],
+          cursor: "default",
+          transition: "background 0.15s"
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        type: "checkbox",
+        checked: t.done,
+        onChange: function onChange() {
+          toggleTask(t.id);
+        },
+        style: {
+          accentColor: T.accent,
+          marginTop: 2,
+          flexShrink: 0
+        }
+      }), /*#__PURE__*/React.createElement("div", {
+        style: {
+          flex: 1,
+          minWidth: 0
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11,
+          fontWeight: 500,
+          color: T.text,
+          textDecoration: t.done ? "line-through" : "none"
+        }
+      }, t.name), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 9,
+          color: TUC[urg]
+        }
+      }, taskLabel(t))), /*#__PURE__*/React.createElement("button", {
+        style: {
+          background: "none",
+          border: "none",
+          padding: "2px 4px",
+          cursor: "pointer",
+          color: T.text3,
+          flexShrink: 0,
+          opacity: 0.45,
+          display: "flex",
+          transition: "opacity 0.15s"
+        },
+        title: "Mark done on a different day",
+        onClick: function onClick(e) {
+          e.stopPropagation();
+          openBackdateModal(t.id);
+        }
+      }, /*#__PURE__*/React.createElement(UIcon, {
+        name: "clock",
+        size: 12
+      })), /*#__PURE__*/React.createElement("button", {
+        style: {
+          background: "none",
+          border: "none",
+          padding: "2px 4px",
+          cursor: "pointer",
+          color: scheduleTaskId === t.id ? T.accent : T.text3,
+          fontSize: 14,
+          flexShrink: 0,
+          lineHeight: 1,
+          opacity: scheduleTaskId === t.id ? 1 : 0.45,
+          transition: "opacity 0.15s,color 0.15s"
+        },
+        title: "Schedule",
+        onClick: function onClick(e) {
+          e.stopPropagation();
+          if (scheduleTaskId === t.id) {
+            setScheduleTaskId(null);
+          } else {
+            trk("task.schedule");
+            setScheduleTaskId(t.id);
+            showToast("Tap a calendar day to schedule (or ESC)", "warn");
+          }
+        }
+      }, "\u283F"));
+    })), normTasks.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 9,
+        color: T.text3,
+        fontWeight: 700,
+        marginBottom: 6,
+        marginTop: 8,
+        textTransform: "uppercase",
+        letterSpacing: 0.5
+      }
+    }, "Normal"), normTasks.map(function (t) {
+      var urg = taskUrg(t);
+      var isActive = scheduleTaskId === t.id;
+      return /*#__PURE__*/React.createElement("div", {
+        key: t.id,
+        className: "glow-item",
+        style: {
+          display: "flex",
+          gap: 9,
+          marginBottom: 7,
+          alignItems: "flex-start",
+          padding: "10px 12px",
+          borderRadius: 12,
+          background: isActive ? "rgba(91,140,255,0.12)" : "rgba(225,234,255,0.04)",
+          border: "1px solid " + (isActive ? "rgba(91,140,255,0.5)" : "rgba(255,255,255,0.07)"),
+          boxShadow: "inset 10px 0 9px -8px " + TUC[urg],
+          cursor: "default",
+          transition: "background 0.15s"
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        type: "checkbox",
+        checked: t.done,
+        onChange: function onChange() {
+          toggleTask(t.id);
+        },
+        style: {
+          accentColor: T.accent,
+          marginTop: 2,
+          flexShrink: 0
+        }
+      }), /*#__PURE__*/React.createElement("div", {
+        style: {
+          flex: 1,
+          minWidth: 0
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11,
+          fontWeight: 500,
+          color: T.text,
+          textDecoration: t.done ? "line-through" : "none"
+        }
+      }, t.name), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 9,
+          color: TUC[urg]
+        }
+      }, taskLabel(t))), /*#__PURE__*/React.createElement("button", {
+        style: {
+          background: "none",
+          border: "none",
+          padding: "2px 4px",
+          cursor: "pointer",
+          color: T.text3,
+          flexShrink: 0,
+          opacity: 0.45,
+          display: "flex",
+          transition: "opacity 0.15s"
+        },
+        title: "Mark done on a different day",
+        onClick: function onClick(e) {
+          e.stopPropagation();
+          openBackdateModal(t.id);
+        }
+      }, /*#__PURE__*/React.createElement(UIcon, {
+        name: "clock",
+        size: 12
+      })), /*#__PURE__*/React.createElement("button", {
+        style: {
+          background: "none",
+          border: "none",
+          padding: "2px 4px",
+          cursor: "pointer",
+          color: scheduleTaskId === t.id ? T.accent : T.text3,
+          fontSize: 14,
+          flexShrink: 0,
+          lineHeight: 1,
+          opacity: scheduleTaskId === t.id ? 1 : 0.45,
+          transition: "opacity 0.15s,color 0.15s"
+        },
+        title: "Schedule",
+        onClick: function onClick(e) {
+          e.stopPropagation();
+          if (scheduleTaskId === t.id) {
+            setScheduleTaskId(null);
+          } else {
+            trk("task.schedule");
+            setScheduleTaskId(t.id);
+            showToast("Tap a calendar day to schedule (or ESC)", "warn");
+          }
+        }
+      }, "\u283F"));
+    })), doneTasks.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 9,
+        color: T.text3,
+        fontWeight: 700,
+        marginBottom: 6,
+        marginTop: 8,
+        textTransform: "uppercase",
+        letterSpacing: 0.5
+      }
+    }, "Done"), doneTasks.map(function (t) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: t.id,
+        style: {
+          display: "flex",
+          gap: 7,
+          marginBottom: 5,
+          alignItems: "center",
+          opacity: 0.45
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        type: "checkbox",
+        checked: true,
+        onChange: function onChange() {
+          toggleTask(t.id);
+        },
+        style: {
+          accentColor: T.accent,
+          flexShrink: 0
+        }
+      }), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11,
+          color: T.text3,
+          textDecoration: "line-through",
+          flex: 1,
+          minWidth: 0
+        }
+      }, t.name), t.completedAt && /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 9,
+          color: T.text3,
+          flexShrink: 0
+        }
+      }, fmtDate(t.completedAt), t.completedTime ? " · " + fmtTime12(t.completedTime) : ""));
+    })));
+  }
+  function renderHomeCard(id) {
+    switch (id) {
+      case "shopping":
+        return /*#__PURE__*/React.createElement(ErrorBoundary, {
+          name: "ShoppingHome"
+        }, /*#__PURE__*/React.createElement(ShoppingHomeCard, {
+          items: data.shopping || [],
+          onUpdate: updateShopping,
+          onOpen: function onOpen() {
+            setPage("Shopping");
+          },
+          cardStyle: card(),
+          mob: mob
+        }));
+      case "weather":
+        return /*#__PURE__*/React.createElement(WeatherWidget, {
+          mob: mob
+        });
+      case "checkin":
+        return renderCheckinCard();
+      case "goals":
+        return renderGoalsCard();
+      // returns null when not onboarded
+      case "assessments":
+        return renderAssessmentsCard();
+      case "gym-next":
+        return renderGymNextCard();
+      case "bodyweight":
+        return renderBodyweightCard();
+      case "tasks":
+        return renderTasksCard();
+      case "classes":
+        return null;
+      // Task 7
+      case "necessities":
+        return null;
+      // Task 8
+      default:
+        return null;
+    }
+  }
   return /*#__PURE__*/React.createElement("div", {
     className: "dashboard-reveal",
     style: {
@@ -14880,1220 +16152,35 @@ function App() {
     month: "long",
     year: "numeric"
   }))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      columnCount: mob ? 1 : 3,
-      columnGap: 18
-    }
-  }, /*#__PURE__*/React.createElement("div", {
     className: "card-rim",
     style: card({
-      columnSpan: "all",
-      breakInside: "avoid",
-      padding: "16px 20px"
+      padding: "16px 20px",
+      marginBottom: GRID_GAP
     })
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 14
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13,
-      fontWeight: 700,
-      color: T.text,
-      letterSpacing: "-0.01em"
-    }
-  }, new Date(dStr(weekDates[0])).toLocaleDateString("en-AU", {
-    month: "long",
-    year: "numeric"
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: T.text3,
-      marginTop: 1
-    }
-  }, fmtDate(dStr(weekDates[0])), " \xB7 ", fmtDate(dStr(weekDates[6])))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 5,
-      alignItems: "center"
-    }
-  }, gcalReady && !gcalConnected && /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      fontSize: 10,
-      color: "#4285F4",
-      border: "0.5px solid rgba(66,133,244,0.35)",
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 4
-    }),
-    onClick: function onClick() {
-      window.GCalSync && window.GCalSync.connect();
-    }
-  }, /*#__PURE__*/React.createElement(UIcon, {
-    name: "calendar",
-    size: 10
-  }), "Connect"), gcalConnected && /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      fontSize: 10,
-      color: T.text2,
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 4
-    }),
-    onClick: function onClick() {
-      setShowCalPicker(true);
-    }
-  }, /*#__PURE__*/React.createElement(UIcon, {
-    name: "calendar",
-    size: 10
-  }), gcalEvents.length), /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      padding: "4px 10px",
-      fontSize: 13
-    }),
-    onClick: function onClick() {
-      setWkOff(function (o) {
-        return o - 1;
-      });
-    }
-  }, "\u2190"), /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      padding: "4px 10px",
-      color: wkOff === 0 ? T.accent : T.text2,
-      border: wkOff === 0 ? "0.5px solid rgba(91,140,255,0.4)" : "0.5px solid rgba(255,255,255,0.12)"
-    }),
-    onClick: function onClick() {
-      setWkOff(0);
-      setActiveDay(todayStr());
-    }
-  }, "Today"), /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      padding: "4px 10px",
-      fontSize: 13
-    }),
-    onClick: function onClick() {
-      setWkOff(function (o) {
-        return o + 1;
-      });
-    }
-  }, "\u2192"))), renderWeek(), gcalCalendars.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      flexWrap: "wrap",
-      marginTop: 10,
-      paddingTop: 8,
-      borderTop: "0.5px solid " + T.border
-    }
-  }, gcalCalendars.slice(0, 6).map(function (cal) {
-    return /*#__PURE__*/React.createElement("div", {
-      key: cal.id,
+  }, renderCalendarCard()), mob ? /*#__PURE__*/React.createElement("div", null, homeLayout.map(function (e) {
+    var body = renderHomeCard(e.id);
+    return body ? /*#__PURE__*/React.createElement("div", {
+      key: e.id,
       style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 4
+        marginBottom: 12
       }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        width: 6,
-        height: 6,
-        borderRadius: 2,
-        background: cal.backgroundColor || "#4285F4"
-      }
-    }), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 9,
-        color: T.text3
-      }
-    }, cal.summary));
-  }))), /*#__PURE__*/React.createElement(ErrorBoundary, {
-    name: "ShoppingHome"
-  }, /*#__PURE__*/React.createElement(ShoppingHomeCard, {
-    items: data.shopping || [],
-    onUpdate: updateShopping,
-    onOpen: function onOpen() {
-      setPage("Shopping");
-    },
-    cardStyle: card({
-      breakInside: "avoid"
-    }),
-    mob: mob
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      breakInside: "avoid",
-      marginBottom: 12
-    }
-  }, /*#__PURE__*/React.createElement(WeatherWidget, {
-    mob: mob
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "card-rim",
-    style: _objectSpread(_objectSpread({}, card({
-      breakInside: "avoid"
-    })), {}, {
-      marginBottom: 12
-    })
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      gap: 16,
-      marginBottom: checkinOpen || todayEvs.length > 0 ? 10 : 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: T.text3,
-      display: "flex",
-      alignItems: "center",
-      gap: 5
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 5,
-      height: 5,
-      borderRadius: "50%",
-      background: T.accent
-    }
-  }), "Daily Check-in \xB7 ", new Date().toLocaleDateString("en-AU", {
-    weekday: "long",
-    day: "numeric",
-    month: "long"
-  })), checkinOpen ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      fontSize: 11
-    }),
-    onClick: function onClick() {
-      trk("checkin.generate");
-      doCheckin();
-    }
-  }, "Refresh"), /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      fontSize: 11
-    }),
-    onClick: function onClick() {
-      setCheckinOpen(false);
-    }
-  }, "Hide")) : /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btnP), {}, {
-      fontSize: 11,
-      padding: "5px 12px"
-    }),
-    onClick: function onClick() {
-      setCheckinOpen(true);
-      if (checkinBlocks.length === 0 && !checkinLoading) {
-        trk("checkin.generate");
-        doCheckin();
-      }
-    }
-  }, "Generate check-in")), checkinOpen && (checkinLoading ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: T.accent,
-      display: "flex",
-      alignItems: "center",
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: "inline-block",
-      width: 8,
-      height: 8,
-      borderRadius: "50%",
-      background: T.accent,
-      animation: "pulse 1.2s ease-in-out infinite"
-    }
-  }), "AI is thinking...") : checkinBlocks.length === 0 ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: T.text3
-    }
-  }, "Generating today's check-in\u2026") : checkinBlocks.map(function (block, bi) {
-    return /*#__PURE__*/React.createElement("div", {
-      key: bi,
-      style: {
-        marginBottom: 10
-      }
-    }, block.header && /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        fontWeight: 600,
-        color: T.accent,
-        marginBottom: 4
-      }
-    }, block.header), block.items.map(function (item, ii) {
-      return /*#__PURE__*/React.createElement("div", {
-        key: ii,
-        style: {
-          fontSize: 13,
-          lineHeight: 1.7,
-          color: T.text
-        }
-      }, item);
-    }));
-  })), todayEvs.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 12,
-      paddingTop: 10,
-      borderTop: "0.5px solid " + T.border,
-      display: "flex",
-      gap: 6,
-      flexWrap: "wrap"
-    }
-  }, todayEvs.map(function (ev) {
-    var col = evColor(ev);
-    return /*#__PURE__*/React.createElement("div", {
-      key: ev.id,
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 5,
-        padding: "4px 9px",
-        borderRadius: 6,
-        background: col + "18",
-        border: "0.5px solid " + col + "40",
-        flexShrink: 0
-      }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 10,
-        fontWeight: 600,
-        color: col
-      }
-    }, evLabel(ev), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontWeight: 400,
-        color: T.text3
-      }
-    }, " \xB7 ", ev.time)), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 9,
-        color: T.text2
-      }
-    }, ev.title.slice(0, 32))));
-  }))), function () {
-    var b = data.boardroom || {};
-    if (!b.onboarded) return null;
-    var ag = (b.goals || []).filter(function (g) {
-      return g.status === "active";
-    });
-    var ns = b.northStar || "";
-    if (!ag.length && !ns) return null;
-    return /*#__PURE__*/React.createElement("div", {
-      className: "card-rim",
-      style: _objectSpread(_objectSpread({}, card({
-        breakInside: "avoid"
-      })), {}, {
-        borderLeft: "3px solid rgba(91,140,255,0.6)"
-      })
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        marginBottom: ns ? 10 : 12
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: sT
-    }, "Goals"), /*#__PURE__*/React.createElement("button", {
-      onClick: function onClick() {
-        setPage("Boardroom");
-      },
-      style: _objectSpread(_objectSpread({}, btnGlass), {}, {
-        fontSize: 11,
-        padding: "3px 10px"
-      })
-    }, "Boardroom \u2192")), ns && /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        color: "rgba(255,255,255,0.42)",
-        fontStyle: "italic",
-        lineHeight: 1.65,
-        marginBottom: ag.length ? 14 : 4,
-        display: "-webkit-box",
-        WebkitLineClamp: 2,
-        WebkitBoxOrient: "vertical",
-        overflow: "hidden"
-      }
-    }, "\"", ns, "\""), ag.length === 0 && /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        color: T.text3,
-        marginTop: 4
-      }
-    }, "Start a session to set your first goal."), ag.map(function (g, i) {
-      var ts = getTagStyle(g.area);
-      return /*#__PURE__*/React.createElement("div", {
-        key: g.id,
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: 9,
-          padding: "7px 0",
-          borderBottom: i < ag.length - 1 ? "0.5px solid rgba(255,255,255,0.06)" : "none"
-        }
-      }, /*#__PURE__*/React.createElement("span", {
-        style: {
-          width: 6,
-          height: 6,
-          borderRadius: "50%",
-          flexShrink: 0,
-          background: ts.color,
-          boxShadow: "0 0 6px " + ts.color
-        }
-      }), /*#__PURE__*/React.createElement("span", {
-        style: _objectSpread(_objectSpread({
-          fontSize: 10,
-          padding: "2px 6px",
-          borderRadius: 4
-        }, ts), {}, {
-          flexShrink: 0
-        })
-      }, g.area), /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 13,
-          color: "rgba(255,255,255,0.82)",
-          lineHeight: 1.4
-        }
-      }, g.title));
-    }));
-  }(), /*#__PURE__*/React.createElement("div", {
-    className: "card-rim",
-    style: card({
-      breakInside: "avoid"
-    })
-  }, /*#__PURE__*/React.createElement("div", {
-    style: sT
-  }, "Upcoming assessments"), upcoming.length === 0 ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: T.text2
-    }
-  }, "All clear \u2713") : upcoming.map(function (a) {
-    var days = daysBetween(a.date);
-    var col = subjectColor(data.uni.subjects, a.subject) || T.accent;
-    var dayLabel = days === 0 ? "Today" : days === 1 ? "Tomorrow" : days <= 13 ? WX_DAYS[new Date(a.date + "T00:00").getDay()] + " · " + days + " days" : fmtDate(a.date);
-    return /*#__PURE__*/React.createElement("div", {
-      key: a.id,
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "8px 10px",
-        borderRadius: 8,
-        background: T.bg3,
-        border: "0.5px solid " + T.border,
-        marginBottom: 6,
-        cursor: "pointer"
-      },
-      onClick: function onClick() {
-        setPage("Uni");
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        width: 7,
-        height: 7,
-        borderRadius: "50%",
-        background: col,
-        flexShrink: 0
-      }
-    }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: 1,
-        minWidth: 0,
-        fontSize: 12,
-        color: T.text,
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap"
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: col,
-        fontWeight: 700
-      }
-    }, a.subject), " · ", a.title), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 10,
-        color: days <= 3 ? T.danger : T.text2,
-        fontWeight: 600,
-        flexShrink: 0,
-        whiteSpace: "nowrap"
-      }
-    }, dayLabel));
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "card-rim",
-    style: card({
-      breakInside: "avoid"
-    })
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "flex-start",
-      marginBottom: nextRot ? 4 : 0
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: sT
-  }, "Next session \xB7 pre-fill weights"), nextRot && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: T.text2,
-      marginTop: 2
-    }
-  }, nextRot.name, nextRot.focus ? " · " + nextRot.focus : "")), /*#__PURE__*/React.createElement("button", {
-    style: editPill,
-    onClick: function onClick() {
-      setPage("Gym");
-    }
-  }, "Open \u2192")), !nextRot && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: T.text2,
-      marginBottom: 8
-    }
-  }, "Set up your rotation in the Gym tab."), gymDraftBanner && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 10,
-      padding: "10px 13px",
-      borderRadius: 12,
-      background: "rgba(225,234,255,0.04)",
-      border: "1px solid rgba(255,255,255,0.07)",
-      boxShadow: "0 0 20px rgba(255,209,102,0.3),inset 0 1px 0 rgba(255,255,255,0.05)",
-      marginBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 11,
-      color: T.warn
-    }
-  }, "Unfinished session restored \xB7 keep logging or discard"), /*#__PURE__*/React.createElement("button", {
-    onClick: function onClick() {
-      try {
-        localStorage.removeItem('gym_draft');
-      } catch (_) {}
-      setGymDraftBanner(false);
-      setNxtRows(nextRot && nextRot.exercises && nextRot.exercises.length > 0 ? nextRot.exercises.map(function (ex, i) {
-        return {
-          id: ex.id || i + 1,
-          exercise: ex.exercise || "",
-          sets: ex.sets || "",
-          reps: ex.reps || "",
-          weight: ex.weight || ""
-        };
-      }) : [{
-        id: 1,
-        exercise: "",
-        sets: "",
-        reps: "",
-        weight: ""
-      }, {
-        id: 2,
-        exercise: "",
-        sets: "",
-        reps: "",
-        weight: ""
-      }, {
-        id: 3,
-        exercise: "",
-        sets: "",
-        reps: "",
-        weight: ""
-      }]);
-    },
-    style: _objectSpread(_objectSpread({}, btnGlass), {}, {
-      fontSize: 10,
-      padding: "3px 10px"
-    })
-  }, "Discard")), /*#__PURE__*/React.createElement("datalist", {
-    id: "homeExSuggestions"
-  }, function () {
-    var seen = {};
-    var names = [];
-    ((data.gym || {}).exercises || []).forEach(function (ex) {
-      var n = (ex.name || "").trim();
-      if (n && !seen[n.toLowerCase()]) {
-        seen[n.toLowerCase()] = true;
-        names.push(n);
-      }
-    });
-    ((data.gym || {}).rotation || []).forEach(function (r) {
-      (r.exercises || []).forEach(function (ex) {
-        var n = (ex.exercise || "").trim();
-        if (n && !seen[n.toLowerCase()]) {
-          seen[n.toLowerCase()] = true;
-          names.push(n);
-        }
-      });
-    });
-    return names;
-  }().map(function (n) {
-    return React.createElement("option", {
-      key: n,
-      value: n
-    });
-  })), mob ? nxtRows.map(function (row, i) {
-    return /*#__PURE__*/React.createElement("div", {
-      key: row.id,
-      style: {
-        display: "grid",
-        gridTemplateColumns: "1fr 52px 52px 64px",
-        gap: 5,
-        marginBottom: 6
-      }
-    }, /*#__PURE__*/React.createElement("input", {
-      style: _objectSpread(_objectSpread({}, inp), {}, {
-        padding: "8px 8px",
-        fontSize: 12
-      }),
-      list: "homeExSuggestions",
-      placeholder: ["Bench Press", "Squat", "OHP"][i] || "Exercise",
-      value: row.exercise,
-      onChange: function onChange(ev) {
-        setNxtRows(function (r) {
-          return r.map(function (x, j) {
-            return j === i ? _objectSpread(_objectSpread({}, x), {}, {
-              exercise: ev.target.value
-            }) : x;
-          });
-        });
-      }
-    }), /*#__PURE__*/React.createElement("input", {
-      style: _objectSpread(_objectSpread({}, inp), {}, {
-        padding: "8px 4px",
-        fontSize: 12
-      }),
-      type: "number",
-      placeholder: "Sets",
-      value: row.sets,
-      onChange: function onChange(ev) {
-        setNxtRows(function (r) {
-          return r.map(function (x, j) {
-            return j === i ? _objectSpread(_objectSpread({}, x), {}, {
-              sets: ev.target.value
-            }) : x;
-          });
-        });
-      }
-    }), /*#__PURE__*/React.createElement("input", {
-      style: _objectSpread(_objectSpread({}, inp), {}, {
-        padding: "8px 4px",
-        fontSize: 12
-      }),
-      type: "number",
-      placeholder: "Reps",
-      value: row.reps,
-      onChange: function onChange(ev) {
-        setNxtRows(function (r) {
-          return r.map(function (x, j) {
-            return j === i ? _objectSpread(_objectSpread({}, x), {}, {
-              reps: ev.target.value
-            }) : x;
-          });
-        });
-      }
-    }), /*#__PURE__*/React.createElement("input", {
-      style: _objectSpread(_objectSpread({}, inp), {}, {
-        padding: "8px 4px",
-        fontSize: 12
-      }),
-      type: "number",
-      placeholder: "kg",
-      value: row.weight,
-      onChange: function onChange(ev) {
-        setNxtRows(function (r) {
-          return r.map(function (x, j) {
-            return j === i ? _objectSpread(_objectSpread({}, x), {}, {
-              weight: ev.target.value
-            }) : x;
-          });
-        });
-      }
-    }));
-  }) : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, body) : null;
+  })) : /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
-      gridTemplateColumns: "1fr 50px 50px 60px",
-      gap: 6,
-      marginBottom: 4
+      gridTemplateColumns: "repeat(3,1fr)",
+      gridAutoRows: GRID_ROW_UNIT + "px",
+      gridAutoFlow: "row dense",
+      gap: GRID_GAP,
+      alignItems: "start"
     }
-  }, ["Exercise", "Sets", "Reps", "kg"].map(function (h) {
-    return /*#__PURE__*/React.createElement("div", {
-      key: h,
-      style: {
-        fontSize: 9,
-        color: T.text3
-      }
-    }, h);
-  })), nxtRows.map(function (row, i) {
-    return /*#__PURE__*/React.createElement("div", {
-      key: row.id,
-      style: {
-        display: "grid",
-        gridTemplateColumns: "1fr 50px 50px 60px",
-        gap: 6,
-        marginBottom: 6
-      }
-    }, /*#__PURE__*/React.createElement("input", {
-      style: inp,
-      list: "homeExSuggestions",
-      placeholder: ["Bench Press", "Squat", "Overhead Press"][i] || "Exercise",
-      value: row.exercise,
-      onChange: function onChange(ev) {
-        setNxtRows(function (r) {
-          return r.map(function (x, j) {
-            return j === i ? _objectSpread(_objectSpread({}, x), {}, {
-              exercise: ev.target.value
-            }) : x;
-          });
-        });
-      }
-    }), /*#__PURE__*/React.createElement("input", {
-      style: inp,
-      type: "number",
-      placeholder: "4",
-      value: row.sets,
-      onChange: function onChange(ev) {
-        setNxtRows(function (r) {
-          return r.map(function (x, j) {
-            return j === i ? _objectSpread(_objectSpread({}, x), {}, {
-              sets: ev.target.value
-            }) : x;
-          });
-        });
-      }
-    }), /*#__PURE__*/React.createElement("input", {
-      style: inp,
-      type: "number",
-      placeholder: "8",
-      value: row.reps,
-      onChange: function onChange(ev) {
-        setNxtRows(function (r) {
-          return r.map(function (x, j) {
-            return j === i ? _objectSpread(_objectSpread({}, x), {}, {
-              reps: ev.target.value
-            }) : x;
-          });
-        });
-      }
-    }), /*#__PURE__*/React.createElement("input", {
-      style: inp,
-      type: "number",
-      placeholder: "80",
-      value: row.weight,
-      onChange: function onChange(ev) {
-        setNxtRows(function (r) {
-          return r.map(function (x, j) {
-            return j === i ? _objectSpread(_objectSpread({}, x), {}, {
-              weight: ev.target.value
-            }) : x;
-          });
-        });
-      }
-    }));
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginTop: 4
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    style: btn,
-    onClick: function onClick() {
-      setNxtRows(function (r) {
-        return r.concat([{
-          id: Date.now(),
-          exercise: "",
-          sets: "",
-          reps: "",
-          weight: ""
-        }]);
-      });
-    }
-  }, "+ Row"), /*#__PURE__*/React.createElement("button", {
-    style: btnP,
-    onClick: saveNextSess
-  }, "Save to Gym \u2192"))), /*#__PURE__*/React.createElement("div", {
-    className: "card-rim",
-    style: card(!bwLogged && dLeft <= 3 ? {
-      boxShadow: "0 0 26px " + bwColMap[bwUrg] + "55," + cardShadow,
-      breakInside: "avoid"
-    } : {
-      breakInside: "avoid"
-    })
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 8
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      fontWeight: 600,
-      color: "#f3f7fd"
-    }
-  }, "Weekly body weight"), !bwLogged && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: bwColMap[bwUrg],
-      fontWeight: 600,
-      padding: "2px 7px",
-      borderRadius: 99,
-      background: bwColMap[bwUrg] + "18"
-    }
-  }, dLeft, "d left")), bwLogged && !bwEditing ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 12,
-      padding: "4px 0 8px"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 32,
-      color: T.success,
-      lineHeight: 1,
-      fontWeight: 700
-    }
-  }, "\u2713"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 8
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 22,
-      fontWeight: 700,
-      color: T.success,
-      lineHeight: 1.1
-    }
-  }, function () {
-    var e = (data.gym.bodyWeight || []).find(function (e) {
-      return e.date >= thisWeek;
-    });
-    return e ? e.weight + " kg" : "Logged";
-  }()), /*#__PURE__*/React.createElement("button", {
-    style: {
-      background: "none",
-      border: "none",
-      cursor: "pointer",
-      color: T.text3,
-      fontSize: 16,
-      opacity: 0.45,
-      lineHeight: 1,
-      padding: "0 2px"
-    },
-    title: "Delete this entry",
-    onClick: function onClick() {
-      var e = (data.gym.bodyWeight || []).find(function (en) {
-        return en.date >= thisWeek;
-      });
-      if (e) deleteBWEntry(e.date);
-    }
-  }, "\xD7")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: T.success,
-      opacity: 0.75,
-      marginTop: 2
-    }
-  }, "Logged this week"))), (data.gym.bodyWeight || []).length >= 2 && /*#__PURE__*/React.createElement(Sparkline, {
-    data: data.gym.bodyWeight,
-    color: T.success,
-    width: 180,
-    height: 40
-  }), /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      fontSize: 10,
-      padding: "4px 10px",
-      marginTop: 8
-    }),
-    onClick: function onClick() {
-      var e = (data.gym.bodyWeight || []).find(function (e) {
-        return e.date >= thisWeek;
-      });
-      if (e) {
-        setBwIn(String(e.weight));
-        setBwDate(e.date);
-      } else {
-        setBwIn("");
-        setBwDate(todayStr());
-      }
-      setBwEditing(true);
-    }
-  }, "Edit / add past entry")) : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: T.text3,
-      marginBottom: 8
-    }
-  }, bwEditing ? "Update your entry or add a past entry below" : dLeft <= 1 ? "Last chance, ends tomorrow!" : dLeft <= 3 ? "Log before the week ends" : "Log once this week"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6,
-      marginBottom: 6
-    }
-  }, /*#__PURE__*/React.createElement("input", {
-    style: _objectSpread(_objectSpread({}, inp), {}, {
-      flex: 1
-    }),
-    type: "number",
-    step: "0.1",
-    placeholder: "e.g. 81.2 kg",
-    value: bwIn,
-    onChange: function onChange(ev) {
-      setBwIn(ev.target.value);
-    }
-  }), /*#__PURE__*/React.createElement("button", {
-    style: btnP,
-    onClick: logBW
-  }, "Log")), /*#__PURE__*/React.createElement("input", {
-    type: "date",
-    style: _objectSpread(_objectSpread({}, inp), {}, {
-      padding: "6px 10px",
-      fontSize: 11,
-      color: T.text3
-    }),
-    value: bwDate,
-    onChange: function onChange(ev) {
-      setBwDate(ev.target.value);
-    }
-  }), bwLogged && bwEditing && /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      fontSize: 10,
-      padding: "4px 10px",
-      marginTop: 6,
-      opacity: 0.6
-    }),
-    onClick: function onClick() {
-      setBwEditing(false);
-      setBwIn("");
-      setBwDate(todayStr());
-    }
-  }, "Cancel"))), /*#__PURE__*/React.createElement("div", {
-    className: "card-rim",
-    style: card({
-      breakInside: "avoid"
-    })
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: sT
-  }, "Tasks"), /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, editPill), {}, {
-      fontSize: 14,
-      padding: "2px 12px"
-    }),
-    onClick: function onClick() {
-      setModal("add_task");
-      setMForm({
-        priority: "normal",
-        cat: "Errands"
-      });
-    }
-  }, "+")), urgTasks.length === 0 && normTasks.length === 0 && doneTasks.length === 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: T.text2
-    }
-  }, "All clear \u2713"), scheduleTaskId && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: T.accent,
-      marginBottom: 6,
-      padding: "3px 8px",
-      borderRadius: 6,
-      background: T.accentBg,
-      border: "0.5px solid rgba(91,140,255,0.3)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement("span", null, "Tap a calendar day to schedule (or ESC)"), /*#__PURE__*/React.createElement("button", {
-    onClick: function onClick() {
-      setScheduleTaskId(null);
-    },
-    title: "Cancel scheduling",
-    style: {
-      background: "none",
-      border: "none",
-      color: T.accent,
-      cursor: "pointer",
-      fontSize: 14,
-      padding: "0 4px",
-      lineHeight: 1,
-      fontWeight: 700
-    }
-  }, "\xD7")), urgTasks.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: T.danger,
-      fontWeight: 700,
-      marginBottom: 6,
-      textTransform: "uppercase",
-      letterSpacing: 0.5
-    }
-  }, "Urgent"), urgTasks.map(function (t) {
-    var urg = taskUrg(t);
-    var isActive = scheduleTaskId === t.id;
-    return /*#__PURE__*/React.createElement("div", {
-      key: t.id,
-      className: "glow-item",
-      style: {
-        display: "flex",
-        gap: 9,
-        marginBottom: 7,
-        alignItems: "flex-start",
-        padding: "10px 12px",
-        borderRadius: 12,
-        background: isActive ? "rgba(91,140,255,0.12)" : "rgba(225,234,255,0.04)",
-        border: "1px solid " + (isActive ? "rgba(91,140,255,0.5)" : "rgba(255,255,255,0.07)"),
-        boxShadow: "inset 10px 0 9px -8px " + TUC[urg],
-        cursor: "default",
-        transition: "background 0.15s"
-      }
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "checkbox",
-      checked: t.done,
-      onChange: function onChange() {
-        toggleTask(t.id);
-      },
-      style: {
-        accentColor: T.accent,
-        marginTop: 2,
-        flexShrink: 0
-      }
-    }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: 1,
-        minWidth: 0
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        fontWeight: 500,
-        color: T.text,
-        textDecoration: t.done ? "line-through" : "none"
-      }
-    }, t.name), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 9,
-        color: TUC[urg]
-      }
-    }, taskLabel(t))), /*#__PURE__*/React.createElement("button", {
-      style: {
-        background: "none",
-        border: "none",
-        padding: "2px 4px",
-        cursor: "pointer",
-        color: T.text3,
-        flexShrink: 0,
-        opacity: 0.45,
-        display: "flex",
-        transition: "opacity 0.15s"
-      },
-      title: "Mark done on a different day",
-      onClick: function onClick(e) {
-        e.stopPropagation();
-        openBackdateModal(t.id);
-      }
-    }, /*#__PURE__*/React.createElement(UIcon, {
-      name: "clock",
-      size: 12
-    })), /*#__PURE__*/React.createElement("button", {
-      style: {
-        background: "none",
-        border: "none",
-        padding: "2px 4px",
-        cursor: "pointer",
-        color: scheduleTaskId === t.id ? T.accent : T.text3,
-        fontSize: 14,
-        flexShrink: 0,
-        lineHeight: 1,
-        opacity: scheduleTaskId === t.id ? 1 : 0.45,
-        transition: "opacity 0.15s,color 0.15s"
-      },
-      title: "Schedule",
-      onClick: function onClick(e) {
-        e.stopPropagation();
-        if (scheduleTaskId === t.id) {
-          setScheduleTaskId(null);
-        } else {
-          trk("task.schedule");
-          setScheduleTaskId(t.id);
-          showToast("Tap a calendar day to schedule (or ESC)", "warn");
-        }
-      }
-    }, "\u283F"));
-  })), normTasks.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: T.text3,
-      fontWeight: 700,
-      marginBottom: 6,
-      marginTop: 8,
-      textTransform: "uppercase",
-      letterSpacing: 0.5
-    }
-  }, "Normal"), normTasks.map(function (t) {
-    var urg = taskUrg(t);
-    var isActive = scheduleTaskId === t.id;
-    return /*#__PURE__*/React.createElement("div", {
-      key: t.id,
-      className: "glow-item",
-      style: {
-        display: "flex",
-        gap: 9,
-        marginBottom: 7,
-        alignItems: "flex-start",
-        padding: "10px 12px",
-        borderRadius: 12,
-        background: isActive ? "rgba(91,140,255,0.12)" : "rgba(225,234,255,0.04)",
-        border: "1px solid " + (isActive ? "rgba(91,140,255,0.5)" : "rgba(255,255,255,0.07)"),
-        boxShadow: "inset 10px 0 9px -8px " + TUC[urg],
-        cursor: "default",
-        transition: "background 0.15s"
-      }
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "checkbox",
-      checked: t.done,
-      onChange: function onChange() {
-        toggleTask(t.id);
-      },
-      style: {
-        accentColor: T.accent,
-        marginTop: 2,
-        flexShrink: 0
-      }
-    }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: 1,
-        minWidth: 0
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        fontWeight: 500,
-        color: T.text,
-        textDecoration: t.done ? "line-through" : "none"
-      }
-    }, t.name), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 9,
-        color: TUC[urg]
-      }
-    }, taskLabel(t))), /*#__PURE__*/React.createElement("button", {
-      style: {
-        background: "none",
-        border: "none",
-        padding: "2px 4px",
-        cursor: "pointer",
-        color: T.text3,
-        flexShrink: 0,
-        opacity: 0.45,
-        display: "flex",
-        transition: "opacity 0.15s"
-      },
-      title: "Mark done on a different day",
-      onClick: function onClick(e) {
-        e.stopPropagation();
-        openBackdateModal(t.id);
-      }
-    }, /*#__PURE__*/React.createElement(UIcon, {
-      name: "clock",
-      size: 12
-    })), /*#__PURE__*/React.createElement("button", {
-      style: {
-        background: "none",
-        border: "none",
-        padding: "2px 4px",
-        cursor: "pointer",
-        color: scheduleTaskId === t.id ? T.accent : T.text3,
-        fontSize: 14,
-        flexShrink: 0,
-        lineHeight: 1,
-        opacity: scheduleTaskId === t.id ? 1 : 0.45,
-        transition: "opacity 0.15s,color 0.15s"
-      },
-      title: "Schedule",
-      onClick: function onClick(e) {
-        e.stopPropagation();
-        if (scheduleTaskId === t.id) {
-          setScheduleTaskId(null);
-        } else {
-          trk("task.schedule");
-          setScheduleTaskId(t.id);
-          showToast("Tap a calendar day to schedule (or ESC)", "warn");
-        }
-      }
-    }, "\u283F"));
-  })), doneTasks.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: T.text3,
-      fontWeight: 700,
-      marginBottom: 6,
-      marginTop: 8,
-      textTransform: "uppercase",
-      letterSpacing: 0.5
-    }
-  }, "Done"), doneTasks.map(function (t) {
-    return /*#__PURE__*/React.createElement("div", {
-      key: t.id,
-      style: {
-        display: "flex",
-        gap: 7,
-        marginBottom: 5,
-        alignItems: "center",
-        opacity: 0.45
-      }
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "checkbox",
-      checked: true,
-      onChange: function onChange() {
-        toggleTask(t.id);
-      },
-      style: {
-        accentColor: T.accent,
-        flexShrink: 0
-      }
-    }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        color: T.text3,
-        textDecoration: "line-through",
-        flex: 1,
-        minWidth: 0
-      }
-    }, t.name), t.completedAt && /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 9,
-        color: T.text3,
-        flexShrink: 0
-      }
-    }, fmtDate(t.completedAt), t.completedTime ? " · " + fmtTime12(t.completedTime) : ""));
-  })))), appVersion && /*#__PURE__*/React.createElement("div", {
+  }, homeLayout.map(function (e) {
+    var body = renderHomeCard(e.id);
+    return body ? /*#__PURE__*/React.createElement(HomeGridCard, {
+      key: e.id,
+      span: e.span
+    }, body) : null;
+  })), appVersion && /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       padding: "10px 0 2px",
