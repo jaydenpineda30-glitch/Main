@@ -10881,6 +10881,13 @@ var GRID_GAP = 18; // px between cards, both axes
 
 function HomeGridCard(_ref7) {
   var span = _ref7.span,
+    editing = _ref7.editing,
+    title = _ref7.title,
+    onSpan = _ref7.onSpan,
+    onDragStart = _ref7.onDragStart,
+    onDragOver = _ref7.onDragOver,
+    isDragging = _ref7.isDragging,
+    isDropTarget = _ref7.isDropTarget,
     children = _ref7.children;
   var ref = React.useRef(null);
   var _React$useState = React.useState(20),
@@ -10901,19 +10908,80 @@ function HomeGridCard(_ref7) {
     return function () {
       ro.disconnect();
     };
-  }, []);
+  }, []); // see Task 2 — [] is deliberate; ResizeObserver catches height changes itself
   return /*#__PURE__*/React.createElement("div", {
     style: {
       gridColumn: "span " + span,
-      gridRow: "span " + rows
-    }
+      gridRow: "span " + rows,
+      opacity: isDragging ? 0.35 : 1,
+      outline: isDropTarget ? "2px dashed " + T.accent : "none",
+      outlineOffset: 4,
+      borderRadius: 22,
+      transition: "opacity 0.12s"
+    },
+    onPointerEnter: editing ? onDragOver : undefined
   }, /*#__PURE__*/React.createElement("div", {
     ref: ref,
     style: {
-      display: "flow-root",
-      marginBottom: 0
+      display: "flow-root"
     }
-  }, children));
+  }, editing && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 8,
+      padding: "6px 10px",
+      marginBottom: 6,
+      borderRadius: 10,
+      background: "rgba(91,140,255,0.10)",
+      border: "1px solid rgba(91,140,255,0.35)"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    onPointerDown: onDragStart,
+    style: {
+      cursor: "grab",
+      fontSize: 14,
+      color: T.accent,
+      userSelect: "none",
+      touchAction: "none"
+    },
+    title: "Drag to move"
+  }, "\u283F"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      color: T.text2,
+      flex: 1,
+      minWidth: 0,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, title), /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "flex",
+      gap: 3
+    }
+  }, [1, 2, 3].map(function (n) {
+    return /*#__PURE__*/React.createElement("button", {
+      key: n,
+      onClick: function onClick() {
+        onSpan(n);
+      },
+      style: _objectSpread(_objectSpread({}, btnGlass), {}, {
+        padding: "1px 7px",
+        fontSize: 10,
+        color: span === n ? T.accent : T.text3,
+        borderColor: span === n ? "rgba(91,140,255,0.5)" : "rgba(255,255,255,0.12)"
+      }),
+      title: n === 1 ? "One column" : n === 2 ? "Two columns wide" : "Full width"
+    }, n);
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: editing ? {
+      pointerEvents: "none",
+      userSelect: "none"
+    } : undefined
+  }, children)));
 }
 function App() {
   var _useState153 = useState("Dashboard"),
@@ -11970,6 +12038,43 @@ function App() {
   var homeLayout = React.useMemo(function () {
     return window.HomeLayout.normalizeLayout(data.homeLayout);
   }, [data.homeLayout]);
+  var _useState311 = useState(false),
+    _useState312 = _slicedToArray(_useState311, 2),
+    layoutEditing = _useState312[0],
+    setLayoutEditing = _useState312[1];
+  var _useState313 = useState(null),
+    _useState314 = _slicedToArray(_useState313, 2),
+    dragId = _useState314[0],
+    setDragId = _useState314[1];
+  var _useState315 = useState(null),
+    _useState316 = _slicedToArray(_useState315, 2),
+    dropIdx = _useState316[0],
+    setDropIdx = _useState316[1];
+  function saveLayout(next) {
+    trk("home.layout_save");
+    setData(function (p) {
+      return _objectSpread(_objectSpread({}, p), {}, {
+        homeLayout: next
+      });
+    });
+  }
+  React.useEffect(function () {
+    if (!dragId) return;
+    function finish() {
+      var from = homeLayout.findIndex(function (x) {
+        return x.id === dragId;
+      });
+      if (from >= 0 && dropIdx !== null && dropIdx !== from) {
+        saveLayout(window.HomeLayout.moveCard(homeLayout, from, dropIdx));
+      }
+      setDragId(null);
+      setDropIdx(null);
+    }
+    window.addEventListener("pointerup", finish);
+    return function () {
+      window.removeEventListener("pointerup", finish);
+    };
+  }, [dragId, dropIdx, homeLayout]);
   function doCheckin() {
     setCheckinLoading(true);
     setCheckinBlocks([]);
@@ -16130,9 +16235,13 @@ function App() {
     }
   }, page === "Dashboard" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
-      marginBottom: 18
+      marginBottom: 18,
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: 12
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: mob ? 20 : 24,
       fontWeight: 800,
@@ -16153,7 +16262,30 @@ function App() {
     day: "numeric",
     month: "long",
     year: "numeric"
-  }))), /*#__PURE__*/React.createElement("div", {
+  }))), !mob && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center"
+    }
+  }, layoutEditing && /*#__PURE__*/React.createElement("button", {
+    style: _objectSpread(_objectSpread({}, btn), {}, {
+      color: T.danger,
+      borderColor: T.danger + "50"
+    }),
+    onClick: function onClick() {
+      if (window.confirm("Reset the home page to its default layout?")) {
+        saveLayout(window.HomeLayout.defaultLayout());
+      }
+    }
+  }, "Reset layout"), /*#__PURE__*/React.createElement("button", {
+    style: layoutEditing ? btnP : btn,
+    onClick: function onClick() {
+      setLayoutEditing(function (v) {
+        return !v;
+      });
+    }
+  }, layoutEditing ? "Done" : "Edit layout"))), /*#__PURE__*/React.createElement("div", {
     className: "card-rim",
     style: card({
       padding: "16px 20px",
@@ -16176,12 +16308,31 @@ function App() {
       gap: GRID_GAP,
       alignItems: "start"
     }
-  }, homeLayout.map(function (e) {
+  }, homeLayout.map(function (e, idx) {
     var body = renderHomeCard(e.id);
-    return body ? /*#__PURE__*/React.createElement(HomeGridCard, {
+    if (!body) return null;
+    var meta = window.HomeLayout.HOME_CARDS.filter(function (c) {
+      return c.id === e.id;
+    })[0] || {};
+    return /*#__PURE__*/React.createElement(HomeGridCard, {
       key: e.id,
-      span: e.span
-    }, body) : null;
+      span: e.span,
+      editing: layoutEditing,
+      title: meta.title || e.id,
+      isDragging: dragId === e.id,
+      isDropTarget: layoutEditing && dropIdx === idx && dragId !== null && dragId !== e.id,
+      onSpan: function onSpan(n) {
+        saveLayout(window.HomeLayout.setSpan(homeLayout, e.id, n));
+      },
+      onDragStart: function onDragStart(ev) {
+        ev.preventDefault();
+        setDragId(e.id);
+        setDropIdx(idx);
+      },
+      onDragOver: function onDragOver() {
+        if (dragId) setDropIdx(idx);
+      }
+    }, body);
   })), appVersion && /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",

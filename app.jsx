@@ -2728,7 +2728,7 @@ function ShoppingHomeCard({items,onUpdate,onOpen,cardStyle,mob}){
 const GRID_ROW_UNIT=8;   // px per implicit row
 const GRID_GAP=18;       // px between cards, both axes
 
-function HomeGridCard({span,children}){
+function HomeGridCard({span,editing,title,onSpan,onDragStart,onDragOver,isDragging,isDropTarget,children}){
   const ref=React.useRef(null);
   const [rows,setRows]=React.useState(20);
   React.useLayoutEffect(function(){
@@ -2743,10 +2743,32 @@ function HomeGridCard({span,children}){
     const ro=new ResizeObserver(measure);
     ro.observe(el);
     return function(){ro.disconnect();};
-  },[]);
+  },[]);   // see Task 2 — [] is deliberate; ResizeObserver catches height changes itself
   return(
-    <div style={{gridColumn:"span "+span,gridRow:"span "+rows}}>
-      <div ref={ref} style={{display:"flow-root",marginBottom:0}}>{children}</div>
+    <div style={{gridColumn:"span "+span,gridRow:"span "+rows,opacity:isDragging?0.35:1,
+                 outline:isDropTarget?"2px dashed "+T.accent:"none",outlineOffset:4,borderRadius:22,
+                 transition:"opacity 0.12s"}}
+         onPointerEnter={editing?onDragOver:undefined}>
+      <div ref={ref} style={{display:"flow-root"}}>
+        {editing&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                               gap:8,padding:"6px 10px",marginBottom:6,borderRadius:10,
+                               background:"rgba(91,140,255,0.10)",border:"1px solid rgba(91,140,255,0.35)"}}>
+          <span onPointerDown={onDragStart}
+                style={{cursor:"grab",fontSize:14,color:T.accent,userSelect:"none",touchAction:"none"}}
+                title="Drag to move">⠿</span>
+          <span style={{fontSize:10,color:T.text2,flex:1,minWidth:0,overflow:"hidden",
+                        textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{title}</span>
+          <span style={{display:"flex",gap:3}}>
+            {[1,2,3].map(function(n){return(
+              <button key={n} onClick={function(){onSpan(n);}}
+                style={{...btnGlass,padding:"1px 7px",fontSize:10,
+                        color:span===n?T.accent:T.text3,
+                        borderColor:span===n?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.12)"}}
+                title={n===1?"One column":n===2?"Two columns wide":"Full width"}>{n}</button>);})}
+          </span>
+        </div>}
+        <div style={editing?{pointerEvents:"none",userSelect:"none"}:undefined}>{children}</div>
+      </div>
     </div>
   );
 }
@@ -3234,6 +3256,26 @@ function App(){
   const homeLayout=React.useMemo(function(){
     return window.HomeLayout.normalizeLayout(data.homeLayout);
   },[data.homeLayout]);
+  const [layoutEditing,setLayoutEditing]=useState(false);
+  const [dragId,setDragId]=useState(null);
+  const [dropIdx,setDropIdx]=useState(null);
+
+  function saveLayout(next){
+    trk("home.layout_save");
+    setData(function(p){return{...p,homeLayout:next};});
+  }
+  React.useEffect(function(){
+    if(!dragId)return;
+    function finish(){
+      const from=homeLayout.findIndex(function(x){return x.id===dragId;});
+      if(from>=0&&dropIdx!==null&&dropIdx!==from){
+        saveLayout(window.HomeLayout.moveCard(homeLayout,from,dropIdx));
+      }
+      setDragId(null);setDropIdx(null);
+    }
+    window.addEventListener("pointerup",finish);
+    return function(){window.removeEventListener("pointerup",finish);};
+  },[dragId,dropIdx,homeLayout]);
 
   function doCheckin(){
     setCheckinLoading(true);setCheckinBlocks([]);
@@ -4313,9 +4355,21 @@ function App(){
       <div style={{padding:mob?"10px 12px":"24px 28px",maxWidth:mob?430:1180,margin:"0 auto",position:"relative",zIndex:1,paddingBottom:mob?80:40}}>
         {page==="Dashboard"&&<div>
           {/* Greeting */}
-          <div style={{marginBottom:18}}>
-            <div style={{fontSize:mob?20:24,fontWeight:800,letterSpacing:"-0.02em",color:"#eef3fb"}}>{(function(){var h=new Date().getHours();return h<12?"Good morning":h<18?"Good afternoon":"Good evening";})()}, Ashley</div>
-            <div style={{fontSize:13,color:"#7a85a0",marginTop:4}}>{new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
+          <div style={{marginBottom:18,display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12}}>
+            <div>
+              <div style={{fontSize:mob?20:24,fontWeight:800,letterSpacing:"-0.02em",color:"#eef3fb"}}>{(function(){var h=new Date().getHours();return h<12?"Good morning":h<18?"Good afternoon":"Good evening";})()}, Ashley</div>
+              <div style={{fontSize:13,color:"#7a85a0",marginTop:4}}>{new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
+            </div>
+            {!mob&&<div style={{display:"flex",gap:8,alignItems:"center"}}>
+              {layoutEditing&&<button style={{...btn,color:T.danger,borderColor:T.danger+"50"}} onClick={function(){
+                if(window.confirm("Reset the home page to its default layout?")){
+                  saveLayout(window.HomeLayout.defaultLayout());
+                }
+              }}>Reset layout</button>}
+              <button style={layoutEditing?btnP:btn} onClick={function(){setLayoutEditing(function(v){return !v;});}}>
+                {layoutEditing?"Done":"Edit layout"}
+              </button>
+            </div>}
           </div>
           {/* Pinned: calendar always spans the full width above the grid */}
           <div className="card-rim" style={card({padding:"16px 20px",marginBottom:mob?12:GRID_GAP})}>
@@ -4328,9 +4382,19 @@ function App(){
                 return body?<div key={e.id} style={{marginBottom:12}}>{body}</div>:null;
               })}</div>
             :<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gridAutoRows:GRID_ROW_UNIT+"px",gridAutoFlow:"row dense",gap:GRID_GAP,alignItems:"start"}}>
-              {homeLayout.map(function(e){
+              {homeLayout.map(function(e,idx){
                 const body=renderHomeCard(e.id);
-                return body?<HomeGridCard key={e.id} span={e.span}>{body}</HomeGridCard>:null;
+                if(!body)return null;
+                const meta=window.HomeLayout.HOME_CARDS.filter(function(c){return c.id===e.id;})[0]||{};
+                return(
+                  <HomeGridCard key={e.id} span={e.span} editing={layoutEditing} title={meta.title||e.id}
+                    isDragging={dragId===e.id} isDropTarget={layoutEditing&&dropIdx===idx&&dragId!==null&&dragId!==e.id}
+                    onSpan={function(n){saveLayout(window.HomeLayout.setSpan(homeLayout,e.id,n));}}
+                    onDragStart={function(ev){ev.preventDefault();setDragId(e.id);setDropIdx(idx);}}
+                    onDragOver={function(){if(dragId)setDropIdx(idx);}}>
+                    {body}
+                  </HomeGridCard>
+                );
               })}
             </div>}
           {appVersion&&<div style={{textAlign:"center",padding:"10px 0 2px",fontSize:10,color:T.text3,opacity:0.5}}>
