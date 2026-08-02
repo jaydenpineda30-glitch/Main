@@ -3735,7 +3735,12 @@ function App(){
     trk("task.state");
     setData(function(p){const ts=p.personal.tasks||[];
       return{...p,personal:{...p.personal,tasks:ts.map(function(t){
-        return t.id===id?{...t,state:state,editedAt:todayStr()}:t;})}};});
+        if(t.id!==id)return t;
+        // Re-picking the state you are already on is not a touch. Without this,
+        // opening a task and clicking its current state clears an "untouched 12d"
+        // badge without any work having happened, and the badge stops meaning anything.
+        if((t.state||"todo")===state)return t;
+        return{...t,state:state,editedAt:todayStr()};})}};});
   }
   // Writing an update is a real interaction with the task, so it refreshes
   // editedAt — that is what clears the "untouched Nd" badge.
@@ -3746,10 +3751,14 @@ function App(){
     setData(function(p){const ts=p.personal.tasks||[];
       return{...p,personal:{...p.personal,tasks:ts.map(function(t){
         if(t.id!==id)return t;
-        const ups=(t.updates||[]).concat([{id:Date.now(),at:todayStr(),text:clean}]);
+        // Random suffix, not a bare timestamp: this doc is written from three devices
+        // and deleteTaskUpdate filters by id, so a collision would delete two entries.
+        const uid=Date.now()+"-"+Math.random().toString(36).slice(2,6);
+        const ups=(t.updates||[]).concat([{id:uid,at:todayStr(),text:clean}]);
         return{...t,updates:ups,editedAt:todayStr()};})}};});
   }
   function deleteTaskUpdate(id,updateId){
+    trk("task.update_delete");
     setData(function(p){const ts=p.personal.tasks||[];
       return{...p,personal:{...p.personal,tasks:ts.map(function(t){
         return t.id===id?{...t,updates:(t.updates||[]).filter(function(u){return u.id!==updateId;})}:t;})}};});
@@ -4909,7 +4918,9 @@ function App(){
           </div>}
           {modal==="task_detail"&&(function(){
             const t=(data.personal.tasks||[]).filter(function(x){return x.id===mForm.taskId;})[0];
-            if(!t)return null;
+            // Archived or deleted from another device while this was open — say so
+            // rather than leaving a blank box with a lone Close button.
+            if(!t)return <div style={{fontSize:12,color:T.text3}}>This task is no longer available.</div>;
             const ups=(t.updates||[]).slice().reverse();
             return(<div>
               <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:4}}>{t.name}</div>

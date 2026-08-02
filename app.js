@@ -13069,10 +13069,15 @@ function App() {
       return _objectSpread(_objectSpread({}, p), {}, {
         personal: _objectSpread(_objectSpread({}, p.personal), {}, {
           tasks: ts.map(function (t) {
-            return t.id === id ? _objectSpread(_objectSpread({}, t), {}, {
+            if (t.id !== id) return t;
+            // Re-picking the state you are already on is not a touch. Without this,
+            // opening a task and clicking its current state clears an "untouched 12d"
+            // badge without any work having happened, and the badge stops meaning anything.
+            if ((t.state || "todo") === state) return t;
+            return _objectSpread(_objectSpread({}, t), {}, {
               state: state,
               editedAt: todayStr()
-            }) : t;
+            });
           })
         })
       });
@@ -13090,8 +13095,11 @@ function App() {
         personal: _objectSpread(_objectSpread({}, p.personal), {}, {
           tasks: ts.map(function (t) {
             if (t.id !== id) return t;
+            // Random suffix, not a bare timestamp: this doc is written from three devices
+            // and deleteTaskUpdate filters by id, so a collision would delete two entries.
+            var uid = Date.now() + "-" + Math.random().toString(36).slice(2, 6);
             var ups = (t.updates || []).concat([{
-              id: Date.now(),
+              id: uid,
               at: todayStr(),
               text: clean
             }]);
@@ -13105,6 +13113,7 @@ function App() {
     });
   }
   function deleteTaskUpdate(id, updateId) {
+    trk("task.update_delete");
     setData(function (p) {
       var ts = p.personal.tasks || [];
       return _objectSpread(_objectSpread({}, p), {}, {
@@ -19043,7 +19052,14 @@ function App() {
     var t = (data.personal.tasks || []).filter(function (x) {
       return x.id === mForm.taskId;
     })[0];
-    if (!t) return null;
+    // Archived or deleted from another device while this was open — say so
+    // rather than leaving a blank box with a lone Close button.
+    if (!t) return /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text3
+      }
+    }, "This task is no longer available.");
     var ups = (t.updates || []).slice().reverse();
     return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
