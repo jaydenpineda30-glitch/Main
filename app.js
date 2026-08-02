@@ -15192,8 +15192,13 @@ function App() {
     var col = catColor(cat);
     var isActive = scheduleTaskId === t.id;
     var latest = t.updates && t.updates.length ? t.updates[t.updates.length - 1] : null;
-    var stateBadge = t.state === "doing" ? "▶ In progress" : t.state === "waiting" ? "⏸ Waiting" : null;
-    var muted = group === "done" || group === "waiting";
+    // Only worth printing when the row is NOT already under its own heading — a doing
+    // task pulled into Overdue by the match order still needs to say so.
+    var stateBadge = group !== t.state && (t.state === "doing" ? "▶ In progress" : t.state === "waiting" ? "⏸ Waiting" : null);
+    // Done rows say when, not "done" — the clock button exists to set that date, so it
+    // has to be visible. Waiting keeps its overdue text but in the dimmest tone.
+    var meta = group === "done" ? t.completedAt ? fmtDate(t.completedAt) + (t.completedTime ? " · " + fmtTime12(t.completedTime) : "") : "" : taskLabel(t);
+    var metaColor = group === "waiting" ? T.text3 : group === "overdue" ? T.danger : T.text3;
     return /*#__PURE__*/React.createElement("div", {
       key: t.id,
       className: "glow-item",
@@ -15244,19 +15249,19 @@ function App() {
     }, /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 9,
-        color: col
+        color: T.text2
       }
     }, cat), stateBadge && /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 9,
         color: T.accent
       }
-    }, stateBadge), /*#__PURE__*/React.createElement("span", {
+    }, stateBadge), meta && /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 9,
-        color: muted ? T.text3 : group === "overdue" ? T.danger : T.text3
+        color: metaColor
       }
-    }, taskLabel(t))), latest && /*#__PURE__*/React.createElement("div", {
+    }, meta)), latest && /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 9,
         color: T.text3,
@@ -15395,7 +15400,7 @@ function App() {
         lineHeight: 1,
         fontWeight: 700
       }
-    }, "\xD7")), counts.length > 0 && /*#__PURE__*/React.createElement("div", {
+    }, "\xD7")), (counts.length > 0 || catFilter) && /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         flexWrap: "wrap",
@@ -15434,8 +15439,8 @@ function App() {
         }
       }), c.cat, /*#__PURE__*/React.createElement("span", {
         style: {
-          color: T.text3,
-          fontWeight: 600
+          color: T.text,
+          fontWeight: 700
         }
       }, c.count));
     }), catFilter && /*#__PURE__*/React.createElement("button", {

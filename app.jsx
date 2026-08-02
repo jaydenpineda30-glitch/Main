@@ -4234,8 +4234,15 @@ function App(){
     const col=catColor(cat);
     const isActive=scheduleTaskId===t.id;
     const latest=(t.updates&&t.updates.length)?t.updates[t.updates.length-1]:null;
-    const stateBadge=t.state==="doing"?"▶ In progress":t.state==="waiting"?"⏸ Waiting":null;
-    const muted=group==="done"||group==="waiting";
+    // Only worth printing when the row is NOT already under its own heading — a doing
+    // task pulled into Overdue by the match order still needs to say so.
+    const stateBadge=(group!==t.state)&&(t.state==="doing"?"▶ In progress":t.state==="waiting"?"⏸ Waiting":null);
+    // Done rows say when, not "done" — the clock button exists to set that date, so it
+    // has to be visible. Waiting keeps its overdue text but in the dimmest tone.
+    const meta=group==="done"
+      ?(t.completedAt?fmtDate(t.completedAt)+(t.completedTime?" · "+fmtTime12(t.completedTime):""):"")
+      :taskLabel(t);
+    const metaColor=group==="waiting"?T.text3:group==="overdue"?T.danger:T.text3;
     return(
       <div key={t.id} className="glow-item"
         style={{display:"flex",gap:9,marginBottom:7,alignItems:"flex-start",padding:"10px 12px",
@@ -4249,10 +4256,10 @@ function App(){
           <div style={{fontSize:11,fontWeight:500,color:T.text,
                        textDecoration:t.done?"line-through":"none"}}>{t.name}</div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:2}}>
-            <span style={{fontSize:9,color:col}}>{cat}</span>
+            {/* The 3px bar already carries the hue, so the word itself reads brighter. */}
+            <span style={{fontSize:9,color:T.text2}}>{cat}</span>
             {stateBadge&&<span style={{fontSize:9,color:T.accent}}>{stateBadge}</span>}
-            <span style={{fontSize:9,color:muted?T.text3:group==="overdue"?T.danger:T.text3}}>
-              {taskLabel(t)}</span>
+            {meta&&<span style={{fontSize:9,color:metaColor}}>{meta}</span>}
           </div>
           {latest&&<div style={{fontSize:9,color:T.text3,marginTop:3,fontStyle:"italic",
                                 overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
@@ -4303,7 +4310,10 @@ function App(){
         </div>}
 
         {/* Load bar — where the work is piling up. Click to filter. */}
-        {counts.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12,
+        {/* `||catFilter` matters: counts covers OPEN tasks only, so ticking the last open
+            task in a filtered category would otherwise unmount the bar and strand the
+            filter with no way to clear it. */}
+        {(counts.length>0||catFilter)&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12,
                                        paddingBottom:10,borderBottom:"0.5px solid "+T.border}}>
           {counts.map(function(c){
             const on=catFilter===c.cat;
@@ -4316,7 +4326,8 @@ function App(){
                         color:on?T.text:T.text2}}>
                 <span style={{width:7,height:7,borderRadius:"50%",background:catColor(c.cat),
                               boxShadow:"0 0 6px "+catColor(c.cat)+"90",flexShrink:0}}/>
-                {c.cat}<span style={{color:T.text3,fontWeight:600}}>{c.count}</span>
+                {/* The count is the whole point of the bar — it must not be the dimmest thing on it. */}
+                {c.cat}<span style={{color:T.text,fontWeight:700}}>{c.count}</span>
               </button>);})}
           {catFilter&&<button onClick={function(){setCatFilter(null);}}
             style={{...btn,fontSize:10,padding:"3px 9px"}}>Clear</button>}
