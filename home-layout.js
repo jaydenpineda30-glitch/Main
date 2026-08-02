@@ -23,13 +23,13 @@
     { id: 'shopping',    title: 'Shopping',             defaultSpan: 1, pinned: false },
     { id: 'weather',     title: 'Weather',              defaultSpan: 1, pinned: false },
     { id: 'checkin',     title: 'Daily Check-in',       defaultSpan: 1, pinned: false },
-    { id: 'tasks',       title: 'Tasks',                defaultSpan: 1, pinned: false },
-    { id: 'classes',     title: 'Upcoming Classes',     defaultSpan: 1, pinned: false },
-    { id: 'necessities', title: 'Weekly necessities',   defaultSpan: 1, pinned: false },
     { id: 'goals',       title: 'Goals',                defaultSpan: 1, pinned: false },
     { id: 'assessments', title: 'Upcoming assessments', defaultSpan: 1, pinned: false },
     { id: 'gym-next',    title: 'Next gym session',     defaultSpan: 1, pinned: false },
-    { id: 'bodyweight',  title: 'Weekly body weight',   defaultSpan: 1, pinned: false }
+    { id: 'bodyweight',  title: 'Weekly body weight',   defaultSpan: 1, pinned: false },
+    { id: 'tasks',       title: 'Tasks',                defaultSpan: 1, pinned: false },
+    { id: 'classes',     title: 'Upcoming Classes',     defaultSpan: 1, pinned: false },
+    { id: 'necessities', title: 'Weekly necessities',   defaultSpan: 1, pinned: false }
   ];
 
   function movableCards() {

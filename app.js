@@ -10889,18 +10889,19 @@ function HomeGridCard(_ref7) {
     setRows = _React$useState2[1];
   React.useLayoutEffect(function () {
     var el = ref.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
+    if (!el) return;
     function measure() {
       var h = el.getBoundingClientRect().height;
       setRows(Math.max(1, Math.ceil((h + GRID_GAP) / (GRID_ROW_UNIT + GRID_GAP))));
     }
     measure();
+    if (typeof ResizeObserver === "undefined") return;
     var ro = new ResizeObserver(measure);
     ro.observe(el);
     return function () {
       ro.disconnect();
     };
-  }, [children]);
+  }, []);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       gridColumn: "span " + span,
@@ -10909,6 +10910,7 @@ function HomeGridCard(_ref7) {
   }, /*#__PURE__*/React.createElement("div", {
     ref: ref,
     style: {
+      display: "flow-root",
       marginBottom: 0
     }
   }, children));
@@ -16155,7 +16157,7 @@ function App() {
     className: "card-rim",
     style: card({
       padding: "16px 20px",
-      marginBottom: GRID_GAP
+      marginBottom: mob ? 12 : GRID_GAP
     })
   }, renderCalendarCard()), mob ? /*#__PURE__*/React.createElement("div", null, homeLayout.map(function (e) {
     var body = renderHomeCard(e.id);

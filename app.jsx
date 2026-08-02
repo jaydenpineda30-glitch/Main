@@ -2733,19 +2733,20 @@ function HomeGridCard({span,children}){
   const [rows,setRows]=React.useState(20);
   React.useLayoutEffect(function(){
     const el=ref.current;
-    if(!el||typeof ResizeObserver==="undefined")return;
+    if(!el)return;
     function measure(){
       const h=el.getBoundingClientRect().height;
       setRows(Math.max(1,Math.ceil((h+GRID_GAP)/(GRID_ROW_UNIT+GRID_GAP))));
     }
     measure();
+    if(typeof ResizeObserver==="undefined")return;
     const ro=new ResizeObserver(measure);
     ro.observe(el);
     return function(){ro.disconnect();};
-  },[children]);
+  },[]);
   return(
     <div style={{gridColumn:"span "+span,gridRow:"span "+rows}}>
-      <div ref={ref} style={{marginBottom:0}}>{children}</div>
+      <div ref={ref} style={{display:"flow-root",marginBottom:0}}>{children}</div>
     </div>
   );
 }
@@ -4317,7 +4318,7 @@ function App(){
             <div style={{fontSize:13,color:"#7a85a0",marginTop:4}}>{new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
           </div>
           {/* Pinned: calendar always spans the full width above the grid */}
-          <div className="card-rim" style={card({padding:"16px 20px",marginBottom:GRID_GAP})}>
+          <div className="card-rim" style={card({padding:"16px 20px",marginBottom:mob?12:GRID_GAP})}>
             {renderCalendarCard()}
           </div>
 
