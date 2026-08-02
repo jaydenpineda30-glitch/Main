@@ -171,18 +171,21 @@ Create `home-layout.js`:
 
   // Order here is the default order. `pinned` cards render outside the
   // reorderable grid and never appear in a saved layout.
+  // Default order reproduces the order the cards ship in TODAY, so nothing moves
+  // for the user until they deliberately rearrange it (Task 3). The two new cards
+  // are appended last, which is also where normalizeLayout puts any future card.
   var HOME_CARDS = [
     { id: 'calendar',    title: 'Calendar',             defaultSpan: 3, pinned: true },
     { id: 'shopping',    title: 'Shopping',             defaultSpan: 1, pinned: false },
     { id: 'weather',     title: 'Weather',              defaultSpan: 1, pinned: false },
     { id: 'checkin',     title: 'Daily Check-in',       defaultSpan: 1, pinned: false },
-    { id: 'tasks',       title: 'Tasks',                defaultSpan: 1, pinned: false },
-    { id: 'classes',     title: 'Upcoming Classes',     defaultSpan: 1, pinned: false },
-    { id: 'necessities', title: 'Weekly necessities',   defaultSpan: 1, pinned: false },
     { id: 'goals',       title: 'Goals',                defaultSpan: 1, pinned: false },
     { id: 'assessments', title: 'Upcoming assessments', defaultSpan: 1, pinned: false },
     { id: 'gym-next',    title: 'Next gym session',     defaultSpan: 1, pinned: false },
-    { id: 'bodyweight',  title: 'Weekly body weight',   defaultSpan: 1, pinned: false }
+    { id: 'bodyweight',  title: 'Weekly body weight',   defaultSpan: 1, pinned: false },
+    { id: 'tasks',       title: 'Tasks',                defaultSpan: 1, pinned: false },
+    { id: 'classes',     title: 'Upcoming Classes',     defaultSpan: 1, pinned: false },
+    { id: 'necessities', title: 'Weekly necessities',   defaultSpan: 1, pinned: false }
   ];
 
   function movableCards() {
@@ -311,23 +314,33 @@ function HomeGridCard({span,children}){
   const [rows,setRows]=React.useState(20);
   React.useLayoutEffect(function(){
     const el=ref.current;
-    if(!el||typeof ResizeObserver==="undefined")return;
+    if(!el)return;
     function measure(){
       const h=el.getBoundingClientRect().height;
       setRows(Math.max(1,Math.ceil((h+GRID_GAP)/(GRID_ROW_UNIT+GRID_GAP))));
     }
-    measure();
+    measure();                                     // measure once even without ResizeObserver
+    if(typeof ResizeObserver==="undefined")return; // otherwise the span stays at its seed value
     const ro=new ResizeObserver(measure);
     ro.observe(el);
     return function(){ro.disconnect();};
-  },[children]);
+  },[]);
   return(
     <div style={{gridColumn:"span "+span,gridRow:"span "+rows}}>
-      <div ref={ref} style={{marginBottom:0}}>{children}</div>
+      {/* flow-root contains the card's own bottom margin so it is INSIDE the
+          measured box. Without it, card()'s marginBottom:12 collapses out of
+          getBoundingClientRect() and every card reserves 12px too few. */}
+      <div ref={ref} style={{display:"flow-root",marginBottom:0}}>{children}</div>
     </div>
   );
 }
 ```
+
+Three details that are easy to get wrong and each cause a real defect:
+
+- **`display:"flow-root"` is load-bearing.** `card()` (`app.jsx:3974`) hardcodes `marginBottom:12`. A plain block wrapper lets that margin collapse through and out of its border box, so the measured height is 12px short of the space the card actually occupies, and inter-card gaps come out uneven — the very problem this task exists to remove. `flow-root` contains it.
+- **The dependency array is `[]`, not `[children]`.** `children` is a new element object on every render, so `[children]` never compares equal: the observer is torn down and rebuilt and every card is force-reflowed on every keystroke anywhere in the app. `ref.current` is stable, so the observer never needs rebinding, and it already catches content-driven height changes by itself.
+- **`measure()` runs before the `ResizeObserver` guard**, so a browser without `ResizeObserver` still gets one correct measurement instead of being stuck at the seed value forever.
 
 - [ ] **Step 3: Extract each existing card behind a registry id**
 
@@ -359,7 +372,8 @@ Replace `app.jsx:4110` (`<div style={{columnCount:mob?1:3,columnGap:18}}>`) and 
 
 ```jsx
 {/* Pinned: calendar always spans the full width above the grid */}
-<div className="card-rim" style={card({padding:"16px 20px",marginBottom:GRID_GAP})}>
+{/* mob keeps card()'s own 12px so mobile spacing is untouched; desktop uses the grid gap */}
+<div className="card-rim" style={card({padding:"16px 20px",marginBottom:mob?12:GRID_GAP})}>
   {renderCalendarCard()}
 </div>
 
@@ -468,22 +482,23 @@ function HomeGridCard({span,editing,title,onSpan,onDragStart,onDragOver,isDraggi
   const [rows,setRows]=React.useState(20);
   React.useLayoutEffect(function(){
     const el=ref.current;
-    if(!el||typeof ResizeObserver==="undefined")return;
+    if(!el)return;
     function measure(){
       const h=el.getBoundingClientRect().height;
       setRows(Math.max(1,Math.ceil((h+GRID_GAP)/(GRID_ROW_UNIT+GRID_GAP))));
     }
     measure();
+    if(typeof ResizeObserver==="undefined")return;
     const ro=new ResizeObserver(measure);
     ro.observe(el);
     return function(){ro.disconnect();};
-  },[children,editing]);
+  },[]);   // see Task 2 — [] is deliberate; ResizeObserver catches height changes itself
   return(
     <div style={{gridColumn:"span "+span,gridRow:"span "+rows,opacity:isDragging?0.35:1,
                  outline:isDropTarget?"2px dashed "+T.accent:"none",outlineOffset:4,borderRadius:22,
                  transition:"opacity 0.12s"}}
          onPointerEnter={editing?onDragOver:undefined}>
-      <div ref={ref}>
+      <div ref={ref} style={{display:"flow-root"}}>
         {editing&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
                                gap:8,padding:"6px 10px",marginBottom:6,borderRadius:10,
                                background:"rgba(91,140,255,0.10)",border:"1px solid rgba(91,140,255,0.35)"}}>
