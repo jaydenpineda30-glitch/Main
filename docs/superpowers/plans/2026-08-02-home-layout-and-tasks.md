@@ -825,17 +825,30 @@ In `dashboard.html`, after the `home-layout.js` tag:
 
 Add to `test/task-grouping.test.js`:
 
+`data.js` declares bare `var`s for the browser and has no exports, so it is loaded
+here in a `vm` sandbox rather than `require`d.
+
 ```js
 test('every task category has a colour', () => {
   const fs = require('node:fs');
-  const src = fs.readFileSync(require('node:path').join(__dirname, '..', 'data.js'), 'utf8');
+  const path = require('node:path');
+  const vm = require('node:vm');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'data.js'), 'utf8');
   const sandbox = {};
-  new Function('with(this){' + src + '; this.TASK_CATS=TASK_CATS; this.TASK_CAT_COLORS=TASK_CAT_COLORS;}')
-    .call(sandbox);
+  vm.runInNewContext(src, sandbox);
+
+  assert.ok(Array.isArray(sandbox.TASK_CATS), 'data.js must define TASK_CATS');
+  assert.ok(sandbox.TASK_CAT_COLORS, 'data.js must define TASK_CAT_COLORS');
+  assert.match(sandbox.TASK_CAT_FALLBACK, /^#[0-9a-fA-F]{6}$/);
+
   sandbox.TASK_CATS.forEach(c => {
     assert.ok(sandbox.TASK_CAT_COLORS[c], 'missing colour for category: ' + c);
     assert.match(sandbox.TASK_CAT_COLORS[c], /^#[0-9a-fA-F]{6}$/, 'bad colour for ' + c);
   });
+
+  const extra = Object.keys(sandbox.TASK_CAT_COLORS)
+    .filter(k => !sandbox.TASK_CATS.includes(k));
+  assert.deepStrictEqual(extra, [], 'colours defined for categories that do not exist');
 });
 ```
 
