@@ -57,9 +57,14 @@ Replace the `scripts` block:
 ```json
   "scripts": {
     "build": "node build.js",
-    "test": "node --test test/"
+    "test": "node --test"
   },
 ```
+
+Use bare `node --test` — it auto-discovers `test/`. Do **not** write `node --test test/`:
+on Windows the trailing path is resolved as a module and the run dies with
+`Cannot find module 'C:\Users\Jayde\my-project\test'` while still reporting a
+failing "test", which looks like a real test failure and is not.
 
 - [ ] **Step 2: Write the failing test**
 
