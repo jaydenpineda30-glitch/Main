@@ -3558,7 +3558,7 @@ function App(){
     setBrGoalProposals(function(p){return p.filter(function(g){return g.title!==proposed.title;});});
   }
   function brAcceptTask(text){
-    setData(function(p){var ts=(p.personal&&p.personal.tasks)||[];return{...p,personal:{...p.personal,tasks:ts.concat([{id:Date.now(),name:text,cat:"Errands",priority:"normal",due:null,done:false,addedAt:todayStr(),editedAt:null}])}};});
+    setData(function(p){var ts=(p.personal&&p.personal.tasks)||[];return{...p,personal:{...p.personal,tasks:ts.concat([{id:Date.now(),name:text,cat:"Errands",priority:"normal",due:null,done:false,addedAt:todayStr(),editedAt:null,state:"todo",updates:[]}])}};});
     setBrTaskProposals(function(p){return p.filter(function(t){return t!==text;});});
     showToast("Task added","success");
   }
@@ -3731,6 +3731,30 @@ function App(){
   }
   function completeTask(id,dateStr,timeStr){trk("task.complete");setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.map(function(t){return t.id===id?{...t,done:true,completedAt:dateStr||todayStr(),completedTime:timeStr||null}:t;})}}; });}
   function openBackdateModal(id){setModal("complete_task");setMForm({taskId:id,date:todayStr(),time:""});}
+  function setTaskState(id,state){
+    trk("task.state");
+    setData(function(p){const ts=p.personal.tasks||[];
+      return{...p,personal:{...p.personal,tasks:ts.map(function(t){
+        return t.id===id?{...t,state:state,editedAt:todayStr()}:t;})}};});
+  }
+  // Writing an update is a real interaction with the task, so it refreshes
+  // editedAt — that is what clears the "untouched Nd" badge.
+  function addTaskUpdate(id,text){
+    const clean=(text||"").trim();
+    if(!clean)return;
+    trk("task.update_add");
+    setData(function(p){const ts=p.personal.tasks||[];
+      return{...p,personal:{...p.personal,tasks:ts.map(function(t){
+        if(t.id!==id)return t;
+        const ups=(t.updates||[]).concat([{id:Date.now(),at:todayStr(),text:clean}]);
+        return{...t,updates:ups,editedAt:todayStr()};})}};});
+  }
+  function deleteTaskUpdate(id,updateId){
+    setData(function(p){const ts=p.personal.tasks||[];
+      return{...p,personal:{...p.personal,tasks:ts.map(function(t){
+        return t.id===id?{...t,updates:(t.updates||[]).filter(function(u){return u.id!==updateId;})}:t;})}};});
+  }
+  function openTaskDetail(id){setModal("task_detail");setMForm({taskId:id,updateText:""});}
   function archiveDone(){trk("task.archive");setData(function(p){const ts=p.personal.tasks||[];const done=ts.filter(function(t){return t.done;}).map(function(t){return{...t,archivedAt:todayStr()};});return{...p,personal:{...p.personal,tasks:ts.filter(function(t){return !t.done;}),archived:(p.personal.archived||[]).concat(done)}};});}
   function restoreTask(id){trk("task.restore");setData(function(p){const arch=p.personal.archived||[];const match=arch.filter(function(t){return t.id===id;});if(match.length===0)return p;const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.concat([{...match[0],done:false,archivedAt:undefined,completedAt:null,completedTime:null}]),archived:arch.filter(function(x){return x.id!==id;})}};});}
   function saveEditTask(){
@@ -3908,7 +3932,7 @@ function App(){
     else if(modal==="edit_subject"){trk("uni.subject_edit");setData(function(p){var subs=p.uni.subjects||[];return{...p,uni:{...p.uni,subjects:subs.map(function(s){return s.id===mForm.editId?{...s,name:mForm.name.trim(),color:mForm.color||s.color}:s;})}};});}
     else if(modal==="add_exercise"){trk("gym.exercise_add");setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.concat([{id:Date.now(),name:mForm.name,logs:[]}])}};});}
     else if(modal==="log_weight")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.map(function(ex){return ex.id===mForm.exId?{...ex,logs:ex.logs.concat([{date:todayStr(),weight:Number(mForm.weight)}])}:ex;})}};});
-    else if(modal==="add_task"){trk("task.add");setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.concat([{id:Date.now(),name:mForm.name,cat:mForm.cat||"Errands",priority:mForm.priority||"normal",due:mForm.due||null,done:false,addedAt:todayStr(),editedAt:null}])}};});}
+    else if(modal==="add_task"){trk("task.add");setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.concat([{id:Date.now(),name:mForm.name,cat:mForm.cat||"Errands",priority:mForm.priority||"normal",due:mForm.due||null,done:false,addedAt:todayStr(),editedAt:null,state:"todo",updates:[]}])}};});}
     else if(modal==="edit_rotation"){
       var ri=mForm.rotIdx;
       setData(function(p){
@@ -4226,8 +4250,6 @@ function App(){
   }
 
   function catColor(c){return (window.TASK_CAT_COLORS||{})[c]||window.TASK_CAT_FALLBACK||"#8f97a6";}
-
-  function openTaskDetail(id){openBackdateModal(id);}
 
   function renderTaskRow(t,group){
     const cat=t.cat||"Other";
@@ -4834,9 +4856,9 @@ function App(){
       </div>
 
       {modal&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.82)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:200,padding:mob?"0":"16px"}} onClick={function(){setModal(null);}}>
-        <div style={{background:"rgba(14,16,40,0.97)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 32px":"22px",width:mob?"100%":modal==="edit_rotation"?"480px":"340px",maxWidth:"100%",border:"0.5px solid rgba(91,140,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.1)"}} onClick={function(ev){ev.stopPropagation();}}>
+        <div style={{background:"rgba(14,16,40,0.97)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 32px":"22px",width:mob?"100%":modal==="edit_rotation"?"480px":modal==="task_detail"?"380px":"340px",maxWidth:"100%",border:"0.5px solid rgba(91,140,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.1)"}} onClick={function(ev){ev.stopPropagation();}}>
           {mob&&<div style={{width:36,height:4,borderRadius:2,background:"rgba(255,255,255,0.2)",margin:"0 auto 20px"}}/>}
-          <div style={{fontSize:15,fontWeight:600,marginBottom:16,color:T.text}}>{modal==="add_subject"&&"Add subject"}{modal==="add_exercise"&&"Add exercise"}{modal==="log_weight"&&"Log weight · "+(mForm.exName||"")}{modal==="add_task"&&"Add task"}{modal==="edit_rotation"&&"Edit rotation template"}{modal==="complete_task"&&"Mark task done"}{modal==="edit_subject"&&"Edit subject"}</div>
+          {modal!=="task_detail"&&<div style={{fontSize:15,fontWeight:600,marginBottom:16,color:T.text}}>{modal==="add_subject"&&"Add subject"}{modal==="add_exercise"&&"Add exercise"}{modal==="log_weight"&&"Log weight · "+(mForm.exName||"")}{modal==="add_task"&&"Add task"}{modal==="edit_rotation"&&"Edit rotation template"}{modal==="complete_task"&&"Mark task done"}{modal==="edit_subject"&&"Edit subject"}</div>}
           {modal==="add_exercise"&&(function(){
             var names=[];var seen={};
             (data.gym.exercises||[]).forEach(function(ex){var n=(ex.name||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});
@@ -4885,10 +4907,55 @@ function App(){
             </div>);})}
             <button style={{...btn,marginTop:4,fontSize:11}} onClick={function(){setMForm(function(f){return{...f,exercises:(f.exercises||[]).concat([{id:Date.now(),exercise:"",sets:"",reps:"",weight:""}])};});}}>+ Exercise</button>
           </div>}
-          <div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
+          {modal==="task_detail"&&(function(){
+            const t=(data.personal.tasks||[]).filter(function(x){return x.id===mForm.taskId;})[0];
+            if(!t)return null;
+            const ups=(t.updates||[]).slice().reverse();
+            return(<div>
+              <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:4}}>{t.name}</div>
+              <div style={{fontSize:10,color:catColor(t.cat||"Other"),marginBottom:14}}>{t.cat||"Other"}</div>
+
+              <div style={{fontSize:10,color:T.text3,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>State</div>
+              <div style={{display:"flex",gap:6,marginBottom:16}}>
+                {[{v:"todo",l:"Not started"},{v:"doing",l:"In progress"},{v:"waiting",l:"Waiting"}].map(function(o){
+                  const on=(t.state||"todo")===o.v;
+                  return<button key={o.v} onClick={function(){setTaskState(t.id,o.v);}}
+                    style={{...btn,fontSize:11,color:on?T.accent:T.text2,
+                            borderColor:on?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.12)",
+                            background:on?T.accentBg:"transparent"}}>{o.l}</button>;})}
+              </div>
+
+              <div style={{fontSize:10,color:T.text3,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Updates</div>
+              {ups.length===0&&<div style={{fontSize:12,color:T.text3,marginBottom:10}}>No updates yet.</div>}
+              {ups.map(function(u){return(
+                <div key={u.id} style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:8,
+                                        paddingBottom:8,borderBottom:"0.5px solid "+T.border}}>
+                  <div style={{fontSize:10,color:T.text3,flexShrink:0,width:52}}>{fmtDate(u.at)}</div>
+                  <div style={{fontSize:12,color:T.text,flex:1,lineHeight:1.5}}>{u.text}</div>
+                  <button onClick={function(){deleteTaskUpdate(t.id,u.id);}}
+                    style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:14,
+                            lineHeight:1,padding:"0 2px",flexShrink:0}} title="Delete update">×</button>
+                </div>);})}
+
+              <div style={{display:"flex",gap:6,marginTop:12}}>
+                <input style={{...PINP,flex:1}} placeholder="Write an update…" value={mForm.updateText||""}
+                  onChange={function(e){setMForm(function(f){return{...f,updateText:e.target.value};});}}
+                  onKeyDown={function(e){if(e.key==="Enter"){e.preventDefault();
+                    addTaskUpdate(t.id,mForm.updateText);
+                    setMForm(function(f){return{...f,updateText:""};});}}}/>
+                <button style={btnP} onClick={function(){
+                  addTaskUpdate(t.id,mForm.updateText);
+                  setMForm(function(f){return{...f,updateText:""};});}}>Add</button>
+              </div>
+            </div>);
+          })()}
+          {modal!=="task_detail"&&<div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
             {mob?<button style={{...btnP,padding:"13px",fontSize:14,width:"100%",borderRadius:10}} onClick={saveModal}>Save</button>:<button style={btnP} onClick={saveModal}>Save</button>}
             <button style={{...(mob?{...btn,padding:"11px",fontSize:13,width:"100%",borderRadius:10,textAlign:"center"}:btn)}} onClick={function(){setModal(null);}}>Cancel</button>
-          </div>
+          </div>}
+          {modal==="task_detail"&&<div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
+            <button style={mob?{...btnP,padding:"13px",fontSize:14,width:"100%",borderRadius:10}:btnP} onClick={function(){setModal(null);}}>Close</button>
+          </div>}
         </div>
       </div>}
 

@@ -12589,7 +12589,9 @@ function App() {
             due: null,
             done: false,
             addedAt: todayStr(),
-            editedAt: null
+            editedAt: null,
+            state: "todo",
+            updates: []
           }])
         })
       });
@@ -13058,6 +13060,71 @@ function App() {
       taskId: id,
       date: todayStr(),
       time: ""
+    });
+  }
+  function setTaskState(id, state) {
+    trk("task.state");
+    setData(function (p) {
+      var ts = p.personal.tasks || [];
+      return _objectSpread(_objectSpread({}, p), {}, {
+        personal: _objectSpread(_objectSpread({}, p.personal), {}, {
+          tasks: ts.map(function (t) {
+            return t.id === id ? _objectSpread(_objectSpread({}, t), {}, {
+              state: state,
+              editedAt: todayStr()
+            }) : t;
+          })
+        })
+      });
+    });
+  }
+  // Writing an update is a real interaction with the task, so it refreshes
+  // editedAt — that is what clears the "untouched Nd" badge.
+  function addTaskUpdate(id, text) {
+    var clean = (text || "").trim();
+    if (!clean) return;
+    trk("task.update_add");
+    setData(function (p) {
+      var ts = p.personal.tasks || [];
+      return _objectSpread(_objectSpread({}, p), {}, {
+        personal: _objectSpread(_objectSpread({}, p.personal), {}, {
+          tasks: ts.map(function (t) {
+            if (t.id !== id) return t;
+            var ups = (t.updates || []).concat([{
+              id: Date.now(),
+              at: todayStr(),
+              text: clean
+            }]);
+            return _objectSpread(_objectSpread({}, t), {}, {
+              updates: ups,
+              editedAt: todayStr()
+            });
+          })
+        })
+      });
+    });
+  }
+  function deleteTaskUpdate(id, updateId) {
+    setData(function (p) {
+      var ts = p.personal.tasks || [];
+      return _objectSpread(_objectSpread({}, p), {}, {
+        personal: _objectSpread(_objectSpread({}, p.personal), {}, {
+          tasks: ts.map(function (t) {
+            return t.id === id ? _objectSpread(_objectSpread({}, t), {}, {
+              updates: (t.updates || []).filter(function (u) {
+                return u.id !== updateId;
+              })
+            }) : t;
+          })
+        })
+      });
+    });
+  }
+  function openTaskDetail(id) {
+    setModal("task_detail");
+    setMForm({
+      taskId: id,
+      updateText: ""
     });
   }
   function archiveDone() {
@@ -13549,7 +13616,9 @@ function App() {
                 due: mForm.due || null,
                 done: false,
                 addedAt: todayStr(),
-                editedAt: null
+                editedAt: null,
+                state: "todo",
+                updates: []
               }])
             })
           });
@@ -15183,9 +15252,6 @@ function App() {
   }
   function catColor(c) {
     return (window.TASK_CAT_COLORS || {})[c] || window.TASK_CAT_FALLBACK || "#8f97a6";
-  }
-  function openTaskDetail(id) {
-    openBackdateModal(id);
   }
   function renderTaskRow(t, group) {
     var cat = t.cat || "Other";
@@ -18384,7 +18450,7 @@ function App() {
       WebkitBackdropFilter: "blur(24px)",
       borderRadius: mob ? "20px 20px 0 0" : "16px",
       padding: mob ? "24px 20px 32px" : "22px",
-      width: mob ? "100%" : modal === "edit_rotation" ? "480px" : "340px",
+      width: mob ? "100%" : modal === "edit_rotation" ? "480px" : modal === "task_detail" ? "380px" : "340px",
       maxWidth: "100%",
       border: "0.5px solid rgba(91,140,255,0.25)",
       boxShadow: "0 8px 32px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.1)"
@@ -18400,7 +18466,7 @@ function App() {
       background: "rgba(255,255,255,0.2)",
       margin: "0 auto 20px"
     }
-  }), /*#__PURE__*/React.createElement("div", {
+  }), modal !== "task_detail" && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 15,
       fontWeight: 600,
@@ -18973,7 +19039,159 @@ function App() {
         });
       });
     }
-  }, "+ Exercise")), /*#__PURE__*/React.createElement("div", {
+  }, "+ Exercise")), modal === "task_detail" && function () {
+    var t = (data.personal.tasks || []).filter(function (x) {
+      return x.id === mForm.taskId;
+    })[0];
+    if (!t) return null;
+    var ups = (t.updates || []).slice().reverse();
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        fontWeight: 600,
+        color: T.text,
+        marginBottom: 4
+      }
+    }, t.name), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: catColor(t.cat || "Other"),
+        marginBottom: 14
+      }
+    }, t.cat || "Other"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        marginBottom: 6,
+        textTransform: "uppercase",
+        letterSpacing: 0.5
+      }
+    }, "State"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        marginBottom: 16
+      }
+    }, [{
+      v: "todo",
+      l: "Not started"
+    }, {
+      v: "doing",
+      l: "In progress"
+    }, {
+      v: "waiting",
+      l: "Waiting"
+    }].map(function (o) {
+      var on = (t.state || "todo") === o.v;
+      return /*#__PURE__*/React.createElement("button", {
+        key: o.v,
+        onClick: function onClick() {
+          setTaskState(t.id, o.v);
+        },
+        style: _objectSpread(_objectSpread({}, btn), {}, {
+          fontSize: 11,
+          color: on ? T.accent : T.text2,
+          borderColor: on ? "rgba(91,140,255,0.5)" : "rgba(255,255,255,0.12)",
+          background: on ? T.accentBg : "transparent"
+        })
+      }, o.l);
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        marginBottom: 6,
+        textTransform: "uppercase",
+        letterSpacing: 0.5
+      }
+    }, "Updates"), ups.length === 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text3,
+        marginBottom: 10
+      }
+    }, "No updates yet."), ups.map(function (u) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: u.id,
+        style: {
+          display: "flex",
+          gap: 8,
+          alignItems: "flex-start",
+          marginBottom: 8,
+          paddingBottom: 8,
+          borderBottom: "0.5px solid " + T.border
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 10,
+          color: T.text3,
+          flexShrink: 0,
+          width: 52
+        }
+      }, fmtDate(u.at)), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 12,
+          color: T.text,
+          flex: 1,
+          lineHeight: 1.5
+        }
+      }, u.text), /*#__PURE__*/React.createElement("button", {
+        onClick: function onClick() {
+          deleteTaskUpdate(t.id, u.id);
+        },
+        style: {
+          background: "none",
+          border: "none",
+          color: T.text3,
+          cursor: "pointer",
+          fontSize: 14,
+          lineHeight: 1,
+          padding: "0 2px",
+          flexShrink: 0
+        },
+        title: "Delete update"
+      }, "\xD7"));
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        marginTop: 12
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      style: _objectSpread(_objectSpread({}, PINP), {}, {
+        flex: 1
+      }),
+      placeholder: "Write an update\u2026",
+      value: mForm.updateText || "",
+      onChange: function onChange(e) {
+        setMForm(function (f) {
+          return _objectSpread(_objectSpread({}, f), {}, {
+            updateText: e.target.value
+          });
+        });
+      },
+      onKeyDown: function onKeyDown(e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          addTaskUpdate(t.id, mForm.updateText);
+          setMForm(function (f) {
+            return _objectSpread(_objectSpread({}, f), {}, {
+              updateText: ""
+            });
+          });
+        }
+      }
+    }), /*#__PURE__*/React.createElement("button", {
+      style: btnP,
+      onClick: function onClick() {
+        addTaskUpdate(t.id, mForm.updateText);
+        setMForm(function (f) {
+          return _objectSpread(_objectSpread({}, f), {}, {
+            updateText: ""
+          });
+        });
+      }
+    }, "Add")));
+  }(), modal !== "task_detail" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -19003,7 +19221,25 @@ function App() {
     onClick: function onClick() {
       setModal(null);
     }
-  }, "Cancel")))), showTimePicker && /*#__PURE__*/React.createElement("div", {
+  }, "Cancel")), modal === "task_detail" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginTop: 16,
+      flexDirection: mob ? "column" : "row",
+      justifyContent: "flex-end"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: mob ? _objectSpread(_objectSpread({}, btnP), {}, {
+      padding: "13px",
+      fontSize: 14,
+      width: "100%",
+      borderRadius: 10
+    }) : btnP,
+    onClick: function onClick() {
+      setModal(null);
+    }
+  }, "Close")))), showTimePicker && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       inset: 0,
