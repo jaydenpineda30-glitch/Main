@@ -2843,6 +2843,7 @@ function App(){
   const [editTaskForm,setEditTaskForm]=useState({});
   const [gymDraftBanner,setGymDraftBanner]=useState(false);
   const [scheduleTaskId,setScheduleTaskId]=useState(null);
+  const [catFilter,setCatFilter]=useState(null);
   const [scheduleForDay,setScheduleForDay]=useState(null);
   const [scheduleTime,setScheduleTime]=useState("09:00");
   const [scheduleDuration,setScheduleDuration]=useState(60);
@@ -3254,10 +3255,7 @@ function App(){
   // Upcoming pulls from structured assessments — no GCal keyword matching needed
   const allAssessments=data.uni.assessments||SYLLABUS_ASSESSMENTS;
   const upcoming=allAssessments.filter(function(a){return !a.done&&a.date>=todayStr();}).sort(function(a,b){return a.date.localeCompare(b.date);}).slice(0,8).map(function(a){return{id:a.id,title:a.name,date:a.date,subject:a.subject,badge:typeBadge(a.type)};});
-  const activeTasks=data.personal.tasks.filter(function(t){return !t.done;});
   const doneTasks=data.personal.tasks.filter(function(t){return t.done;});
-  const urgTasks=activeTasks.filter(function(t){return t.priority==="urgent";}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});
-  const normTasks=activeTasks.filter(function(t){return t.priority==="normal";}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});
   const todayEvs=visibleGcalEvents.filter(function(ev){return ev.date===todayStr()&&!ev.allDay;}).sort(function(a,b){return(a.time||"").localeCompare(b.time||"");});
   const shifts=visibleGcalEvents.filter(isGoTabEvent);
   const homeLayout=React.useMemo(function(){
@@ -4227,17 +4225,100 @@ function App(){
     );
   }
 
+  function catColor(c){return (window.TASK_CAT_COLORS||{})[c]||window.TASK_CAT_FALLBACK||"#8f97a6";}
+
+  function openTaskDetail(id){openBackdateModal(id);}
+
+  function renderTaskRow(t,group){
+    const cat=t.cat||"Other";
+    const col=catColor(cat);
+    const isActive=scheduleTaskId===t.id;
+    const latest=(t.updates&&t.updates.length)?t.updates[t.updates.length-1]:null;
+    const stateBadge=t.state==="doing"?"▶ In progress":t.state==="waiting"?"⏸ Waiting":null;
+    const muted=group==="done"||group==="waiting";
+    return(
+      <div key={t.id} className="glow-item"
+        style={{display:"flex",gap:9,marginBottom:7,alignItems:"flex-start",padding:"10px 12px",
+                borderRadius:12,opacity:group==="done"?0.5:1,
+                background:isActive?"rgba(91,140,255,0.12)":"rgba(225,234,255,0.04)",
+                border:"1px solid "+(isActive?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.07)"),
+                borderLeft:"3px solid "+col,transition:"background 0.15s"}}>
+        <input type="checkbox" checked={!!t.done} onChange={function(){toggleTask(t.id);}}
+          style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:11,fontWeight:500,color:T.text,
+                       textDecoration:t.done?"line-through":"none"}}>{t.name}</div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:2}}>
+            <span style={{fontSize:9,color:col}}>{cat}</span>
+            {stateBadge&&<span style={{fontSize:9,color:T.accent}}>{stateBadge}</span>}
+            <span style={{fontSize:9,color:muted?T.text3:group==="overdue"?T.danger:T.text3}}>
+              {taskLabel(t)}</span>
+          </div>
+          {latest&&<div style={{fontSize:9,color:T.text3,marginTop:3,fontStyle:"italic",
+                                overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+            "{latest.text}" — {fmtDate(latest.at)}</div>}
+        </div>
+        <button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",
+                        color:T.text3,flexShrink:0,opacity:0.45,display:"flex"}}
+          title="Open task" onClick={function(e){e.stopPropagation();openTaskDetail(t.id);}}>
+          <UIcon name="pencil" size={12}/></button>
+        <button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",
+                        color:T.text3,flexShrink:0,opacity:0.45,display:"flex"}}
+          title="Mark done on a different day"
+          onClick={function(e){e.stopPropagation();openBackdateModal(t.id);}}>
+          <UIcon name="clock" size={12}/></button>
+      </div>);
+  }
+
   function renderTasksCard(){
+    const TG=window.TaskGrouping;
+    const all=(data.personal.tasks)||[];
+    const counts=TG.categoryCounts(all);
+    const shown=catFilter?all.filter(function(t){return (t.cat||"Other")===catFilter;}):all;
+    const groups=TG.groupTasks(shown,todayStr());
+    const empty=TG.DISPLAY_ORDER.every(function(g){return groups[g].length===0;});
     return(
       <div className="card-rim" style={card()}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={sT}>Tasks</div><button style={{...editPill,fontSize:14,padding:"2px 12px"}} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+</button></div>
-          {urgTasks.length===0&&normTasks.length===0&&doneTasks.length===0&&<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>}
-          {scheduleTaskId&&<div style={{fontSize:9,color:T.accent,marginBottom:6,padding:"3px 8px",borderRadius:6,background:T.accentBg,border:"0.5px solid rgba(91,140,255,0.3)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}><span>Tap a calendar day to schedule (or ESC)</span><button onClick={function(){setScheduleTaskId(null);}} title="Cancel scheduling" style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:14,padding:"0 4px",lineHeight:1,fontWeight:700}}>×</button></div>}
-          {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:9,marginBottom:7,alignItems:"flex-start",padding:"10px 12px",borderRadius:12,background:isActive?"rgba(91,140,255,0.12)":"rgba(225,234,255,0.04)",border:"1px solid "+(isActive?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.07)"),boxShadow:"inset 10px 0 9px -8px "+TUC[urg],cursor:"default",transition:"background 0.15s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:T.text3,flexShrink:0,opacity:0.45,display:"flex",transition:"opacity 0.15s"}} title="Mark done on a different day" onClick={function(e){e.stopPropagation();openBackdateModal(t.id);}}><UIcon name="clock" size={12}/></button><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();if(scheduleTaskId===t.id){setScheduleTaskId(null);}else{trk("task.schedule");setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button></div>);})}</div>}
-          {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:9,marginBottom:7,alignItems:"flex-start",padding:"10px 12px",borderRadius:12,background:isActive?"rgba(91,140,255,0.12)":"rgba(225,234,255,0.04)",border:"1px solid "+(isActive?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.07)"),boxShadow:"inset 10px 0 9px -8px "+TUC[urg],cursor:"default",transition:"background 0.15s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:T.text3,flexShrink:0,opacity:0.45,display:"flex",transition:"opacity 0.15s"}} title="Mark done on a different day" onClick={function(e){e.stopPropagation();openBackdateModal(t.id);}}><UIcon name="clock" size={12}/></button><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();if(scheduleTaskId===t.id){setScheduleTaskId(null);}else{trk("task.schedule");setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button></div>);})}</div>}
-          {doneTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneTasks.map(function(t){return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:5,alignItems:"center",opacity:0.45}}><input type="checkbox" checked={true} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,flexShrink:0}}/><div style={{fontSize:11,color:T.text3,textDecoration:"line-through",flex:1,minWidth:0}}>{t.name}</div>{t.completedAt&&<div style={{fontSize:9,color:T.text3,flexShrink:0}}>{fmtDate(t.completedAt)}{t.completedTime?" · "+fmtTime12(t.completedTime):""}</div>}</div>);})}</div>}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={sT}>Tasks</div>
+          <button style={{...editPill,fontSize:14,padding:"2px 12px"}}
+            onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands",state:"todo"});}}>+</button>
         </div>
-    );
+
+        {/* Load bar — where the work is piling up. Click to filter. */}
+        {counts.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12,
+                                       paddingBottom:10,borderBottom:"0.5px solid "+T.border}}>
+          {counts.map(function(c){
+            const on=catFilter===c.cat;
+            return(
+              <button key={c.cat} onClick={function(){setCatFilter(on?null:c.cat);}}
+                style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 9px",borderRadius:999,
+                        cursor:"pointer",fontSize:10,
+                        background:on?catColor(c.cat)+"28":"rgba(255,255,255,0.04)",
+                        border:"1px solid "+(on?catColor(c.cat)+"90":"rgba(255,255,255,0.10)"),
+                        color:on?T.text:T.text2}}>
+                <span style={{width:7,height:7,borderRadius:"50%",background:catColor(c.cat),
+                              boxShadow:"0 0 6px "+catColor(c.cat)+"90",flexShrink:0}}/>
+                {c.cat}<span style={{color:T.text3,fontWeight:600}}>{c.count}</span>
+              </button>);})}
+          {catFilter&&<button onClick={function(){setCatFilter(null);}}
+            style={{...btn,fontSize:10,padding:"3px 9px"}}>Clear</button>}
+        </div>}
+
+        {empty&&<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>}
+
+        {TG.DISPLAY_ORDER.map(function(g){
+          if(groups[g].length===0)return null;
+          return(
+            <div key={g}>
+              <div style={{fontSize:9,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",
+                           letterSpacing:0.5,color:g==="overdue"?T.danger:T.text3,
+                           display:"flex",gap:6,alignItems:"center"}}>
+                {TG.GROUP_LABEL[g]}<span style={{color:T.text3,fontWeight:600}}>{groups[g].length}</span>
+              </div>
+              {groups[g].map(function(t){return renderTaskRow(t,g);})}
+            </div>);})}
+      </div>);
   }
 
   function renderHomeCard(id){

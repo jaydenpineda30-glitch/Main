@@ -11238,90 +11238,94 @@ function App() {
     setScheduleTaskId = _useState230[1];
   var _useState231 = useState(null),
     _useState232 = _slicedToArray(_useState231, 2),
-    scheduleForDay = _useState232[0],
-    setScheduleForDay = _useState232[1];
-  var _useState233 = useState("09:00"),
+    catFilter = _useState232[0],
+    setCatFilter = _useState232[1];
+  var _useState233 = useState(null),
     _useState234 = _slicedToArray(_useState233, 2),
-    scheduleTime = _useState234[0],
-    setScheduleTime = _useState234[1];
-  var _useState235 = useState(60),
+    scheduleForDay = _useState234[0],
+    setScheduleForDay = _useState234[1];
+  var _useState235 = useState("09:00"),
     _useState236 = _slicedToArray(_useState235, 2),
-    scheduleDuration = _useState236[0],
-    setScheduleDuration = _useState236[1];
-  var _useState237 = useState(false),
+    scheduleTime = _useState236[0],
+    setScheduleTime = _useState236[1];
+  var _useState237 = useState(60),
     _useState238 = _slicedToArray(_useState237, 2),
-    showTimePicker = _useState238[0],
-    setShowTimePicker = _useState238[1];
+    scheduleDuration = _useState238[0],
+    setScheduleDuration = _useState238[1];
   var _useState239 = useState(false),
     _useState240 = _slicedToArray(_useState239, 2),
-    showArch = _useState240[0],
-    setShowArch = _useState240[1];
-  var _useState241 = useState(0),
+    showTimePicker = _useState240[0],
+    setShowTimePicker = _useState240[1];
+  var _useState241 = useState(false),
     _useState242 = _slicedToArray(_useState241, 2),
-    reflStep = _useState242[0],
-    setReflStep = _useState242[1];
-  var _useState243 = useState([]),
+    showArch = _useState242[0],
+    setShowArch = _useState242[1];
+  var _useState243 = useState(0),
     _useState244 = _slicedToArray(_useState243, 2),
-    reflAns = _useState244[0],
-    setReflAns = _useState244[1];
-  var _useState245 = useState(""),
+    reflStep = _useState244[0],
+    setReflStep = _useState244[1];
+  var _useState245 = useState([]),
     _useState246 = _slicedToArray(_useState245, 2),
-    reflIn = _useState246[0],
-    setReflIn = _useState246[1];
-  var _useState247 = useState(null),
+    reflAns = _useState246[0],
+    setReflAns = _useState246[1];
+  var _useState247 = useState(""),
     _useState248 = _slicedToArray(_useState247, 2),
-    reflAnalysis = _useState248[0],
-    setReflAnalysis = _useState248[1];
+    reflIn = _useState248[0],
+    setReflIn = _useState248[1];
   var _useState249 = useState(null),
     _useState250 = _slicedToArray(_useState249, 2),
-    modal = _useState250[0],
-    setModal = _useState250[1];
-  var _useState251 = useState({}),
+    reflAnalysis = _useState250[0],
+    setReflAnalysis = _useState250[1];
+  var _useState251 = useState(null),
     _useState252 = _slicedToArray(_useState251, 2),
-    mForm = _useState252[0],
-    setMForm = _useState252[1];
-  var _useState253 = useState("loading"),
+    modal = _useState252[0],
+    setModal = _useState252[1];
+  var _useState253 = useState({}),
     _useState254 = _slicedToArray(_useState253, 2),
-    syncStatus = _useState254[0],
-    setSyncStatus = _useState254[1];
-  var _useState255 = useState("idle"),
+    mForm = _useState254[0],
+    setMForm = _useState254[1];
+  var _useState255 = useState("loading"),
     _useState256 = _slicedToArray(_useState255, 2),
-    obsExportStatus = _useState256[0],
-    setObsExportStatus = _useState256[1]; // idle | running | done | error
-  var _useState257 = useState(null),
+    syncStatus = _useState256[0],
+    setSyncStatus = _useState256[1];
+  var _useState257 = useState("idle"),
     _useState258 = _slicedToArray(_useState257, 2),
-    authUser = _useState258[0],
-    setAuthUser = _useState258[1];
-  var _useState259 = useState(true),
+    obsExportStatus = _useState258[0],
+    setObsExportStatus = _useState258[1]; // idle | running | done | error
+  var _useState259 = useState(null),
     _useState260 = _slicedToArray(_useState259, 2),
-    authLoading = _useState260[0],
-    setAuthLoading = _useState260[1];
+    authUser = _useState260[0],
+    setAuthUser = _useState260[1];
+  var _useState261 = useState(true),
+    _useState262 = _slicedToArray(_useState261, 2),
+    authLoading = _useState262[0],
+    setAuthLoading = _useState262[1];
   var _fbReady = useRef(false);
   var _dataLoaded = useRef(false); // only true after we've confirmed Firebase state
   var _saveTimer = useRef(null);
   var _flushNow = useRef(false); // set to skip the 2s debounce for discrete saves (e.g. shift logs)
-  var _useState261 = useState({
+  var _useState263 = useState({
       title: "",
       tags: "",
       content: ""
     }),
-    _useState262 = _slicedToArray(_useState261, 2),
-    docIn = _useState262[0],
-    setDocIn = _useState262[1];
-  var _useState263 = useState(false),
     _useState264 = _slicedToArray(_useState263, 2),
-    forceMob = _useState264[0],
-    setForceMob = _useState264[1];
-  var _useState265 = useState(function () {
+    docIn = _useState264[0],
+    setDocIn = _useState264[1];
+  var _useState265 = useState(false),
+    _useState266 = _slicedToArray(_useState265, 2),
+    forceMob = _useState266[0],
+    setForceMob = _useState266[1];
+  var _useState267 = useState(function () {
       try {
         return localStorage.getItem("nav_collapsed") === "1";
       } catch (_) {
         return false;
       }
     }),
-    _useState266 = _slicedToArray(_useState265, 2),
-    navCollapsed = _useState266[0],
-    setNavCollapsed = _useState266[1];
+    _useState268 = _slicedToArray(_useState267, 2),
+    navCollapsed = _useState268[0],
+    setNavCollapsed = _useState268[1];
   function toggleNav() {
     setNavCollapsed(function (c) {
       var nv = !c;
@@ -11333,32 +11337,32 @@ function App() {
   }
   var rawMob = useIsMob();
   var mob = forceMob || rawMob;
-  var _useState267 = useState(false),
-    _useState268 = _slicedToArray(_useState267, 2),
-    checkinLoading = _useState268[0],
-    setCheckinLoading = _useState268[1];
   var _useState269 = useState(false),
     _useState270 = _slicedToArray(_useState269, 2),
-    reflAnalysisLoading = _useState270[0],
-    setReflAnalysisLoading = _useState270[1];
+    checkinLoading = _useState270[0],
+    setCheckinLoading = _useState270[1];
   var _useState271 = useState(false),
     _useState272 = _slicedToArray(_useState271, 2),
-    showMonitor = _useState272[0],
-    setShowMonitor = _useState272[1];
-  var _useState273 = useState(null),
+    reflAnalysisLoading = _useState272[0],
+    setReflAnalysisLoading = _useState272[1];
+  var _useState273 = useState(false),
     _useState274 = _slicedToArray(_useState273, 2),
-    toast = _useState274[0],
-    setToast = _useState274[1]; // {msg,type:'error'|'success'|'warn'}
-  var _useState275 = useState([]),
+    showMonitor = _useState274[0],
+    setShowMonitor = _useState274[1];
+  var _useState275 = useState(null),
     _useState276 = _slicedToArray(_useState275, 2),
-    errLog = _useState276[0],
-    setErrLog = _useState276[1];
-  var _useState277 = useState(false),
+    toast = _useState276[0],
+    setToast = _useState276[1]; // {msg,type:'error'|'success'|'warn'}
+  var _useState277 = useState([]),
     _useState278 = _slicedToArray(_useState277, 2),
-    showErrPanel = _useState278[0],
-    setShowErrPanel = _useState278[1];
+    errLog = _useState278[0],
+    setErrLog = _useState278[1];
+  var _useState279 = useState(false),
+    _useState280 = _slicedToArray(_useState279, 2),
+    showErrPanel = _useState280[0],
+    setShowErrPanel = _useState280[1];
   // Google Calendar sync state
-  var _useState279 = useState(function () {
+  var _useState281 = useState(function () {
       try {
         var c = localStorage.getItem('__gcal_events__');
         return c ? JSON.parse(c) : [];
@@ -11366,18 +11370,18 @@ function App() {
         return [];
       }
     }),
-    _useState280 = _slicedToArray(_useState279, 2),
-    gcalEvents = _useState280[0],
-    setGcalEvents = _useState280[1];
-  var _useState281 = useState(false),
     _useState282 = _slicedToArray(_useState281, 2),
-    gcalConnected = _useState282[0],
-    setGcalConnected = _useState282[1];
-  var _useState283 = useState([]),
+    gcalEvents = _useState282[0],
+    setGcalEvents = _useState282[1];
+  var _useState283 = useState(false),
     _useState284 = _slicedToArray(_useState283, 2),
-    gcalCalendars = _useState284[0],
-    setGcalCalendars = _useState284[1];
-  var _useState285 = useState(function () {
+    gcalConnected = _useState284[0],
+    setGcalConnected = _useState284[1];
+  var _useState285 = useState([]),
+    _useState286 = _slicedToArray(_useState285, 2),
+    gcalCalendars = _useState286[0],
+    setGcalCalendars = _useState286[1];
+  var _useState287 = useState(function () {
       try {
         var s = localStorage.getItem('__gcal_selected__');
         return s ? JSON.parse(s) : [];
@@ -11385,72 +11389,72 @@ function App() {
         return [];
       }
     }),
-    _useState286 = _slicedToArray(_useState285, 2),
-    gcalSelectedIds = _useState286[0],
-    setGcalSelectedIds = _useState286[1];
-  var _useState287 = useState(false),
     _useState288 = _slicedToArray(_useState287, 2),
-    gcalReady = _useState288[0],
-    setGcalReady = _useState288[1];
+    gcalSelectedIds = _useState288[0],
+    setGcalSelectedIds = _useState288[1];
   var _useState289 = useState(false),
     _useState290 = _slicedToArray(_useState289, 2),
-    showCalPicker = _useState290[0],
-    setShowCalPicker = _useState290[1];
-  // Syllabus / assessment hub state
+    gcalReady = _useState290[0],
+    setGcalReady = _useState290[1];
   var _useState291 = useState(false),
     _useState292 = _slicedToArray(_useState291, 2),
-    showSyllabusImport = _useState292[0],
-    setShowSyllabusImport = _useState292[1];
-  var _useState293 = useState(""),
+    showCalPicker = _useState292[0],
+    setShowCalPicker = _useState292[1];
+  // Syllabus / assessment hub state
+  var _useState293 = useState(false),
     _useState294 = _slicedToArray(_useState293, 2),
-    syllabusText = _useState294[0],
-    setSyllabusText = _useState294[1];
+    showSyllabusImport = _useState294[0],
+    setShowSyllabusImport = _useState294[1];
   var _useState295 = useState(""),
     _useState296 = _slicedToArray(_useState295, 2),
-    syllabusStart = _useState296[0],
-    setSyllabusStart = _useState296[1];
-  var _useState297 = useState(function () {
+    syllabusText = _useState296[0],
+    setSyllabusText = _useState296[1];
+  var _useState297 = useState(""),
+    _useState298 = _slicedToArray(_useState297, 2),
+    syllabusStart = _useState298[0],
+    setSyllabusStart = _useState298[1];
+  var _useState299 = useState(function () {
       try {
         return localStorage.getItem('__gemini_key__') || "";
       } catch (_) {
         return "";
       }
     }),
-    _useState298 = _slicedToArray(_useState297, 2),
-    geminiKey = _useState298[0],
-    setGeminiKey = _useState298[1];
-  var _useState299 = useState(function () {
+    _useState300 = _slicedToArray(_useState299, 2),
+    geminiKey = _useState300[0],
+    setGeminiKey = _useState300[1];
+  var _useState301 = useState(function () {
       try {
         return localStorage.getItem('__groq_key__') || "";
       } catch (_) {
         return "";
       }
     }),
-    _useState300 = _slicedToArray(_useState299, 2),
-    groqKey = _useState300[0],
-    setGroqKey = _useState300[1];
-  var _useState301 = useState(false),
     _useState302 = _slicedToArray(_useState301, 2),
-    geminiLoading = _useState302[0],
-    setGeminiLoading = _useState302[1];
-  var _useState303 = useState(null),
+    groqKey = _useState302[0],
+    setGroqKey = _useState302[1];
+  var _useState303 = useState(false),
     _useState304 = _slicedToArray(_useState303, 2),
-    geminiPreview = _useState304[0],
-    setGeminiPreview = _useState304[1];
-  var _useState305 = useState(false),
+    geminiLoading = _useState304[0],
+    setGeminiLoading = _useState304[1];
+  var _useState305 = useState(null),
     _useState306 = _slicedToArray(_useState305, 2),
-    showAddAssess = _useState306[0],
-    setShowAddAssess = _useState306[1];
-  var _useState307 = useState({
+    geminiPreview = _useState306[0],
+    setGeminiPreview = _useState306[1];
+  var _useState307 = useState(false),
+    _useState308 = _slicedToArray(_useState307, 2),
+    showAddAssess = _useState308[0],
+    setShowAddAssess = _useState308[1];
+  var _useState309 = useState({
       subject: data.uni.subjects && data.uni.subjects[0] && data.uni.subjects[0].name || "",
       name: "",
       type: "SUBMISSION",
       date: todayStr()
     }),
-    _useState308 = _slicedToArray(_useState307, 2),
-    addAssessForm = _useState308[0],
-    setAddAssessForm = _useState308[1];
-  var _useState309 = useState(function () {
+    _useState310 = _slicedToArray(_useState309, 2),
+    addAssessForm = _useState310[0],
+    setAddAssessForm = _useState310[1];
+  var _useState311 = useState(function () {
       try {
         var x = localStorage.getItem('__gcal_excluded__');
         return x ? JSON.parse(x) : [];
@@ -11458,9 +11462,9 @@ function App() {
         return [];
       }
     }),
-    _useState310 = _slicedToArray(_useState309, 2),
-    gcalExcludedIds = _useState310[0],
-    setGcalExcludedIds = _useState310[1];
+    _useState312 = _slicedToArray(_useState311, 2),
+    gcalExcludedIds = _useState312[0],
+    setGcalExcludedIds = _useState312[1];
 
   // Call this anywhere in App to show a brief auto-dismissing notification.
   // Child components can call window.showToast() which is wired up below.
@@ -12018,21 +12022,8 @@ function App() {
       badge: typeBadge(a.type)
     };
   });
-  var activeTasks = data.personal.tasks.filter(function (t) {
-    return !t.done;
-  });
   var doneTasks = data.personal.tasks.filter(function (t) {
     return t.done;
-  });
-  var urgTasks = activeTasks.filter(function (t) {
-    return t.priority === "urgent";
-  }).sort(function (a, b) {
-    return new Date(a.due || "9999") - new Date(b.due || "9999");
-  });
-  var normTasks = activeTasks.filter(function (t) {
-    return t.priority === "normal";
-  }).sort(function (a, b) {
-    return new Date(a.due || "9999") - new Date(b.due || "9999");
   });
   var todayEvs = visibleGcalEvents.filter(function (ev) {
     return ev.date === todayStr() && !ev.allDay;
@@ -12043,18 +12034,18 @@ function App() {
   var homeLayout = React.useMemo(function () {
     return window.HomeLayout.normalizeLayout(data.homeLayout);
   }, [data.homeLayout]);
-  var _useState311 = useState(false),
-    _useState312 = _slicedToArray(_useState311, 2),
-    layoutEditing = _useState312[0],
-    setLayoutEditing = _useState312[1];
-  var _useState313 = useState(null),
+  var _useState313 = useState(false),
     _useState314 = _slicedToArray(_useState313, 2),
-    dragId = _useState314[0],
-    setDragId = _useState314[1];
+    layoutEditing = _useState314[0],
+    setLayoutEditing = _useState314[1];
   var _useState315 = useState(null),
     _useState316 = _slicedToArray(_useState315, 2),
-    dropIdx = _useState316[0],
-    setDropIdx = _useState316[1];
+    dragId = _useState316[0],
+    setDragId = _useState316[1];
+  var _useState317 = useState(null),
+    _useState318 = _slicedToArray(_useState317, 2),
+    dropIdx = _useState318[0],
+    setDropIdx = _useState318[1];
   function saveLayout(next) {
     trk("home.layout_save");
     setData(function (p) {
@@ -15190,7 +15181,142 @@ function App() {
       }
     }, "Cancel")));
   }
+  function catColor(c) {
+    return (window.TASK_CAT_COLORS || {})[c] || window.TASK_CAT_FALLBACK || "#8f97a6";
+  }
+  function openTaskDetail(id) {
+    openBackdateModal(id);
+  }
+  function renderTaskRow(t, group) {
+    var cat = t.cat || "Other";
+    var col = catColor(cat);
+    var isActive = scheduleTaskId === t.id;
+    var latest = t.updates && t.updates.length ? t.updates[t.updates.length - 1] : null;
+    var stateBadge = t.state === "doing" ? "▶ In progress" : t.state === "waiting" ? "⏸ Waiting" : null;
+    var muted = group === "done" || group === "waiting";
+    return /*#__PURE__*/React.createElement("div", {
+      key: t.id,
+      className: "glow-item",
+      style: {
+        display: "flex",
+        gap: 9,
+        marginBottom: 7,
+        alignItems: "flex-start",
+        padding: "10px 12px",
+        borderRadius: 12,
+        opacity: group === "done" ? 0.5 : 1,
+        background: isActive ? "rgba(91,140,255,0.12)" : "rgba(225,234,255,0.04)",
+        border: "1px solid " + (isActive ? "rgba(91,140,255,0.5)" : "rgba(255,255,255,0.07)"),
+        borderLeft: "3px solid " + col,
+        transition: "background 0.15s"
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: !!t.done,
+      onChange: function onChange() {
+        toggleTask(t.id);
+      },
+      style: {
+        accentColor: T.accent,
+        marginTop: 2,
+        flexShrink: 0
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        fontWeight: 500,
+        color: T.text,
+        textDecoration: t.done ? "line-through" : "none"
+      }
+    }, t.name), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8,
+        alignItems: "center",
+        flexWrap: "wrap",
+        marginTop: 2
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 9,
+        color: col
+      }
+    }, cat), stateBadge && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 9,
+        color: T.accent
+      }
+    }, stateBadge), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 9,
+        color: muted ? T.text3 : group === "overdue" ? T.danger : T.text3
+      }
+    }, taskLabel(t))), latest && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 9,
+        color: T.text3,
+        marginTop: 3,
+        fontStyle: "italic",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }
+    }, "\"", latest.text, "\" \u2014 ", fmtDate(latest.at))), /*#__PURE__*/React.createElement("button", {
+      style: {
+        background: "none",
+        border: "none",
+        padding: "2px 4px",
+        cursor: "pointer",
+        color: T.text3,
+        flexShrink: 0,
+        opacity: 0.45,
+        display: "flex"
+      },
+      title: "Open task",
+      onClick: function onClick(e) {
+        e.stopPropagation();
+        openTaskDetail(t.id);
+      }
+    }, /*#__PURE__*/React.createElement(UIcon, {
+      name: "pencil",
+      size: 12
+    })), /*#__PURE__*/React.createElement("button", {
+      style: {
+        background: "none",
+        border: "none",
+        padding: "2px 4px",
+        cursor: "pointer",
+        color: T.text3,
+        flexShrink: 0,
+        opacity: 0.45,
+        display: "flex"
+      },
+      title: "Mark done on a different day",
+      onClick: function onClick(e) {
+        e.stopPropagation();
+        openBackdateModal(t.id);
+      }
+    }, /*#__PURE__*/React.createElement(UIcon, {
+      name: "clock",
+      size: 12
+    })));
+  }
   function renderTasksCard() {
+    var TG = window.TaskGrouping;
+    var all = data.personal.tasks || [];
+    var counts = TG.categoryCounts(all);
+    var shown = catFilter ? all.filter(function (t) {
+      return (t.cat || "Other") === catFilter;
+    }) : all;
+    var groups = TG.groupTasks(shown, todayStr());
+    var empty = TG.DISPLAY_ORDER.every(function (g) {
+      return groups[g].length === 0;
+    });
     return /*#__PURE__*/React.createElement("div", {
       className: "card-rim",
       style: card()
@@ -15212,292 +15338,92 @@ function App() {
         setModal("add_task");
         setMForm({
           priority: "normal",
-          cat: "Errands"
+          cat: "Errands",
+          state: "todo"
         });
       }
-    }, "+")), urgTasks.length === 0 && normTasks.length === 0 && doneTasks.length === 0 && /*#__PURE__*/React.createElement("div", {
+    }, "+")), counts.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 6,
+        marginBottom: 12,
+        paddingBottom: 10,
+        borderBottom: "0.5px solid " + T.border
+      }
+    }, counts.map(function (c) {
+      var on = catFilter === c.cat;
+      return /*#__PURE__*/React.createElement("button", {
+        key: c.cat,
+        onClick: function onClick() {
+          setCatFilter(on ? null : c.cat);
+        },
+        style: {
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 5,
+          padding: "3px 9px",
+          borderRadius: 999,
+          cursor: "pointer",
+          fontSize: 10,
+          background: on ? catColor(c.cat) + "28" : "rgba(255,255,255,0.04)",
+          border: "1px solid " + (on ? catColor(c.cat) + "90" : "rgba(255,255,255,0.10)"),
+          color: on ? T.text : T.text2
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          width: 7,
+          height: 7,
+          borderRadius: "50%",
+          background: catColor(c.cat),
+          boxShadow: "0 0 6px " + catColor(c.cat) + "90",
+          flexShrink: 0
+        }
+      }), c.cat, /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: T.text3,
+          fontWeight: 600
+        }
+      }, c.count));
+    }), catFilter && /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        setCatFilter(null);
+      },
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 10,
+        padding: "3px 9px"
+      })
+    }, "Clear")), empty && /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12,
         color: T.text2
       }
-    }, "All clear \u2713"), scheduleTaskId && /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 9,
-        color: T.accent,
-        marginBottom: 6,
-        padding: "3px 8px",
-        borderRadius: 6,
-        background: T.accentBg,
-        border: "0.5px solid rgba(91,140,255,0.3)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 6
-      }
-    }, /*#__PURE__*/React.createElement("span", null, "Tap a calendar day to schedule (or ESC)"), /*#__PURE__*/React.createElement("button", {
-      onClick: function onClick() {
-        setScheduleTaskId(null);
-      },
-      title: "Cancel scheduling",
-      style: {
-        background: "none",
-        border: "none",
-        color: T.accent,
-        cursor: "pointer",
-        fontSize: 14,
-        padding: "0 4px",
-        lineHeight: 1,
-        fontWeight: 700
-      }
-    }, "\xD7")), urgTasks.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 9,
-        color: T.danger,
-        fontWeight: 700,
-        marginBottom: 6,
-        textTransform: "uppercase",
-        letterSpacing: 0.5
-      }
-    }, "Urgent"), urgTasks.map(function (t) {
-      var urg = taskUrg(t);
-      var isActive = scheduleTaskId === t.id;
+    }, "All clear \u2713"), TG.DISPLAY_ORDER.map(function (g) {
+      if (groups[g].length === 0) return null;
       return /*#__PURE__*/React.createElement("div", {
-        key: t.id,
-        className: "glow-item",
-        style: {
-          display: "flex",
-          gap: 9,
-          marginBottom: 7,
-          alignItems: "flex-start",
-          padding: "10px 12px",
-          borderRadius: 12,
-          background: isActive ? "rgba(91,140,255,0.12)" : "rgba(225,234,255,0.04)",
-          border: "1px solid " + (isActive ? "rgba(91,140,255,0.5)" : "rgba(255,255,255,0.07)"),
-          boxShadow: "inset 10px 0 9px -8px " + TUC[urg],
-          cursor: "default",
-          transition: "background 0.15s"
-        }
-      }, /*#__PURE__*/React.createElement("input", {
-        type: "checkbox",
-        checked: t.done,
-        onChange: function onChange() {
-          toggleTask(t.id);
-        },
-        style: {
-          accentColor: T.accent,
-          marginTop: 2,
-          flexShrink: 0
-        }
-      }), /*#__PURE__*/React.createElement("div", {
-        style: {
-          flex: 1,
-          minWidth: 0
-        }
+        key: g
       }, /*#__PURE__*/React.createElement("div", {
         style: {
-          fontSize: 11,
-          fontWeight: 500,
-          color: T.text,
-          textDecoration: t.done ? "line-through" : "none"
-        }
-      }, t.name), /*#__PURE__*/React.createElement("div", {
-        style: {
           fontSize: 9,
-          color: TUC[urg]
-        }
-      }, taskLabel(t))), /*#__PURE__*/React.createElement("button", {
-        style: {
-          background: "none",
-          border: "none",
-          padding: "2px 4px",
-          cursor: "pointer",
-          color: T.text3,
-          flexShrink: 0,
-          opacity: 0.45,
+          fontWeight: 700,
+          marginBottom: 6,
+          marginTop: 8,
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+          color: g === "overdue" ? T.danger : T.text3,
           display: "flex",
-          transition: "opacity 0.15s"
-        },
-        title: "Mark done on a different day",
-        onClick: function onClick(e) {
-          e.stopPropagation();
-          openBackdateModal(t.id);
+          gap: 6,
+          alignItems: "center"
         }
-      }, /*#__PURE__*/React.createElement(UIcon, {
-        name: "clock",
-        size: 12
-      })), /*#__PURE__*/React.createElement("button", {
+      }, TG.GROUP_LABEL[g], /*#__PURE__*/React.createElement("span", {
         style: {
-          background: "none",
-          border: "none",
-          padding: "2px 4px",
-          cursor: "pointer",
-          color: scheduleTaskId === t.id ? T.accent : T.text3,
-          fontSize: 14,
-          flexShrink: 0,
-          lineHeight: 1,
-          opacity: scheduleTaskId === t.id ? 1 : 0.45,
-          transition: "opacity 0.15s,color 0.15s"
-        },
-        title: "Schedule",
-        onClick: function onClick(e) {
-          e.stopPropagation();
-          if (scheduleTaskId === t.id) {
-            setScheduleTaskId(null);
-          } else {
-            trk("task.schedule");
-            setScheduleTaskId(t.id);
-            showToast("Tap a calendar day to schedule (or ESC)", "warn");
-          }
-        }
-      }, "\u283F"));
-    })), normTasks.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 9,
-        color: T.text3,
-        fontWeight: 700,
-        marginBottom: 6,
-        marginTop: 8,
-        textTransform: "uppercase",
-        letterSpacing: 0.5
-      }
-    }, "Normal"), normTasks.map(function (t) {
-      var urg = taskUrg(t);
-      var isActive = scheduleTaskId === t.id;
-      return /*#__PURE__*/React.createElement("div", {
-        key: t.id,
-        className: "glow-item",
-        style: {
-          display: "flex",
-          gap: 9,
-          marginBottom: 7,
-          alignItems: "flex-start",
-          padding: "10px 12px",
-          borderRadius: 12,
-          background: isActive ? "rgba(91,140,255,0.12)" : "rgba(225,234,255,0.04)",
-          border: "1px solid " + (isActive ? "rgba(91,140,255,0.5)" : "rgba(255,255,255,0.07)"),
-          boxShadow: "inset 10px 0 9px -8px " + TUC[urg],
-          cursor: "default",
-          transition: "background 0.15s"
-        }
-      }, /*#__PURE__*/React.createElement("input", {
-        type: "checkbox",
-        checked: t.done,
-        onChange: function onChange() {
-          toggleTask(t.id);
-        },
-        style: {
-          accentColor: T.accent,
-          marginTop: 2,
-          flexShrink: 0
-        }
-      }), /*#__PURE__*/React.createElement("div", {
-        style: {
-          flex: 1,
-          minWidth: 0
-        }
-      }, /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 11,
-          fontWeight: 500,
-          color: T.text,
-          textDecoration: t.done ? "line-through" : "none"
-        }
-      }, t.name), /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 9,
-          color: TUC[urg]
-        }
-      }, taskLabel(t))), /*#__PURE__*/React.createElement("button", {
-        style: {
-          background: "none",
-          border: "none",
-          padding: "2px 4px",
-          cursor: "pointer",
           color: T.text3,
-          flexShrink: 0,
-          opacity: 0.45,
-          display: "flex",
-          transition: "opacity 0.15s"
-        },
-        title: "Mark done on a different day",
-        onClick: function onClick(e) {
-          e.stopPropagation();
-          openBackdateModal(t.id);
+          fontWeight: 600
         }
-      }, /*#__PURE__*/React.createElement(UIcon, {
-        name: "clock",
-        size: 12
-      })), /*#__PURE__*/React.createElement("button", {
-        style: {
-          background: "none",
-          border: "none",
-          padding: "2px 4px",
-          cursor: "pointer",
-          color: scheduleTaskId === t.id ? T.accent : T.text3,
-          fontSize: 14,
-          flexShrink: 0,
-          lineHeight: 1,
-          opacity: scheduleTaskId === t.id ? 1 : 0.45,
-          transition: "opacity 0.15s,color 0.15s"
-        },
-        title: "Schedule",
-        onClick: function onClick(e) {
-          e.stopPropagation();
-          if (scheduleTaskId === t.id) {
-            setScheduleTaskId(null);
-          } else {
-            trk("task.schedule");
-            setScheduleTaskId(t.id);
-            showToast("Tap a calendar day to schedule (or ESC)", "warn");
-          }
-        }
-      }, "\u283F"));
-    })), doneTasks.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 9,
-        color: T.text3,
-        fontWeight: 700,
-        marginBottom: 6,
-        marginTop: 8,
-        textTransform: "uppercase",
-        letterSpacing: 0.5
-      }
-    }, "Done"), doneTasks.map(function (t) {
-      return /*#__PURE__*/React.createElement("div", {
-        key: t.id,
-        style: {
-          display: "flex",
-          gap: 7,
-          marginBottom: 5,
-          alignItems: "center",
-          opacity: 0.45
-        }
-      }, /*#__PURE__*/React.createElement("input", {
-        type: "checkbox",
-        checked: true,
-        onChange: function onChange() {
-          toggleTask(t.id);
-        },
-        style: {
-          accentColor: T.accent,
-          flexShrink: 0
-        }
-      }), /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 11,
-          color: T.text3,
-          textDecoration: "line-through",
-          flex: 1,
-          minWidth: 0
-        }
-      }, t.name), t.completedAt && /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 9,
-          color: T.text3,
-          flexShrink: 0
-        }
-      }, fmtDate(t.completedAt), t.completedTime ? " · " + fmtTime12(t.completedTime) : ""));
-    })));
+      }, groups[g].length)), groups[g].map(function (t) {
+        return renderTaskRow(t, g);
+      }));
+    }));
   }
   function renderHomeCard(id) {
     switch (id) {
