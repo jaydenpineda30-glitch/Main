@@ -998,6 +998,12 @@ function isAssessmentEvent(ev) {
   })) return true;
   return false;
 }
+var UNI_KEYS = ["uni", "tafe", "rmit", "university", "curtin", "monash", "deakin", "uts", "usyd", "uq", "uwa", "anu", "unsw", "federation"];
+function isUniCalEv(ev) {
+  return ev.calName && UNI_KEYS.some(function (k) {
+    return ev.calName.toLowerCase().includes(k);
+  });
+}
 function isGoTabEvent(ev) {
   return !ev.allDay && ev.time && ev.time !== "All day" && (ev.calName && (ev.calName.toLowerCase().includes("gotab") || ev.calName.toLowerCase().includes("jayden.pineda")) || ev._email && ev._email.toLowerCase().includes("gotab") || ev.title && (ev.title.toLowerCase().includes("gotab") || ev.title.toLowerCase().includes("shift")));
 }
@@ -9833,6 +9839,15 @@ var PINP = {
   boxSizing: "border-box",
   outline: "none"
 };
+// Module-level copy of App()'s sT (app.jsx ~4066), identical value — needed by
+// module-level components (e.g. UpcomingClassesCard) that render outside App().
+var sTGlobal = {
+  fontSize: 13,
+  fontWeight: 600,
+  marginBottom: 12,
+  color: "#cdd5e2",
+  letterSpacing: "-0.01em"
+};
 var MONO = "ui-monospace,Menlo,Consolas,monospace";
 
 // Pull a leading emoji off a title string ("🔑 Anime Keychain" -> {emoji,title}).
@@ -10987,6 +11002,123 @@ function HomeGridCard(_ref7) {
       userSelect: "none"
     } : undefined
   }, children)));
+}
+
+// Shared by the home page (7 days) and the Uni tab (28 days) so the two
+// cannot drift apart. `events` is the deduped Google Calendar event list.
+// evColor/evLabel are passed in because they live inside App() — evLabel
+// closes over data.uni.subjects and cannot be hoisted.
+function UpcomingClassesCard(_ref8) {
+  var events = _ref8.events,
+    days = _ref8.days,
+    gcalConnected = _ref8.gcalConnected,
+    evColor = _ref8.evColor,
+    evLabel = _ref8.evLabel,
+    cardStyle = _ref8.cardStyle,
+    mob = _ref8.mob;
+  var today = todayStr();
+  var end = function () {
+    var d = new Date();
+    d.setDate(d.getDate() + days);
+    return dStr(d);
+  }();
+  var classes = (events || []).filter(function (ev) {
+    return isUniCalEv(ev) && !isAssessmentEvent(ev) && !ev.allDay && ev.date >= today && ev.date <= end;
+  }).sort(function (a, b) {
+    return a.date.localeCompare(b.date) || (a.time || "").localeCompare(b.time || "");
+  });
+  var lastDate = "";
+  return /*#__PURE__*/React.createElement("div", {
+    className: "card-rim",
+    style: cardStyle
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: sTGlobal
+  }, "Upcoming Classes"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9,
+      color: T.text3
+    }
+  }, "next ", days, " days")), classes.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: T.text2
+    }
+  }, gcalConnected ? "No upcoming classes in the next " + days + " days." : "Connect Google Calendar to see your schedule.") : classes.map(function (ev) {
+    var showDate = ev.date !== lastDate;
+    lastDate = ev.date;
+    var col = evColor(ev);
+    var isToday = ev.date === today;
+    return /*#__PURE__*/React.createElement("div", {
+      key: ev.id
+    }, showDate && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        fontWeight: 600,
+        color: isToday ? T.accent : T.text2,
+        marginTop: 10,
+        marginBottom: 6,
+        paddingTop: 8,
+        borderTop: "0.5px solid " + T.border
+      }
+    }, isToday ? "Today · " : "", new Date(ev.date + "T12:00:00").toLocaleDateString("en-AU", {
+      weekday: "long",
+      day: "numeric",
+      month: "short"
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 10,
+        marginBottom: 10,
+        alignItems: "flex-start"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 2,
+        borderRadius: 2,
+        background: col,
+        alignSelf: "stretch",
+        minHeight: 28,
+        flexShrink: 0
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        fontWeight: 700,
+        color: T.text2,
+        marginBottom: 1
+      }
+    }, evLabel(ev)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text,
+        lineHeight: 1.5
+      }
+    }, ev.title), ev.description && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        marginTop: 2,
+        lineHeight: 1.4
+      }
+    }, ev.description.slice(0, 120), ev.description.length > 120 ? "…" : ""), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        marginTop: 2
+      }
+    }, ev.time))));
+  }));
 }
 function App() {
   var _useState153 = useState("Dashboard"),
@@ -15590,8 +15722,15 @@ function App() {
       case "tasks":
         return renderTasksCard();
       case "classes":
-        return null;
-      // Task 7
+        return /*#__PURE__*/React.createElement(UpcomingClassesCard, {
+          events: dedupedEvents,
+          days: 7,
+          gcalConnected: gcalConnected,
+          evColor: evColor,
+          evLabel: evLabel,
+          cardStyle: card(),
+          mob: mob
+        });
       case "necessities":
         return null;
       // Task 8
@@ -16441,20 +16580,6 @@ function App() {
     var doneA = assessments.filter(function (a) {
       return a.done;
     }).length;
-    var UNI_KEYS = ["uni", "tafe", "rmit", "university", "curtin", "monash", "deakin", "uts", "usyd", "uq", "uwa", "anu", "unsw", "federation"];
-    function isUniCalEv(ev) {
-      return ev.calName && UNI_KEYS.some(function (k) {
-        return ev.calName.toLowerCase().includes(k);
-      });
-    }
-    var uc28 = new Date();
-    uc28.setDate(uc28.getDate() + 28);
-    var ucEnd = dStr(uc28);
-    var upcomingClasses = dedupedEvents.filter(function (ev) {
-      return isUniCalEv(ev) && !isAssessmentEvent(ev) && !ev.allDay && ev.date >= todayStr() && ev.date <= ucEnd;
-    }).sort(function (a, b) {
-      return a.date.localeCompare(b.date) || (a.time || "").localeCompare(b.time || "");
-    });
     return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
       className: "card-rim",
       style: card()
@@ -16779,100 +16904,15 @@ function App() {
           removeSubject(s.id);
         }
       }, "\xD7"));
-    }))), /*#__PURE__*/React.createElement("div", {
-      className: "card-rim",
-      style: card()
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 8
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: sT
-    }, "Upcoming Classes"), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 9,
-        color: T.text3
-      }
-    }, "next 28 days")), upcomingClasses.length === 0 ? /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        color: T.text2
-      }
-    }, gcalConnected ? "No upcoming classes in the next 28 days." : "Connect Google Calendar to see your schedule.") : function () {
-      var lastDate2 = "";
-      return upcomingClasses.map(function (ev) {
-        var showDate = ev.date !== lastDate2;
-        lastDate2 = ev.date;
-        var col = evColor(ev);
-        var isToday = ev.date === todayStr();
-        return /*#__PURE__*/React.createElement("div", {
-          key: ev.id
-        }, showDate && /*#__PURE__*/React.createElement("div", {
-          style: {
-            fontSize: 10,
-            fontWeight: 600,
-            color: isToday ? T.accent : T.text2,
-            marginTop: 10,
-            marginBottom: 6,
-            paddingTop: 8,
-            borderTop: "0.5px solid " + T.border
-          }
-        }, isToday ? "Today · " : "", new Date(ev.date + "T12:00:00").toLocaleDateString("en-AU", {
-          weekday: "long",
-          day: "numeric",
-          month: "short"
-        })), /*#__PURE__*/React.createElement("div", {
-          style: {
-            display: "flex",
-            gap: 10,
-            marginBottom: 10,
-            alignItems: "flex-start"
-          }
-        }, /*#__PURE__*/React.createElement("div", {
-          style: {
-            width: 2,
-            borderRadius: 2,
-            background: col,
-            alignSelf: "stretch",
-            minHeight: 28,
-            flexShrink: 0
-          }
-        }), /*#__PURE__*/React.createElement("div", {
-          style: {
-            flex: 1
-          }
-        }, /*#__PURE__*/React.createElement("div", {
-          style: {
-            fontSize: 10,
-            fontWeight: 700,
-            color: T.text2,
-            marginBottom: 1
-          }
-        }, evLabel(ev)), /*#__PURE__*/React.createElement("div", {
-          style: {
-            fontSize: 12,
-            color: T.text,
-            lineHeight: 1.5
-          }
-        }, ev.title), ev.description && /*#__PURE__*/React.createElement("div", {
-          style: {
-            fontSize: 10,
-            color: T.text3,
-            marginTop: 2,
-            lineHeight: 1.4
-          }
-        }, ev.description.slice(0, 120), ev.description.length > 120 ? "…" : ""), /*#__PURE__*/React.createElement("div", {
-          style: {
-            fontSize: 10,
-            color: T.text3,
-            marginTop: 2
-          }
-        }, ev.time))));
-      });
-    }()));
+    }))), /*#__PURE__*/React.createElement(UpcomingClassesCard, {
+      events: dedupedEvents,
+      days: 28,
+      gcalConnected: gcalConnected,
+      evColor: evColor,
+      evLabel: evLabel,
+      cardStyle: card(),
+      mob: mob
+    }));
   }()), page === "Work" && /*#__PURE__*/React.createElement("div", {
     style: {
       maxWidth: mob ? undefined : 900

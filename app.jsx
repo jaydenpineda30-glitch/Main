@@ -354,6 +354,8 @@ function isAssessmentEvent(ev){
   if(ASSESS_KEYWORDS.some(function(k){return combinedLower.includes(k.toLowerCase());}))return true;
   return false;
 }
+const UNI_KEYS=["uni","tafe","rmit","university","curtin","monash","deakin","uts","usyd","uq","uwa","anu","unsw","federation"];
+function isUniCalEv(ev){return ev.calName&&UNI_KEYS.some(function(k){return ev.calName.toLowerCase().includes(k);});}
 function isGoTabEvent(ev){
   return !ev.allDay&&ev.time&&ev.time!=="All day"&&(
     (ev.calName&&(ev.calName.toLowerCase().includes("gotab")||ev.calName.toLowerCase().includes("jayden.pineda")))||
@@ -2467,6 +2469,9 @@ function WorkSection({data,mob,onUpdate,onFlush,gcalEvents}){
 function nid(pref){return (pref||"i")+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
 const PCARD={position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow};
 const PINP={width:"100%",padding:"9px 12px",borderRadius:10,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:13,boxSizing:"border-box",outline:"none"};
+// Module-level copy of App()'s sT (app.jsx ~4066), identical value — needed by
+// module-level components (e.g. UpcomingClassesCard) that render outside App().
+const sTGlobal={fontSize:13,fontWeight:600,marginBottom:12,color:"#cdd5e2",letterSpacing:"-0.01em"};
 const MONO="ui-monospace,Menlo,Consolas,monospace";
 
 // Pull a leading emoji off a title string ("🔑 Anime Keychain" -> {emoji,title}).
@@ -2778,6 +2783,51 @@ function HomeGridCard({span,editing,title,onSpan,onDragStart,onDragOver,isDraggi
       </div>
     </div>
   );
+}
+
+// Shared by the home page (7 days) and the Uni tab (28 days) so the two
+// cannot drift apart. `events` is the deduped Google Calendar event list.
+// evColor/evLabel are passed in because they live inside App() — evLabel
+// closes over data.uni.subjects and cannot be hoisted.
+function UpcomingClassesCard({events,days,gcalConnected,evColor,evLabel,cardStyle,mob}){
+  const today=todayStr();
+  const end=(function(){const d=new Date();d.setDate(d.getDate()+days);return dStr(d);})();
+  const classes=(events||[])
+    .filter(function(ev){return isUniCalEv(ev)&&!isAssessmentEvent(ev)&&!ev.allDay
+                                &&ev.date>=today&&ev.date<=end;})
+    .sort(function(a,b){return a.date.localeCompare(b.date)||(a.time||"").localeCompare(b.time||"");});
+  let lastDate="";
+  return(
+    <div className="card-rim" style={cardStyle}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <div style={sTGlobal}>Upcoming Classes</div>
+        <div style={{fontSize:9,color:T.text3}}>next {days} days</div>
+      </div>
+      {classes.length===0
+        ?<div style={{fontSize:12,color:T.text2}}>
+          {gcalConnected?"No upcoming classes in the next "+days+" days.":"Connect Google Calendar to see your schedule."}</div>
+        :classes.map(function(ev){
+          const showDate=ev.date!==lastDate;lastDate=ev.date;
+          const col=evColor(ev);const isToday=ev.date===today;
+          return(<div key={ev.id}>
+            {showDate&&<div style={{fontSize:10,fontWeight:600,color:isToday?T.accent:T.text2,
+                                    marginTop:10,marginBottom:6,paddingTop:8,
+                                    borderTop:"0.5px solid "+T.border}}>
+              {isToday?"Today · ":""}
+              {new Date(ev.date+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"short"})}
+            </div>}
+            <div style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start"}}>
+              <div style={{width:2,borderRadius:2,background:col,alignSelf:"stretch",minHeight:28,flexShrink:0}}/>
+              <div style={{flex:1}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.text2,marginBottom:1}}>{evLabel(ev)}</div>
+                <div style={{fontSize:12,color:T.text,lineHeight:1.5}}>{ev.title}</div>
+                {ev.description&&<div style={{fontSize:10,color:T.text3,marginTop:2,lineHeight:1.4}}>
+                  {ev.description.slice(0,120)}{ev.description.length>120?"…":""}</div>}
+                <div style={{fontSize:10,color:T.text3,marginTop:2}}>{ev.time}</div>
+              </div>
+            </div>
+          </div>);})}
+    </div>);
 }
 
 function App(){
@@ -4390,7 +4440,8 @@ function App(){
       case "gym-next":    return renderGymNextCard();
       case "bodyweight":  return renderBodyweightCard();
       case "tasks":       return renderTasksCard();
-      case "classes":     return null;                    // Task 7
+      case "classes":     return <UpcomingClassesCard events={dedupedEvents} days={7}
+        gcalConnected={gcalConnected} evColor={evColor} evLabel={evLabel} cardStyle={card()} mob={mob}/>;
       case "necessities": return null;                    // Task 8
       default:            return null;
     }
@@ -4566,10 +4617,6 @@ function App(){
           {(function(){
             const assessments=data.uni.assessments||SYLLABUS_ASSESSMENTS;
             const totalA=assessments.length;const doneA=assessments.filter(function(a){return a.done;}).length;
-            const UNI_KEYS=["uni","tafe","rmit","university","curtin","monash","deakin","uts","usyd","uq","uwa","anu","unsw","federation"];
-            function isUniCalEv(ev){return ev.calName&&UNI_KEYS.some(function(k){return ev.calName.toLowerCase().includes(k);});}
-            const uc28=new Date();uc28.setDate(uc28.getDate()+28);const ucEnd=dStr(uc28);
-            const upcomingClasses=dedupedEvents.filter(function(ev){return isUniCalEv(ev)&&!isAssessmentEvent(ev)&&!ev.allDay&&ev.date>=todayStr()&&ev.date<=ucEnd;}).sort(function(a,b){return a.date.localeCompare(b.date)||(a.time||"").localeCompare(b.time||"");});
             return(<React.Fragment>
               {/* ── Assessments ── */}
               <div className="card-rim" style={card()}>
@@ -4642,13 +4689,8 @@ function App(){
                   </div>);})}</div>}
               </div>
               {/* ── Upcoming Classes ── */}
-              <div className="card-rim" style={card()}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                  <div style={sT}>Upcoming Classes</div>
-                  <div style={{fontSize:9,color:T.text3}}>next 28 days</div>
-                </div>
-                {upcomingClasses.length===0?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No upcoming classes in the next 28 days.":"Connect Google Calendar to see your schedule."}</div>:(function(){let lastDate2="";return upcomingClasses.map(function(ev){const showDate=ev.date!==lastDate2;lastDate2=ev.date;const col=evColor(ev);const isToday=ev.date===todayStr();return(<div key={ev.id}>{showDate&&<div style={{fontSize:10,fontWeight:600,color:isToday?T.accent:T.text2,marginTop:10,marginBottom:6,paddingTop:8,borderTop:"0.5px solid "+T.border}}>{isToday?"Today · ":""}{new Date(ev.date+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"short"})}</div>}<div style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start"}}><div style={{width:2,borderRadius:2,background:col,alignSelf:"stretch",minHeight:28,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:T.text2,marginBottom:1}}>{evLabel(ev)}</div><div style={{fontSize:12,color:T.text,lineHeight:1.5}}>{ev.title}</div>{ev.description&&<div style={{fontSize:10,color:T.text3,marginTop:2,lineHeight:1.4}}>{ev.description.slice(0,120)}{ev.description.length>120?"…":""}</div>}<div style={{fontSize:10,color:T.text3,marginTop:2}}>{ev.time}</div></div></div></div>);});}())}
-              </div>
+              <UpcomingClassesCard events={dedupedEvents} days={28} gcalConnected={gcalConnected}
+                evColor={evColor} evLabel={evLabel} cardStyle={card()} mob={mob}/>
             </React.Fragment>);
           })()}
         </div>}
