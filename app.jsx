@@ -3266,15 +3266,25 @@ function App(){
   }
   React.useEffect(function(){
     if(!dragId)return;
-    function finish(){
+    function clear(){setDragId(null);setDropIdx(null);}
+    function commit(){
       const from=homeLayout.findIndex(function(x){return x.id===dragId;});
       if(from>=0&&dropIdx!==null&&dropIdx!==from){
         saveLayout(window.HomeLayout.moveCard(homeLayout,from,dropIdx));
       }
-      setDragId(null);setDropIdx(null);
+      clear();
     }
-    window.addEventListener("pointerup",finish);
-    return function(){window.removeEventListener("pointerup",finish);};
+    function disarmIfReleased(ev){if(ev.buttons===0)clear();}
+    window.addEventListener("pointerup",commit);
+    window.addEventListener("pointercancel",clear);
+    window.addEventListener("pointermove",disarmIfReleased);
+    window.addEventListener("blur",clear);
+    return function(){
+      window.removeEventListener("pointerup",commit);
+      window.removeEventListener("pointercancel",clear);
+      window.removeEventListener("pointermove",disarmIfReleased);
+      window.removeEventListener("blur",clear);
+    };
   },[dragId,dropIdx,homeLayout]);
 
   function doCheckin(){
@@ -4390,7 +4400,9 @@ function App(){
                   <HomeGridCard key={e.id} span={e.span} editing={layoutEditing} title={meta.title||e.id}
                     isDragging={dragId===e.id} isDropTarget={layoutEditing&&dropIdx===idx&&dragId!==null&&dragId!==e.id}
                     onSpan={function(n){saveLayout(window.HomeLayout.setSpan(homeLayout,e.id,n));}}
-                    onDragStart={function(ev){ev.preventDefault();setDragId(e.id);setDropIdx(idx);}}
+                    onDragStart={function(ev){
+                      if(ev.button!==0||!ev.isPrimary)return;
+                      ev.preventDefault();setDragId(e.id);setDropIdx(idx);}}
                     onDragOver={function(){if(dragId)setDropIdx(idx);}}>
                     {body}
                   </HomeGridCard>
