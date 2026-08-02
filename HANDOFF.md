@@ -15,10 +15,21 @@ JSX is precompiled to `app.js` (no in-browser Babel).
 
 - **Live site:** `https://jaydenpineda30-glitch.github.io/Main/dashboard.html`
 - **GitHub repo:** `git@github.com:jaydenpineda30-glitch/Main.git`
-- **Local files:** `/Users/jashleypineda/Library/CloudStorage/OneDrive-Personal/Documents/my-project/`
+- **Local files:** Windows `C:\Users\Jayde\my-project` · Mac `~/Library/CloudStorage/OneDrive-Personal/Documents/my-project/` (being relocated out of OneDrive)
 
-There is **no auto-push hook** — push deliberately. (A pre-commit hook only rebuilds
-`app.js` from `app.jsx`.) Live site updates ~60s after a push to `main`.
+**Neither machine auto-pushes.** A commit is local until you `git push`, and pushing to `main`
+deploys the live site (~60s via GitHub Pages).
+
+Hooks live in the tracked `.githooks/` directory, not `.git/hooks` — Git never clones the latter,
+which is why the two machines silently disagreed until 2026-08-02. **One-time setup per machine:**
+
+```bash
+git config core.hooksPath .githooks
+npm install                              # build.js needs @babel/standalone
+```
+
+Without it, nothing rebuilds `app.js` on commit and the live site goes stale. `build-check.yml`
+catches this in CI, but only after the fact.
 
 ---
 

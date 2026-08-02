@@ -3,7 +3,7 @@
 A personal dashboard for tracking study, gym, tasks, finances, and weekly reflections — a React app served as static files on GitHub Pages.
 
 - **Live site:** https://jaydenpineda30-glitch.github.io/Main/dashboard.html
-- **Local files:** `/Users/jashleypineda/Library/CloudStorage/OneDrive-Personal/Documents/my-project/`
+- **Local files:** Windows `C:\Users\Jayde\my-project` · Mac `~/Library/CloudStorage/OneDrive-Personal/Documents/my-project/` (being relocated out of OneDrive)
 
 ## Stack
 
@@ -44,8 +44,15 @@ node build.js      # or: npm run build  → regenerates app.js from app.jsx
 ```
 
 A **git pre-commit hook** auto-runs `build.js` when `app.jsx` is staged, so `app.js`
-can't go stale. A **CI "Build check"** workflow also fails any push where `app.js`
-doesn't match `app.jsx`.
+can't go stale — but the hooks live in the tracked `.githooks/` directory, and Git only
+consults it after a **one-time setup on each machine**:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Skip it and nothing rebuilds, silently. A **CI "Build check"** workflow also fails any
+push where `app.js` doesn't match `app.jsx`, which is the backstop for exactly that case.
 
 Deploy = push to `main`. GitHub Pages serves the updated files within ~60s; hard-refresh
 (Cmd/Ctrl+Shift+R) to pick them up. (There is no auto-push hook — push deliberately.)
