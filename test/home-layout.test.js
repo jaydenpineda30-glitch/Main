@@ -66,3 +66,28 @@ test('setSpan changes one card and clamps the value', () => {
   assert.deepStrictEqual(HL.setSpan(l, 'a', 2), [{ id: 'a', span: 2 }, { id: 'b', span: 1 }]);
   assert.strictEqual(HL.setSpan(l, 'a', 99)[0].span, 3);
 });
+
+test('normalizeLayout clamps out-of-range spans from saved data', () => {
+  const out = HL.normalizeLayout([
+    { id: 'tasks', span: 99 },
+    { id: 'weather', span: 0 },
+    { id: 'goals', span: -4 },
+    { id: 'shopping', span: 'nonsense' },
+  ]);
+  const spanOf = (id) => out.find(e => e.id === id).span;
+  assert.strictEqual(spanOf('tasks'), 3);
+  assert.strictEqual(spanOf('weather'), 1);
+  assert.strictEqual(spanOf('goals'), 1);
+  assert.strictEqual(spanOf('shopping'), 1);
+  out.forEach(e => {
+    assert.ok(e.span >= 1 && e.span <= 3, e.id + ' span out of range: ' + e.span);
+  });
+});
+
+test('normalizeLayout does not mutate its input', () => {
+  const saved = [{ id: 'tasks', span: 99 }, { id: 'weather', span: 2 }];
+  const frozen = JSON.stringify(saved);
+  HL.normalizeLayout(saved);
+  assert.strictEqual(JSON.stringify(saved), frozen,
+    'normalizeLayout must not modify the array or the objects inside it');
+});
