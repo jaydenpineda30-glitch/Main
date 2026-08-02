@@ -4267,6 +4267,17 @@ function App(){
           title="Mark done on a different day"
           onClick={function(e){e.stopPropagation();openBackdateModal(t.id);}}>
           <UIcon name="clock" size={12}/></button>
+        {/* Arms calendar scheduling — the ONLY thing that sets scheduleTaskId, which the
+            week grid reads to turn days into drop targets. Do not remove without
+            removing that path too. */}
+        <button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",
+                        color:isActive?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,
+                        opacity:isActive?1:0.45,transition:"opacity 0.15s,color 0.15s"}}
+          title="Schedule"
+          onClick={function(e){e.stopPropagation();
+            if(scheduleTaskId===t.id){setScheduleTaskId(null);}
+            else{trk("task.schedule");setScheduleTaskId(t.id);
+                 showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button>
       </div>);
   }
 
@@ -4284,6 +4295,12 @@ function App(){
           <button style={{...editPill,fontSize:14,padding:"2px 12px"}}
             onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands",state:"todo"});}}>+</button>
         </div>
+
+        {scheduleTaskId&&<div style={{fontSize:9,color:T.accent,marginBottom:6,padding:"3px 8px",borderRadius:6,background:T.accentBg,border:"0.5px solid rgba(91,140,255,0.3)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
+          <span>Tap a calendar day to schedule (or ESC)</span>
+          <button onClick={function(){setScheduleTaskId(null);}} title="Cancel scheduling"
+            style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:14,padding:"0 4px",lineHeight:1,fontWeight:700}}>×</button>
+        </div>}
 
         {/* Load bar — where the work is piling up. Click to filter. */}
         {counts.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12,

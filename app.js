@@ -15304,7 +15304,31 @@ function App() {
     }, /*#__PURE__*/React.createElement(UIcon, {
       name: "clock",
       size: 12
-    })));
+    })), /*#__PURE__*/React.createElement("button", {
+      style: {
+        background: "none",
+        border: "none",
+        padding: "2px 4px",
+        cursor: "pointer",
+        color: isActive ? T.accent : T.text3,
+        fontSize: 14,
+        flexShrink: 0,
+        lineHeight: 1,
+        opacity: isActive ? 1 : 0.45,
+        transition: "opacity 0.15s,color 0.15s"
+      },
+      title: "Schedule",
+      onClick: function onClick(e) {
+        e.stopPropagation();
+        if (scheduleTaskId === t.id) {
+          setScheduleTaskId(null);
+        } else {
+          trk("task.schedule");
+          setScheduleTaskId(t.id);
+          showToast("Tap a calendar day to schedule (or ESC)", "warn");
+        }
+      }
+    }, "\u283F"));
   }
   function renderTasksCard() {
     var TG = window.TaskGrouping;
@@ -15342,7 +15366,36 @@ function App() {
           state: "todo"
         });
       }
-    }, "+")), counts.length > 0 && /*#__PURE__*/React.createElement("div", {
+    }, "+")), scheduleTaskId && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 9,
+        color: T.accent,
+        marginBottom: 6,
+        padding: "3px 8px",
+        borderRadius: 6,
+        background: T.accentBg,
+        border: "0.5px solid rgba(91,140,255,0.3)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "Tap a calendar day to schedule (or ESC)"), /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        setScheduleTaskId(null);
+      },
+      title: "Cancel scheduling",
+      style: {
+        background: "none",
+        border: "none",
+        color: T.accent,
+        cursor: "pointer",
+        fontSize: 14,
+        padding: "0 4px",
+        lineHeight: 1,
+        fontWeight: 700
+      }
+    }, "\xD7")), counts.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         flexWrap: "wrap",
