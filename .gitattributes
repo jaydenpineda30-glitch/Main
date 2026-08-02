@@ -1,0 +1,6 @@
+# Hook scripts must keep LF line endings on every machine.
+# Git for Windows runs them through sh, and a CRLF shell script fails with
+# confusing "bad interpreter" errors. Without this, a fresh Windows clone
+# would check them out as CRLF (core.autocrlf=true) and the build hook would
+# silently stop working.
+.githooks/** text eol=lf

@@ -1,0 +1,25 @@
+#!/bin/sh
+# Rebuild app.js from app.jsx whenever app.jsx is part of this commit.
+#
+# Athena deploys to GitHub Pages straight from main, and the browser loads
+# app.js — not app.jsx. A commit with a stale bundle is a stale live site.
+# This hook exists so remembering to rebuild is not a human responsibility.
+#
+# Enabled per-machine with:  git config core.hooksPath .githooks
+
+# Nothing to do unless app.jsx is actually staged.
+git diff --cached --name-only | grep -q '^app\.jsx$' || exit 0
+
+if [ ! -d node_modules/@babel/standalone ]; then
+	echo "pre-commit: @babel/standalone is not installed." >&2
+	echo "  Run 'npm install', then commit again." >&2
+	echo "  Refusing the commit — app.js would have shipped stale." >&2
+	exit 1
+fi
+
+if ! node build.js; then
+	echo "pre-commit: build failed, commit aborted. Fix the error above." >&2
+	exit 1
+fi
+
+git add app.js
