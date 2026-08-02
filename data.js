@@ -9,6 +9,39 @@ var DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
 var TASK_CATS = ["Finances","Errands","Admin","Health","Social","Study","Meal Prep","Car & Transport","Home","Family","Work","Self-care","Shopping","Other"];
 
+// One fixed colour per task category, so a category always looks the same
+// wherever it appears. Validated with the dataviz skill's validate_palette.js
+// against the dark glass background (#0a0a0a): all 14 pass lightness band,
+// chroma floor, and contrast; adjacent pairs (this TASK_CATS order) pass CVD
+// separation with one WARN in the legal 6-8 floor band (Health vs Admin,
+// dE 7.1) — legal because every swatch always renders with its category name
+// beside it, so hue is never the only signal. Study/Admin/Work/Health (the
+// four Jayden uses most) were additionally validated as a standalone all-pairs
+// set — ALL CHECKS PASS, worst CVD dE 7.1 (WARN band, same mitigation), worst
+// normal-vision dE 18.2 (well clear of the 15 floor) — so those four stay
+// unmistakable from each other even at a 3px bar or 7px dot. Fourteen
+// categories exceeds what any hue-only palette can make pairwise-distinct
+// (the skill's own 8-hue reference palette only clears all-pairs CVD for 3
+// slots); this is accepted per the task brief. Any category missing here
+// falls back to TASK_CAT_FALLBACK. Keys must exactly match TASK_CATS above.
+var TASK_CAT_COLORS = {
+  "Finances":        "#c45034",
+  "Errands":         "#00949a",
+  "Admin":           "#9e7e00",
+  "Health":          "#dc3864",
+  "Social":          "#0090af",
+  "Study":           "#6e69f3",
+  "Meal Prep":       "#7d8200",
+  "Car & Transport": "#008abe",
+  "Home":            "#c54e44",
+  "Family":          "#3f77d5",
+  "Work":            "#00a29b",
+  "Self-care":       "#8d5fc5",
+  "Shopping":        "#bd5b00",
+  "Other":           "#218cb5"
+};
+var TASK_CAT_FALLBACK = "#7A8699";
+
 // Uni subjects are fully dynamic now (stored in data.uni.subjects, not here) — add
 // them in the Uni tab's "+ Subject" button, or paste a syllabus into the Gemini
 // importer, which creates subjects automatically from whatever the syllabus contains.
