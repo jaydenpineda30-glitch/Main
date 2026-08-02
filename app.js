@@ -15684,6 +15684,149 @@ function App() {
       }));
     }));
   }
+  function renderNecessitiesCard() {
+    var W = window.WeekUtils;
+    var nec = data.personal && data.personal.necessities || {
+      items: [],
+      ticks: {}
+    };
+    var items = nec.items || [];
+    var today = todayStr();
+    var isDone = function isDone(id) {
+      return W.isDoneThisWeek((nec.ticks || {})[id], today);
+    };
+    var doneCount = items.filter(function (i) {
+      return isDone(i.id);
+    }).length;
+    var elapsed = W.weekElapsedFraction(today);
+    var progress = items.length ? doneCount / items.length : 0;
+    var behind = progress < elapsed - 0.15;
+    var daysLeft = Math.round((1 - elapsed) * 7);
+    function toggle(id) {
+      setData(function (p) {
+        var cur = p.personal && p.personal.necessities || {
+          items: [],
+          ticks: {}
+        };
+        var ticks = _objectSpread({}, cur.ticks || {});
+        if (W.isDoneThisWeek(ticks[id], todayStr())) delete ticks[id];else ticks[id] = todayStr();
+        return _objectSpread(_objectSpread({}, p), {}, {
+          personal: _objectSpread(_objectSpread({}, p.personal), {}, {
+            necessities: _objectSpread(_objectSpread({}, cur), {}, {
+              items: cur.items || [],
+              ticks: ticks
+            })
+          })
+        });
+      });
+    }
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card-rim",
+      style: card()
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: sT
+    }, "Weekly necessities"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8,
+        alignItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 10,
+        color: T.text3
+      }
+    }, doneCount, "/", items.length), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 10,
+        padding: "2px 9px"
+      }),
+      onClick: function onClick() {
+        setModal("edit_necessities");
+        setMForm({
+          newItem: ""
+        });
+      }
+    }, "Edit"))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        height: 5,
+        borderRadius: 3,
+        background: "rgba(255,255,255,0.06)",
+        overflow: "hidden",
+        marginBottom: 4
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: progress * 100 + "%",
+        height: "100%",
+        borderRadius: 3,
+        background: behind ? T.warn : T.success,
+        transition: "width 0.25s"
+      }
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 9,
+        color: T.text3,
+        marginBottom: 10
+      }
+    }, daysLeft === 0 ? "Last day · resets Monday" : daysLeft + " day" + (daysLeft === 1 ? "" : "s") + " left · resets Monday"), items.length === 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text2
+      }
+    }, "No necessities yet \u2014 hit Edit to add the things you do every week."), items.map(function (i) {
+      var done = isDone(i.id);
+      var urgent = !done && daysLeft <= 2; // Friday onward — matches the spec
+      return /*#__PURE__*/React.createElement("div", {
+        key: i.id,
+        onClick: function onClick() {
+          toggle(i.id);
+        },
+        style: {
+          display: "flex",
+          gap: 9,
+          alignItems: "center",
+          padding: "8px 10px",
+          marginBottom: 5,
+          borderRadius: 10,
+          cursor: "pointer",
+          opacity: done ? 0.5 : 1,
+          background: "rgba(225,234,255,0.04)",
+          border: "1px solid " + (urgent ? T.warn + "55" : "rgba(255,255,255,0.07)")
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        type: "checkbox",
+        readOnly: true,
+        checked: done,
+        style: {
+          accentColor: T.accent,
+          flexShrink: 0,
+          pointerEvents: "none"
+        }
+      }), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          color: T.text,
+          flex: 1,
+          minWidth: 0,
+          textDecoration: done ? "line-through" : "none"
+        }
+      }, i.name), urgent && /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 9,
+          color: T.warn,
+          flexShrink: 0
+        }
+      }, daysLeft === 0 ? "today" : daysLeft + " day" + (daysLeft === 1 ? "" : "s") + " left"));
+    }));
+  }
   function renderHomeCard(id) {
     switch (id) {
       case "shopping":
@@ -15726,8 +15869,7 @@ function App() {
           mob: mob
         });
       case "necessities":
-        return null;
-      // Task 8
+        return renderNecessitiesCard();
       default:
         return null;
     }
@@ -18509,14 +18651,124 @@ function App() {
       background: "rgba(255,255,255,0.2)",
       margin: "0 auto 20px"
     }
-  }), modal !== "task_detail" && /*#__PURE__*/React.createElement("div", {
+  }), modal !== "task_detail" && modal !== "edit_necessities" && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 15,
       fontWeight: 600,
       marginBottom: 16,
       color: T.text
     }
-  }, modal === "add_subject" && "Add subject", modal === "add_exercise" && "Add exercise", modal === "log_weight" && "Log weight · " + (mForm.exName || ""), modal === "add_task" && "Add task", modal === "edit_rotation" && "Edit rotation template", modal === "complete_task" && "Mark task done", modal === "edit_subject" && "Edit subject"), modal === "add_exercise" && function () {
+  }, modal === "add_subject" && "Add subject", modal === "add_exercise" && "Add exercise", modal === "log_weight" && "Log weight · " + (mForm.exName || ""), modal === "add_task" && "Add task", modal === "edit_rotation" && "Edit rotation template", modal === "complete_task" && "Mark task done", modal === "edit_subject" && "Edit subject"), modal === "edit_necessities" && function () {
+    var nec = data.personal && data.personal.necessities || {
+      items: [],
+      ticks: {}
+    };
+    function setItems(next) {
+      setData(function (p) {
+        var cur = p.personal && p.personal.necessities || {
+          items: [],
+          ticks: {}
+        };
+        return _objectSpread(_objectSpread({}, p), {}, {
+          personal: _objectSpread(_objectSpread({}, p.personal), {}, {
+            necessities: _objectSpread(_objectSpread({}, cur), {}, {
+              items: next
+            })
+          })
+        });
+      });
+    }
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        fontWeight: 600,
+        color: T.text,
+        marginBottom: 12
+      }
+    }, "Weekly necessities"), (nec.items || []).map(function (i) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: i.id,
+        style: {
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+          marginBottom: 6
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          color: T.text,
+          flex: 1
+        }
+      }, i.name), /*#__PURE__*/React.createElement("button", {
+        onClick: function onClick() {
+          setItems((nec.items || []).filter(function (x) {
+            return x.id !== i.id;
+          }));
+        },
+        style: {
+          background: "none",
+          border: "none",
+          color: T.danger,
+          cursor: "pointer",
+          fontSize: 15,
+          lineHeight: 1,
+          padding: "0 4px"
+        },
+        title: "Remove"
+      }, "\xD7"));
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        marginTop: 12
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      style: _objectSpread(_objectSpread({}, PINP), {}, {
+        flex: 1
+      }),
+      placeholder: "Add a weekly necessity\u2026",
+      value: mForm.newItem || "",
+      onChange: function onChange(e) {
+        setMForm(function (f) {
+          return _objectSpread(_objectSpread({}, f), {}, {
+            newItem: e.target.value
+          });
+        });
+      },
+      onKeyDown: function onKeyDown(e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          var v = (mForm.newItem || "").trim();
+          if (!v) return;
+          setItems((nec.items || []).concat([{
+            id: Date.now(),
+            name: v
+          }]));
+          setMForm(function (f) {
+            return _objectSpread(_objectSpread({}, f), {}, {
+              newItem: ""
+            });
+          });
+        }
+      }
+    }), /*#__PURE__*/React.createElement("button", {
+      style: btnP,
+      onClick: function onClick() {
+        var v = (mForm.newItem || "").trim();
+        if (!v) return;
+        setItems((nec.items || []).concat([{
+          id: Date.now(),
+          name: v
+        }]));
+        setMForm(function (f) {
+          return _objectSpread(_objectSpread({}, f), {}, {
+            newItem: ""
+          });
+        });
+      }
+    }, "Add")));
+  }(), modal === "add_exercise" && function () {
     var names = [];
     var seen = {};
     (data.gym.exercises || []).forEach(function (ex) {
@@ -19241,7 +19493,7 @@ function App() {
         });
       }
     }, "Add")));
-  }(), modal !== "task_detail" && /*#__PURE__*/React.createElement("div", {
+  }(), modal !== "task_detail" && modal !== "edit_necessities" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -19271,7 +19523,7 @@ function App() {
     onClick: function onClick() {
       setModal(null);
     }
-  }, "Cancel")), modal === "task_detail" && /*#__PURE__*/React.createElement("div", {
+  }, "Cancel")), (modal === "task_detail" || modal === "edit_necessities") && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,

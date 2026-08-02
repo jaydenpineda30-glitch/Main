@@ -4430,6 +4430,69 @@ function App(){
       </div>);
   }
 
+  function renderNecessitiesCard(){
+    const W=window.WeekUtils;
+    const nec=(data.personal&&data.personal.necessities)||{items:[],ticks:{}};
+    const items=nec.items||[];
+    const today=todayStr();
+    const isDone=function(id){return W.isDoneThisWeek((nec.ticks||{})[id],today);};
+    const doneCount=items.filter(function(i){return isDone(i.id);}).length;
+    const elapsed=W.weekElapsedFraction(today);
+    const progress=items.length?doneCount/items.length:0;
+    const behind=progress<elapsed-0.15;
+    const daysLeft=Math.round((1-elapsed)*7);
+
+    function toggle(id){
+      setData(function(p){
+        const cur=(p.personal&&p.personal.necessities)||{items:[],ticks:{}};
+        const ticks={...(cur.ticks||{})};
+        if(W.isDoneThisWeek(ticks[id],todayStr())) delete ticks[id];
+        else ticks[id]=todayStr();
+        return{...p,personal:{...p.personal,necessities:{...cur,items:cur.items||[],ticks:ticks}}};
+      });
+    }
+
+    return(
+      <div className="card-rim" style={card()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={sT}>Weekly necessities</div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <span style={{fontSize:10,color:T.text3}}>{doneCount}/{items.length}</span>
+            <button style={{...btn,fontSize:10,padding:"2px 9px"}}
+              onClick={function(){setModal("edit_necessities");setMForm({newItem:""});}}>Edit</button>
+          </div>
+        </div>
+
+        <div style={{height:5,borderRadius:3,background:"rgba(255,255,255,0.06)",overflow:"hidden",marginBottom:4}}>
+          <div style={{width:(progress*100)+"%",height:"100%",borderRadius:3,
+                       background:behind?T.warn:T.success,transition:"width 0.25s"}}/>
+        </div>
+        <div style={{fontSize:9,color:T.text3,marginBottom:10}}>
+          {daysLeft===0?"Last day · resets Monday":daysLeft+" day"+(daysLeft===1?"":"s")+" left · resets Monday"}
+        </div>
+
+        {items.length===0&&<div style={{fontSize:12,color:T.text2}}>
+          No necessities yet — hit Edit to add the things you do every week.</div>}
+
+        {items.map(function(i){
+          const done=isDone(i.id);
+          const urgent=!done&&daysLeft<=2;   // Friday onward — matches the spec
+          return(
+            <div key={i.id} onClick={function(){toggle(i.id);}}
+              style={{display:"flex",gap:9,alignItems:"center",padding:"8px 10px",marginBottom:5,
+                      borderRadius:10,cursor:"pointer",opacity:done?0.5:1,
+                      background:"rgba(225,234,255,0.04)",
+                      border:"1px solid "+(urgent?T.warn+"55":"rgba(255,255,255,0.07)")}}>
+              <input type="checkbox" readOnly checked={done}
+                style={{accentColor:T.accent,flexShrink:0,pointerEvents:"none"}}/>
+              <span style={{fontSize:12,color:T.text,flex:1,minWidth:0,
+                            textDecoration:done?"line-through":"none"}}>{i.name}</span>
+              {urgent&&<span style={{fontSize:9,color:T.warn,flexShrink:0}}>
+                {daysLeft===0?"today":daysLeft+" day"+(daysLeft===1?"":"s")+" left"}</span>}
+            </div>);})}
+      </div>);
+  }
+
   function renderHomeCard(id){
     switch(id){
       case "shopping":    return <ErrorBoundary name="ShoppingHome"><ShoppingHomeCard items={data.shopping||[]} onUpdate={updateShopping} onOpen={function(){setPage("Shopping");}} cardStyle={card()} mob={mob}/></ErrorBoundary>;
@@ -4442,7 +4505,7 @@ function App(){
       case "tasks":       return renderTasksCard();
       case "classes":     return <UpcomingClassesCard events={dedupedEvents} days={7}
         gcalConnected={gcalConnected} evColor={evColor} evLabel={evLabel} cardStyle={card()} mob={mob}/>;
-      case "necessities": return null;                    // Task 8
+      case "necessities": return renderNecessitiesCard();
       default:            return null;
     }
   }
@@ -4909,7 +4972,38 @@ function App(){
       {modal&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.82)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:200,padding:mob?"0":"16px"}} onClick={function(){setModal(null);}}>
         <div style={{background:"rgba(14,16,40,0.97)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 32px":"22px",width:mob?"100%":modal==="edit_rotation"?"480px":modal==="task_detail"?"380px":"340px",maxWidth:"100%",border:"0.5px solid rgba(91,140,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.1)"}} onClick={function(ev){ev.stopPropagation();}}>
           {mob&&<div style={{width:36,height:4,borderRadius:2,background:"rgba(255,255,255,0.2)",margin:"0 auto 20px"}}/>}
-          {modal!=="task_detail"&&<div style={{fontSize:15,fontWeight:600,marginBottom:16,color:T.text}}>{modal==="add_subject"&&"Add subject"}{modal==="add_exercise"&&"Add exercise"}{modal==="log_weight"&&"Log weight · "+(mForm.exName||"")}{modal==="add_task"&&"Add task"}{modal==="edit_rotation"&&"Edit rotation template"}{modal==="complete_task"&&"Mark task done"}{modal==="edit_subject"&&"Edit subject"}</div>}
+          {modal!=="task_detail"&&modal!=="edit_necessities"&&<div style={{fontSize:15,fontWeight:600,marginBottom:16,color:T.text}}>{modal==="add_subject"&&"Add subject"}{modal==="add_exercise"&&"Add exercise"}{modal==="log_weight"&&"Log weight · "+(mForm.exName||"")}{modal==="add_task"&&"Add task"}{modal==="edit_rotation"&&"Edit rotation template"}{modal==="complete_task"&&"Mark task done"}{modal==="edit_subject"&&"Edit subject"}</div>}
+          {modal==="edit_necessities"&&(function(){
+            const nec=(data.personal&&data.personal.necessities)||{items:[],ticks:{}};
+            function setItems(next){
+              setData(function(p){
+                const cur=(p.personal&&p.personal.necessities)||{items:[],ticks:{}};
+                return{...p,personal:{...p.personal,necessities:{...cur,items:next}}};
+              });
+            }
+            return(<div>
+              <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:12}}>Weekly necessities</div>
+              {(nec.items||[]).map(function(i){return(
+                <div key={i.id} style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+                  <span style={{fontSize:12,color:T.text,flex:1}}>{i.name}</span>
+                  <button onClick={function(){setItems((nec.items||[]).filter(function(x){return x.id!==i.id;}));}}
+                    style={{background:"none",border:"none",color:T.danger,cursor:"pointer",fontSize:15,
+                            lineHeight:1,padding:"0 4px"}} title="Remove">×</button>
+                </div>);})}
+              <div style={{display:"flex",gap:6,marginTop:12}}>
+                <input style={{...PINP,flex:1}} placeholder="Add a weekly necessity…" value={mForm.newItem||""}
+                  onChange={function(e){setMForm(function(f){return{...f,newItem:e.target.value};});}}
+                  onKeyDown={function(e){if(e.key==="Enter"){e.preventDefault();
+                    const v=(mForm.newItem||"").trim();if(!v)return;
+                    setItems((nec.items||[]).concat([{id:Date.now(),name:v}]));
+                    setMForm(function(f){return{...f,newItem:""};});}}}/>
+                <button style={btnP} onClick={function(){
+                  const v=(mForm.newItem||"").trim();if(!v)return;
+                  setItems((nec.items||[]).concat([{id:Date.now(),name:v}]));
+                  setMForm(function(f){return{...f,newItem:""};});}}>Add</button>
+              </div>
+            </div>);
+          })()}
           {modal==="add_exercise"&&(function(){
             var names=[];var seen={};
             (data.gym.exercises||[]).forEach(function(ex){var n=(ex.name||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});
@@ -5002,11 +5096,11 @@ function App(){
               </div>
             </div>);
           })()}
-          {modal!=="task_detail"&&<div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
+          {modal!=="task_detail"&&modal!=="edit_necessities"&&<div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
             {mob?<button style={{...btnP,padding:"13px",fontSize:14,width:"100%",borderRadius:10}} onClick={saveModal}>Save</button>:<button style={btnP} onClick={saveModal}>Save</button>}
             <button style={{...(mob?{...btn,padding:"11px",fontSize:13,width:"100%",borderRadius:10,textAlign:"center"}:btn)}} onClick={function(){setModal(null);}}>Cancel</button>
           </div>}
-          {modal==="task_detail"&&<div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
+          {(modal==="task_detail"||modal==="edit_necessities")&&<div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
             <button style={mob?{...btnP,padding:"13px",fontSize:14,width:"100%",borderRadius:10}:btnP} onClick={function(){setModal(null);}}>Close</button>
           </div>}
         </div>
