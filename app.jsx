@@ -4113,7 +4113,7 @@ function App(){
   }
 
   function card(ex){return{position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow,...(ex||{})};}
-  const sT={fontSize:13,fontWeight:600,marginBottom:12,color:"#cdd5e2",letterSpacing:"-0.01em"};
+  const sT=sTGlobal;   // one definition, so App-local cards and module-level cards cannot drift
   const btn={...btnGlass,padding:"5px 12px"};
   const btnP={...btnGlassP};
   const inp={width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"};

@@ -14315,13 +14315,7 @@ function App() {
       boxShadow: cardShadow
     }, ex || {});
   }
-  var sT = {
-    fontSize: 13,
-    fontWeight: 600,
-    marginBottom: 12,
-    color: "#cdd5e2",
-    letterSpacing: "-0.01em"
-  };
+  var sT = sTGlobal; // one definition, so App-local cards and module-level cards cannot drift
   var btn = _objectSpread(_objectSpread({}, btnGlass), {}, {
     padding: "5px 12px"
   });
