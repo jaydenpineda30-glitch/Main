@@ -1,7 +1,7 @@
 {
   "scripts": {
     "build": "node build.js",
-    "test": "node --test test/"
+    "test": "node --test"
   },
   "dependencies": {
     "firebase-admin": "^13.10.0"
