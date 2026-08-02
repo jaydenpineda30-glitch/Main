@@ -474,6 +474,13 @@ In the home page header block at `app.jsx:4105`, add to the right of the greetin
 
 - [ ] **Step 3: Add the edit chrome to `HomeGridCard`**
 
+`HomeGridCard` is module-level, so it can only use module-level style objects:
+`btnGlass` (`app.jsx:125`), `btnGlassP`, `editPill` (`app.jsx:123`), `PCARD`, `PINP`.
+It must **not** reference `btn`, `btnP`, `card`, `sT` or `T`-derived locals — those are
+declared inside `App()` (`btn` is at `app.jsx:4019`) and referencing one throws a
+`ReferenceError` the moment the component renders. The build and the test suite both
+pass regardless, so this class of mistake only surfaces in the browser.
+
 Extend `HomeGridCard` with the editing props. The card body becomes inert while editing so a drag cannot tick a checkbox:
 
 ```jsx
@@ -510,7 +517,7 @@ function HomeGridCard({span,editing,title,onSpan,onDragStart,onDragOver,isDraggi
           <span style={{display:"flex",gap:3}}>
             {[1,2,3].map(function(n){return(
               <button key={n} onClick={function(){onSpan(n);}}
-                style={{...btn,padding:"1px 7px",fontSize:10,
+                style={{...btnGlass,padding:"1px 7px",fontSize:10,
                         color:span===n?T.accent:T.text3,
                         borderColor:span===n?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.12)"}}
                 title={n===1?"One column":n===2?"Two columns wide":"Full width"}>{n}</button>);})}
