@@ -4439,7 +4439,9 @@ function App(){
     const doneCount=items.filter(function(i){return isDone(i.id);}).length;
     const elapsed=W.weekElapsedFraction(today);
     const progress=items.length?doneCount/items.length:0;
-    const behind=progress<elapsed-0.15;
+    // With no items there is nothing to be behind on — otherwise the card nags from
+    // Tuesday onward about an empty list.
+    const behind=items.length>0&&progress<elapsed-0.15;
     const daysLeft=Math.round((1-elapsed)*7);
 
     function toggle(id){
@@ -4975,10 +4977,15 @@ function App(){
           {modal!=="task_detail"&&modal!=="edit_necessities"&&<div style={{fontSize:15,fontWeight:600,marginBottom:16,color:T.text}}>{modal==="add_subject"&&"Add subject"}{modal==="add_exercise"&&"Add exercise"}{modal==="log_weight"&&"Log weight · "+(mForm.exName||"")}{modal==="add_task"&&"Add task"}{modal==="edit_rotation"&&"Edit rotation template"}{modal==="complete_task"&&"Mark task done"}{modal==="edit_subject"&&"Edit subject"}</div>}
           {modal==="edit_necessities"&&(function(){
             const nec=(data.personal&&data.personal.necessities)||{items:[],ticks:{}};
-            function setItems(next){
+            function setItems(next,dropTickId){
               setData(function(p){
                 const cur=(p.personal&&p.personal.necessities)||{items:[],ticks:{}};
-                return{...p,personal:{...p.personal,necessities:{...cur,items:next}}};
+                // Ticks are the only durable truth here, so a removed item must take its
+                // tick with it — otherwise every deletion leaves a dead key in the doc
+                // that syncs to three devices and never goes away.
+                const ticks={...(cur.ticks||{})};
+                if(dropTickId!==undefined)delete ticks[dropTickId];
+                return{...p,personal:{...p.personal,necessities:{...cur,items:next,ticks:ticks}}};
               });
             }
             return(<div>
@@ -4986,7 +4993,7 @@ function App(){
               {(nec.items||[]).map(function(i){return(
                 <div key={i.id} style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
                   <span style={{fontSize:12,color:T.text,flex:1}}>{i.name}</span>
-                  <button onClick={function(){setItems((nec.items||[]).filter(function(x){return x.id!==i.id;}));}}
+                  <button onClick={function(){setItems((nec.items||[]).filter(function(x){return x.id!==i.id;}),i.id);}}
                     style={{background:"none",border:"none",color:T.danger,cursor:"pointer",fontSize:15,
                             lineHeight:1,padding:"0 4px"}} title="Remove">×</button>
                 </div>);})}

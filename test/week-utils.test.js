@@ -15,6 +15,21 @@ test('weekStartStr handles month and year boundaries', () => {
   assert.strictEqual(W.weekStartStr('2026-03-01'), '2026-02-23');
 });
 
+// Sydney's DST transitions: clocks go back 2026-04-05, forward 2026-10-04.
+// Honest note on what this test is worth: it does NOT discriminate. A millisecond-based
+// implementation (subtract back*864e5) was checked against the shipped date-component
+// one for every date from 2024 to 2030 and they never disagree — because both
+// transitions land on a Sunday, and walking back to Monday never steps over a Sunday.
+// So this is regression coverage of the dates around a transition, not proof of
+// DST-safety. The implementation is still date-component based, which is correct for
+// its own sake and would matter under a timezone that shifts mid-week.
+test('weekStartStr is stable across daylight-saving transitions', () => {
+  assert.strictEqual(W.weekStartStr('2026-04-05'), '2026-03-30', 'the Sunday clocks go back');
+  assert.strictEqual(W.weekStartStr('2026-04-06'), '2026-04-06', 'the Monday after');
+  assert.strictEqual(W.weekStartStr('2026-10-04'), '2026-09-28', 'the Sunday clocks go forward');
+  assert.strictEqual(W.weekStartStr('2026-10-05'), '2026-10-05', 'the Monday after');
+});
+
 test('isDoneThisWeek is true only within the same Monday-based week', () => {
   assert.strictEqual(W.isDoneThisWeek('2026-07-30', '2026-08-02'), true, 'same week');
   assert.strictEqual(W.isDoneThisWeek('2026-07-27', '2026-08-02'), true, 'the Monday itself');

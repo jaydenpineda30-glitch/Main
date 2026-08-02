@@ -15700,7 +15700,9 @@ function App() {
     }).length;
     var elapsed = W.weekElapsedFraction(today);
     var progress = items.length ? doneCount / items.length : 0;
-    var behind = progress < elapsed - 0.15;
+    // With no items there is nothing to be behind on — otherwise the card nags from
+    // Tuesday onward about an empty list.
+    var behind = items.length > 0 && progress < elapsed - 0.15;
     var daysLeft = Math.round((1 - elapsed) * 7);
     function toggle(id) {
       setData(function (p) {
@@ -18663,16 +18665,22 @@ function App() {
       items: [],
       ticks: {}
     };
-    function setItems(next) {
+    function setItems(next, dropTickId) {
       setData(function (p) {
         var cur = p.personal && p.personal.necessities || {
           items: [],
           ticks: {}
         };
+        // Ticks are the only durable truth here, so a removed item must take its
+        // tick with it — otherwise every deletion leaves a dead key in the doc
+        // that syncs to three devices and never goes away.
+        var ticks = _objectSpread({}, cur.ticks || {});
+        if (dropTickId !== undefined) delete ticks[dropTickId];
         return _objectSpread(_objectSpread({}, p), {}, {
           personal: _objectSpread(_objectSpread({}, p.personal), {}, {
             necessities: _objectSpread(_objectSpread({}, cur), {}, {
-              items: next
+              items: next,
+              ticks: ticks
             })
           })
         });
@@ -18704,7 +18712,7 @@ function App() {
         onClick: function onClick() {
           setItems((nec.items || []).filter(function (x) {
             return x.id !== i.id;
-          }));
+          }), i.id);
         },
         style: {
           background: "none",
