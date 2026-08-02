@@ -543,7 +543,9 @@ Replace the desktop grid map from Task 2:
     <HomeGridCard key={e.id} span={e.span} editing={layoutEditing} title={meta.title||e.id}
       isDragging={dragId===e.id} isDropTarget={layoutEditing&&dropIdx===idx&&dragId!==null&&dragId!==e.id}
       onSpan={function(n){saveLayout(window.HomeLayout.setSpan(homeLayout,e.id,n));}}
-      onDragStart={function(ev){ev.preventDefault();setDragId(e.id);setDropIdx(idx);}}
+      onDragStart={function(ev){
+        if(ev.button!==0||!ev.isPrimary)return;   // ignore right/middle click and secondary pointers
+        ev.preventDefault();setDragId(e.id);setDropIdx(idx);}}
       onDragOver={function(){if(dragId)setDropIdx(idx);}}>
       {body}
     </HomeGridCard>
@@ -556,17 +558,37 @@ And commit the drop on pointer release, anywhere on the page:
 ```jsx
 React.useEffect(function(){
   if(!dragId)return;
-  function finish(){
+  function clear(){setDragId(null);setDropIdx(null);}
+  function commit(){
     const from=homeLayout.findIndex(function(x){return x.id===dragId;});
     if(from>=0&&dropIdx!==null&&dropIdx!==from){
       saveLayout(window.HomeLayout.moveCard(homeLayout,from,dropIdx));
     }
-    setDragId(null);setDropIdx(null);
+    clear();
   }
-  window.addEventListener("pointerup",finish);
-  return function(){window.removeEventListener("pointerup",finish);};
+  // A pointer released OUTSIDE the browser window dispatches no pointerup to the
+  // page, so the drag would stay armed: the next click anywhere — including on
+  // "Done" — would commit a reorder the user never asked for. The first pointer
+  // movement back over the page with no button held disarms it instead.
+  function disarmIfReleased(ev){if(ev.buttons===0)clear();}
+  window.addEventListener("pointerup",commit);
+  window.addEventListener("pointercancel",clear);
+  window.addEventListener("pointermove",disarmIfReleased);
+  window.addEventListener("blur",clear);
+  return function(){
+    window.removeEventListener("pointerup",commit);
+    window.removeEventListener("pointercancel",clear);
+    window.removeEventListener("pointermove",disarmIfReleased);
+    window.removeEventListener("blur",clear);
+  };
 },[dragId,dropIdx,homeLayout]);
 ```
+
+**Do NOT use `setPointerCapture` here.** It is the textbook answer to a lost
+`pointerup`, and it would break this drag: capture routes every subsequent pointer
+event to the capturing element, so the `onPointerEnter` handlers on the other cards
+would stop firing and `dropIdx` would never update. The four listeners above close
+the same hole without touching the hover-tracking mechanism.
 
 - [ ] **Step 5: Build and verify by hand**
 
