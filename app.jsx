@@ -2725,7 +2725,11 @@ function ShoppingHomeCard({items,onUpdate,onOpen,cardStyle,mob}){
 // Masonry-on-CSS-Grid: a card's rendered height is measured and converted into a
 // row span against a fine grid-auto-rows unit, so cards pack tightly upward while
 // keeping an explicit column position. This is what CSS multi-column could not do.
-const GRID_ROW_UNIT=8;   // px per implicit row
+// Row unit is 1px and the ROW gap is 0, so a card can reserve its exact measured
+// height plus one gap. An 8px unit with an 18px row gap quantised every card to a
+// 26px step, leaving up to 25px of slack below it — visibly uneven gutters, which
+// is the bug this grid existed to fix. The column gap is still a real gap.
+const GRID_ROW_UNIT=1;   // px per implicit row
 const GRID_GAP=18;       // px between cards, both axes
 
 function HomeGridCard({span,editing,title,onSpan,onDragStart,onDragOver,isDragging,isDropTarget,children}){
@@ -2736,7 +2740,7 @@ function HomeGridCard({span,editing,title,onSpan,onDragStart,onDragOver,isDraggi
     if(!el)return;
     function measure(){
       const h=el.getBoundingClientRect().height;
-      setRows(Math.max(1,Math.ceil((h+GRID_GAP)/(GRID_ROW_UNIT+GRID_GAP))));
+      setRows(Math.max(1,Math.ceil(h)+GRID_GAP));
     }
     measure();
     if(typeof ResizeObserver==="undefined")return;
@@ -2749,7 +2753,10 @@ function HomeGridCard({span,editing,title,onSpan,onDragStart,onDragOver,isDraggi
                  outline:isDropTarget?"2px dashed "+T.accent:"none",outlineOffset:4,borderRadius:22,
                  transition:"opacity 0.12s"}}
          onPointerEnter={editing?onDragOver:undefined}>
-      <div ref={ref} style={{display:"flow-root"}}>
+      {/* home-grid-cell zeroes the card's own bottom margin (see dashboard.css) so the
+          measured height is exactly what you see, and all vertical spacing comes from
+          the one GRID_GAP this cell reserves. flow-root keeps that measurement honest. */}
+      <div ref={ref} className="home-grid-cell" style={{display:"flow-root"}}>
         {editing&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
                                gap:8,padding:"6px 10px",marginBottom:6,borderRadius:10,
                                background:"rgba(91,140,255,0.10)",border:"1px solid rgba(91,140,255,0.35)"}}>
@@ -4391,7 +4398,7 @@ function App(){
                 const body=renderHomeCard(e.id);
                 return body?<div key={e.id} style={{marginBottom:12}}>{body}</div>:null;
               })}</div>
-            :<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gridAutoRows:GRID_ROW_UNIT+"px",gridAutoFlow:"row dense",gap:GRID_GAP,alignItems:"start"}}>
+            :<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gridAutoRows:GRID_ROW_UNIT+"px",gridAutoFlow:"row dense",columnGap:GRID_GAP,rowGap:0,alignItems:"start"}}>
               {homeLayout.map(function(e,idx){
                 const body=renderHomeCard(e.id);
                 if(!body)return null;

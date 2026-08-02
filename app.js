@@ -10876,7 +10876,11 @@ function ShoppingHomeCard(_ref6) {
 // Masonry-on-CSS-Grid: a card's rendered height is measured and converted into a
 // row span against a fine grid-auto-rows unit, so cards pack tightly upward while
 // keeping an explicit column position. This is what CSS multi-column could not do.
-var GRID_ROW_UNIT = 8; // px per implicit row
+// Row unit is 1px and the ROW gap is 0, so a card can reserve its exact measured
+// height plus one gap. An 8px unit with an 18px row gap quantised every card to a
+// 26px step, leaving up to 25px of slack below it — visibly uneven gutters, which
+// is the bug this grid existed to fix. The column gap is still a real gap.
+var GRID_ROW_UNIT = 1; // px per implicit row
 var GRID_GAP = 18; // px between cards, both axes
 
 function HomeGridCard(_ref7) {
@@ -10899,7 +10903,7 @@ function HomeGridCard(_ref7) {
     if (!el) return;
     function measure() {
       var h = el.getBoundingClientRect().height;
-      setRows(Math.max(1, Math.ceil((h + GRID_GAP) / (GRID_ROW_UNIT + GRID_GAP))));
+      setRows(Math.max(1, Math.ceil(h) + GRID_GAP));
     }
     measure();
     if (typeof ResizeObserver === "undefined") return;
@@ -10922,6 +10926,7 @@ function HomeGridCard(_ref7) {
     onPointerEnter: editing ? onDragOver : undefined
   }, /*#__PURE__*/React.createElement("div", {
     ref: ref,
+    className: "home-grid-cell",
     style: {
       display: "flow-root"
     }
@@ -16317,7 +16322,8 @@ function App() {
       gridTemplateColumns: "repeat(3,1fr)",
       gridAutoRows: GRID_ROW_UNIT + "px",
       gridAutoFlow: "row dense",
-      gap: GRID_GAP,
+      columnGap: GRID_GAP,
+      rowGap: 0,
       alignItems: "start"
     }
   }, homeLayout.map(function (e, idx) {

@@ -127,3 +127,9 @@ button:active:not([disabled]){transform:scale(0.97);}
 .br-tl-wrap{position:relative;display:flex;flex-direction:column;gap:14px;}
 .br-tl-wrap::before{content:'';position:absolute;left:15px;top:15px;bottom:15px;width:2px;background:rgba(91,140,255,0.18);z-index:0;}
 .br-tl-item{position:relative;display:flex;gap:12px;align-items:flex-start;}
+
+/* --- Home grid cells --- */
+/* Cards set their own bottom margin for the old stacked layout. Inside the home
+   grid that margin would add to the grid's reserved gap and make gutters uneven,
+   so it is removed here: the grid owns all vertical spacing. */
+.home-grid-cell > div > *{margin-bottom:0!important;}
