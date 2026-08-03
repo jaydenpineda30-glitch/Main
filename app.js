@@ -998,6 +998,7 @@ function isAssessmentEvent(ev) {
   })) return true;
   return false;
 }
+var CLOSE_ONLY_MODALS = ["task_detail", "edit_necessities", "day_done"];
 var UNI_KEYS = ["uni", "tafe", "rmit", "university", "curtin", "monash", "deakin", "uts", "usyd", "uq", "uwa", "anu", "unsw", "federation"];
 function isUniCalEv(ev) {
   return ev.calName && UNI_KEYS.some(function (k) {
@@ -11412,6 +11413,10 @@ function App() {
     _useState252 = _slicedToArray(_useState251, 2),
     modal = _useState252[0],
     setModal = _useState252[1];
+  // Modals that own their whole body: they render their own heading and their own
+  // Close, and get neither the generic title bar nor the generic Save/Cancel. Save
+  // would fall through to saveModal()'s default branch and toast "Saved!" over a no-op.
+  var closeOnlyModal = CLOSE_ONLY_MODALS.indexOf(modal) >= 0;
   var _useState253 = useState({}),
     _useState254 = _slicedToArray(_useState253, 2),
     mForm = _useState254[0],
@@ -13915,6 +13920,20 @@ function App() {
     });
     return match || ev.calName || "Google";
   }
+
+  // What actually got done, by day. Reads `archived` as well as `tasks` on purpose:
+  // archiveDone() moves completed tasks out of the live list, and without this the
+  // calendar's history would empty itself every time the task list is tidied.
+  // Local only — nothing here touches Google Calendar.
+  var completionsByDay = React.useMemo(function () {
+    var map = {};
+    var all = (data.personal && data.personal.tasks || []).concat(data.personal && data.personal.archived || []);
+    all.forEach(function (t) {
+      if (!t.done || !t.completedAt) return;
+      (map[t.completedAt] = map[t.completedAt] || []).push(t);
+    });
+    return map;
+  }, [data.personal]);
   function renderWeek() {
     if (mob) {
       var dayEvs = visibleGcalEvents.filter(function (ev) {
@@ -14060,7 +14079,46 @@ function App() {
           name: "pin",
           size: 9
         }), ev.location)));
-      }));
+      }), (completionsByDay[activeDay] || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+        style: {
+          marginTop: 14,
+          paddingTop: 10,
+          borderTop: "0.5px solid " + T.border
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 10,
+          color: T.text3,
+          marginBottom: 8,
+          textTransform: "uppercase",
+          letterSpacing: 0.5
+        }
+      }, "Finished ", activeDay === todayStr() ? "today" : "that day"), (completionsByDay[activeDay] || []).map(function (t) {
+        var col = catColor(t.cat || "Other");
+        return /*#__PURE__*/React.createElement("div", {
+          key: t.id,
+          style: {
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            marginBottom: 6
+          }
+        }, /*#__PURE__*/React.createElement("span", {
+          style: {
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: col,
+            flexShrink: 0
+          }
+        }), /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontSize: 12,
+            color: T.text2,
+            flex: 1
+          }
+        }, t.name));
+      })));
     }
     var PPM = 0.26;
     var allEvs = [];
@@ -14299,7 +14357,58 @@ function App() {
             textDecoration: isDone ? "line-through" : "none"
           }
         }, isDone ? "✓ " : "", t.name));
-      })));
+      })), (completionsByDay[ds] || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+        style: {
+          padding: "6px 4px 0",
+          marginTop: 6,
+          borderTop: "0.5px solid " + T.border
+        }
+      }, (completionsByDay[ds] || []).slice(0, 3).map(function (t) {
+        var col = catColor(t.cat || "Other");
+        return /*#__PURE__*/React.createElement("div", {
+          key: t.id,
+          style: {
+            display: "flex",
+            gap: 5,
+            alignItems: "center",
+            marginBottom: 3
+          }
+        }, /*#__PURE__*/React.createElement("span", {
+          style: {
+            width: 5,
+            height: 5,
+            borderRadius: "50%",
+            background: col,
+            flexShrink: 0,
+            boxShadow: "0 0 5px " + col + "90"
+          }
+        }), /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontSize: 9,
+            color: T.text2,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap"
+          },
+          title: t.name
+        }, t.name));
+      }), (completionsByDay[ds] || []).length > 3 && /*#__PURE__*/React.createElement("button", {
+        onClick: function onClick(e) {
+          e.stopPropagation();
+          setModal("day_done");
+          setMForm({
+            date: ds
+          });
+        },
+        style: {
+          background: "none",
+          border: "none",
+          color: T.text3,
+          cursor: "pointer",
+          fontSize: 9,
+          padding: 0
+        }
+      }, "+", (completionsByDay[ds] || []).length - 3, " more")));
     })));
   }
   function card(ex) {
@@ -18653,7 +18762,7 @@ function App() {
       background: "rgba(255,255,255,0.2)",
       margin: "0 auto 20px"
     }
-  }), modal !== "task_detail" && modal !== "edit_necessities" && /*#__PURE__*/React.createElement("div", {
+  }), !closeOnlyModal && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 15,
       fontWeight: 600,
@@ -19501,7 +19610,56 @@ function App() {
         });
       }
     }, "Add")));
-  }(), modal !== "task_detail" && modal !== "edit_necessities" && /*#__PURE__*/React.createElement("div", {
+  }(), modal === "day_done" && function () {
+    var done = completionsByDay[mForm.date] || [];
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        fontWeight: 600,
+        color: T.text,
+        marginBottom: 12
+      }
+    }, "Finished ", new Date(mForm.date + "T12:00:00").toLocaleDateString("en-AU", {
+      weekday: "long",
+      day: "numeric",
+      month: "long"
+    })), done.length === 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text3
+      }
+    }, "Nothing recorded for this day."), done.map(function (t) {
+      var col = catColor(t.cat || "Other");
+      return /*#__PURE__*/React.createElement("div", {
+        key: t.id,
+        style: {
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+          marginBottom: 8
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: col,
+          flexShrink: 0
+        }
+      }), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          color: T.text,
+          flex: 1
+        }
+      }, t.name), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 10,
+          color: T.text3
+        }
+      }, t.completedTime ? fmtTime12(t.completedTime) : ""));
+    }));
+  }(), !closeOnlyModal && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -19531,7 +19689,7 @@ function App() {
     onClick: function onClick() {
       setModal(null);
     }
-  }, "Cancel")), (modal === "task_detail" || modal === "edit_necessities") && /*#__PURE__*/React.createElement("div", {
+  }, "Cancel")), closeOnlyModal && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,

@@ -354,6 +354,7 @@ function isAssessmentEvent(ev){
   if(ASSESS_KEYWORDS.some(function(k){return combinedLower.includes(k.toLowerCase());}))return true;
   return false;
 }
+const CLOSE_ONLY_MODALS=["task_detail","edit_necessities","day_done"];
 const UNI_KEYS=["uni","tafe","rmit","university","curtin","monash","deakin","uts","usyd","uq","uwa","anu","unsw","federation"];
 function isUniCalEv(ev){return ev.calName&&UNI_KEYS.some(function(k){return ev.calName.toLowerCase().includes(k);});}
 function isGoTabEvent(ev){
@@ -2904,6 +2905,10 @@ function App(){
   const [reflIn,setReflIn]=useState("");
   const [reflAnalysis,setReflAnalysis]=useState(null);
   const [modal,setModal]=useState(null);
+  // Modals that own their whole body: they render their own heading and their own
+  // Close, and get neither the generic title bar nor the generic Save/Cancel. Save
+  // would fall through to saveModal()'s default branch and toast "Saved!" over a no-op.
+  const closeOnlyModal=CLOSE_ONLY_MODALS.indexOf(modal)>=0;
   const [mForm,setMForm]=useState({});
   const [syncStatus,setSyncStatus]=useState("loading");
   const [obsExportStatus,setObsExportStatus]=useState("idle"); // idle | running | done | error
@@ -4044,6 +4049,21 @@ function App(){
   function evColor(ev){return ev.calColor||"#4285F4";}
   function evLabel(ev){const keys=(data.uni.subjects||[]).map(function(s){return s.name;});const match=keys.find(function(k){return ev.title&&k&&ev.title.toUpperCase().includes(k.toUpperCase());});return match||ev.calName||"Google";}
 
+  // What actually got done, by day. Reads `archived` as well as `tasks` on purpose:
+  // archiveDone() moves completed tasks out of the live list, and without this the
+  // calendar's history would empty itself every time the task list is tidied.
+  // Local only — nothing here touches Google Calendar.
+  const completionsByDay=React.useMemo(function(){
+    const map={};
+    const all=((data.personal&&data.personal.tasks)||[])
+      .concat((data.personal&&data.personal.archived)||[]);
+    all.forEach(function(t){
+      if(!t.done||!t.completedAt)return;
+      (map[t.completedAt]=map[t.completedAt]||[]).push(t);
+    });
+    return map;
+  },[data.personal]);
+
   function renderWeek(){
     if(mob){
       const dayEvs=visibleGcalEvents.filter(function(ev){return ev.date===activeDay;}).sort(function(a,b){return(a.time||"").localeCompare(b.time||"");});
@@ -4073,6 +4093,18 @@ function App(){
                 </div>
               </div>
             );})}
+          {(completionsByDay[activeDay]||[]).length>0&&<div style={{marginTop:14,paddingTop:10,
+              borderTop:"0.5px solid "+T.border}}>
+            <div style={{fontSize:10,color:T.text3,marginBottom:8,textTransform:"uppercase",
+                         letterSpacing:0.5}}>Finished {activeDay===todayStr()?"today":"that day"}</div>
+            {(completionsByDay[activeDay]||[]).map(function(t){
+              const col=catColor(t.cat||"Other");
+              return(
+                <div key={t.id} style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+                  <span style={{width:6,height:6,borderRadius:"50%",background:col,flexShrink:0}}/>
+                  <span style={{fontSize:12,color:T.text2,flex:1}}>{t.name}</span>
+                </div>);})}
+          </div>}
         </div>
       );
     }
@@ -4105,6 +4137,25 @@ function App(){
                 {timedEvs.map(function(ev){const col=evColor(ev);const tp=parseTimes(ev.time);return(<div key={ev.id} style={{position:"absolute",top:(tp.start-minH*60)*PPM,left:1,right:1,height:Math.max((tp.end-tp.start)*PPM,10),borderRadius:3,background:col+"18",borderLeft:"2px solid "+col,padding:"1px 3px",overflow:"hidden",boxSizing:"border-box",zIndex:5}}><div style={{fontSize:6.5,fontWeight:700,color:col,whiteSpace:"nowrap",overflow:"hidden"}}>{evLabel(ev)}</div></div>);})}
                 {data.personal.tasks.filter(function(t){return t.scheduledDate===ds&&t.scheduledTime;}).map(function(t){const sm=toMins(t.scheduledTime);const em=sm+(t.scheduledDuration||60);const isDone=!!t.done;return(<div key={"sched_"+t.id} title={(isDone?"✓ Done · ":"")+t.name+" · "+t.scheduledTime+" ("+(t.scheduledDuration||60)+"min)"} style={{position:"absolute",top:Math.max((sm-minH*60)*PPM,0),left:1,right:1,height:Math.max((em-sm)*PPM,10),borderRadius:3,background:isDone?"rgba(105,240,174,0.14)":"rgba(91,140,255,0.18)",border:isDone?"1px solid rgba(105,240,174,0.55)":"1px dashed rgba(91,140,255,0.65)",padding:"1px 3px",overflow:"hidden",boxSizing:"border-box",zIndex:6,cursor:"pointer",opacity:isDone?0.7:1}} onClick={function(e){e.stopPropagation();openSchedulePicker(t.id,t.scheduledDate,t.scheduledTime,t.scheduledDuration);}}><div style={{fontSize:6.5,fontWeight:700,color:isDone?T.success:T.accent,whiteSpace:"nowrap",overflow:"hidden",textDecoration:isDone?"line-through":"none"}}>{isDone?"✓ ":""}{t.name}</div></div>);})}
               </div>
+              {/* Finished-that-day strip. Lives inside the day column rather than as a
+                  separate band below the grid, so it stays aligned without restructuring
+                  the calendar. No strikethrough — this is a record of work done, not of
+                  something cancelled. */}
+              {(completionsByDay[ds]||[]).length>0&&<div style={{padding:"6px 4px 0",marginTop:6,borderTop:"0.5px solid "+T.border}}>
+                {(completionsByDay[ds]||[]).slice(0,3).map(function(t){
+                  const col=catColor(t.cat||"Other");
+                  return(
+                    <div key={t.id} style={{display:"flex",gap:5,alignItems:"center",marginBottom:3}}>
+                      <span style={{width:5,height:5,borderRadius:"50%",background:col,flexShrink:0,
+                                    boxShadow:"0 0 5px "+col+"90"}}/>
+                      <span style={{fontSize:9,color:T.text2,overflow:"hidden",textOverflow:"ellipsis",
+                                    whiteSpace:"nowrap"}} title={t.name}>{t.name}</span>
+                    </div>);})}
+                {(completionsByDay[ds]||[]).length>3&&<button
+                  onClick={function(e){e.stopPropagation();setModal("day_done");setMForm({date:ds});}}
+                  style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:9,
+                          padding:0}}>+{(completionsByDay[ds]||[]).length-3} more</button>}
+              </div>}
             </div>);
           })}
         </div>
@@ -4974,7 +5025,7 @@ function App(){
       {modal&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.82)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:200,padding:mob?"0":"16px"}} onClick={function(){setModal(null);}}>
         <div style={{background:"rgba(14,16,40,0.97)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 32px":"22px",width:mob?"100%":modal==="edit_rotation"?"480px":modal==="task_detail"?"380px":"340px",maxWidth:"100%",border:"0.5px solid rgba(91,140,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.1)"}} onClick={function(ev){ev.stopPropagation();}}>
           {mob&&<div style={{width:36,height:4,borderRadius:2,background:"rgba(255,255,255,0.2)",margin:"0 auto 20px"}}/>}
-          {modal!=="task_detail"&&modal!=="edit_necessities"&&<div style={{fontSize:15,fontWeight:600,marginBottom:16,color:T.text}}>{modal==="add_subject"&&"Add subject"}{modal==="add_exercise"&&"Add exercise"}{modal==="log_weight"&&"Log weight · "+(mForm.exName||"")}{modal==="add_task"&&"Add task"}{modal==="edit_rotation"&&"Edit rotation template"}{modal==="complete_task"&&"Mark task done"}{modal==="edit_subject"&&"Edit subject"}</div>}
+          {!closeOnlyModal&&<div style={{fontSize:15,fontWeight:600,marginBottom:16,color:T.text}}>{modal==="add_subject"&&"Add subject"}{modal==="add_exercise"&&"Add exercise"}{modal==="log_weight"&&"Log weight · "+(mForm.exName||"")}{modal==="add_task"&&"Add task"}{modal==="edit_rotation"&&"Edit rotation template"}{modal==="complete_task"&&"Mark task done"}{modal==="edit_subject"&&"Edit subject"}</div>}
           {modal==="edit_necessities"&&(function(){
             const nec=(data.personal&&data.personal.necessities)||{items:[],ticks:{}};
             function setItems(next,dropTickId){
@@ -5103,11 +5154,29 @@ function App(){
               </div>
             </div>);
           })()}
-          {modal!=="task_detail"&&modal!=="edit_necessities"&&<div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
+          {modal==="day_done"&&(function(){
+            const done=completionsByDay[mForm.date]||[];
+            return(<div>
+              <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:12}}>
+                Finished {new Date(mForm.date+"T12:00:00").toLocaleDateString("en-AU",
+                  {weekday:"long",day:"numeric",month:"long"})}</div>
+              {done.length===0&&<div style={{fontSize:12,color:T.text3}}>Nothing recorded for this day.</div>}
+              {done.map(function(t){
+                const col=catColor(t.cat||"Other");
+                return(
+                  <div key={t.id} style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
+                    <span style={{width:6,height:6,borderRadius:"50%",background:col,flexShrink:0}}/>
+                    <span style={{fontSize:12,color:T.text,flex:1}}>{t.name}</span>
+                    <span style={{fontSize:10,color:T.text3}}>
+                      {t.completedTime?fmtTime12(t.completedTime):""}</span>
+                  </div>);})}
+            </div>);
+          })()}
+          {!closeOnlyModal&&<div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
             {mob?<button style={{...btnP,padding:"13px",fontSize:14,width:"100%",borderRadius:10}} onClick={saveModal}>Save</button>:<button style={btnP} onClick={saveModal}>Save</button>}
             <button style={{...(mob?{...btn,padding:"11px",fontSize:13,width:"100%",borderRadius:10,textAlign:"center"}:btn)}} onClick={function(){setModal(null);}}>Cancel</button>
           </div>}
-          {(modal==="task_detail"||modal==="edit_necessities")&&<div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
+          {closeOnlyModal&&<div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
             <button style={mob?{...btnP,padding:"13px",fontSize:14,width:"100%",borderRadius:10}:btnP} onClick={function(){setModal(null);}}>Close</button>
           </div>}
         </div>
