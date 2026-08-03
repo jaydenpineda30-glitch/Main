@@ -354,6 +354,9 @@ function isAssessmentEvent(ev){
   if(ASSESS_KEYWORDS.some(function(k){return combinedLower.includes(k.toLowerCase());}))return true;
   return false;
 }
+const CLOSE_ONLY_MODALS=["task_detail","edit_necessities","day_done"];
+const UNI_KEYS=["uni","tafe","rmit","university","curtin","monash","deakin","uts","usyd","uq","uwa","anu","unsw","federation"];
+function isUniCalEv(ev){return ev.calName&&UNI_KEYS.some(function(k){return ev.calName.toLowerCase().includes(k);});}
 function isGoTabEvent(ev){
   return !ev.allDay&&ev.time&&ev.time!=="All day"&&(
     (ev.calName&&(ev.calName.toLowerCase().includes("gotab")||ev.calName.toLowerCase().includes("jayden.pineda")))||
@@ -2467,6 +2470,9 @@ function WorkSection({data,mob,onUpdate,onFlush,gcalEvents}){
 function nid(pref){return (pref||"i")+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
 const PCARD={position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow};
 const PINP={width:"100%",padding:"9px 12px",borderRadius:10,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:13,boxSizing:"border-box",outline:"none"};
+// Module-level copy of App()'s sT (app.jsx ~4066), identical value — needed by
+// module-level components (e.g. UpcomingClassesCard) that render outside App().
+const sTGlobal={fontSize:13,fontWeight:600,marginBottom:12,color:"#cdd5e2",letterSpacing:"-0.01em"};
 const MONO="ui-monospace,Menlo,Consolas,monospace";
 
 // Pull a leading emoji off a title string ("🔑 Anime Keychain" -> {emoji,title}).
@@ -2523,9 +2529,23 @@ function ProgressBar(props){
   </div>;
 }
 
+// The one tick control for the whole app. `inert` renders it as a non-interactive
+// indicator for rows that already carry their own click handler — it still looks
+// identical, so a list never mixes two styles of tick.
 function TickCircle(props){
   var done=props.done;var size=props.size||26;
-  return <button onClick={props.onClick} aria-label={done?"Mark not done":"Mark done"} style={{flexShrink:0,width:size,height:size,borderRadius:"50%",border:"2px solid "+(done?T.success:props.accent||"rgba(255,255,255,0.28)"),background:done?T.success:"transparent",cursor:"pointer",display:"grid",placeItems:"center",padding:0,transition:"all .18s"}}>
+  var ring=done?T.success:(props.accent||"rgba(255,255,255,0.28)");
+  return <button type="button" onClick={props.inert?undefined:props.onClick}
+    aria-label={done?"Mark not done":"Mark done"}
+    className={"tick-circle"+(done?" is-done":"")}
+    tabIndex={props.inert?-1:0}
+    style={{flexShrink:0,width:size,height:size,borderRadius:"50%",
+            border:"2px solid "+ring,
+            background:done?T.success:"rgba(255,255,255,0.03)",
+            cursor:props.inert?"inherit":"pointer",display:"grid",placeItems:"center",padding:0,
+            pointerEvents:props.inert?"none":"auto",
+            boxShadow:done?"0 0 10px "+T.success+"70":"none",
+            transition:"background .18s,border-color .18s,box-shadow .18s,transform .12s"}}>
     {done&&<svg width={size*0.5} height={size*0.5} viewBox="0 0 24 24" fill="none" stroke="#0a0a0a" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>}
   </button>;
 }
@@ -2700,7 +2720,7 @@ function ShoppingHomeCard({items,onUpdate,onOpen,cardStyle,mob}){
   var todo=list.filter(function(x){return !x.done;});
   function add(){var v=inp.trim();if(!v)return;if(list.some(function(x){return !x.done&&x.text.trim().toLowerCase()===v.toLowerCase();})){if(window.showToast)window.showToast(v+" is already on the list","warn");setInp("");return;}onUpdate(list.concat([{id:nid("shp"),key:null,text:v,detail:"",source:"",done:false,addedAt:todayStr()}]));setInp("");}
   function toggle(id){onUpdate(list.map(function(x){return x.id!==id?x:{...x,done:!x.done};}));}
-  return <div className="card-rim" style={{...(cardStyle||PCARD),breakInside:"avoid"}}>
+  return <div className="card-rim" style={{...(cardStyle||PCARD)}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
       <div style={{display:"flex",alignItems:"center",gap:7}}>
         <span style={{color:T.accent,display:"flex"}}><NavGlyph name="Shopping" size={15}/></span>
@@ -2720,6 +2740,109 @@ function ShoppingHomeCard({items,onUpdate,onOpen,cardStyle,mob}){
       <button style={{...btnGlassP,padding:"6px 12px"}} onClick={add}>Add</button>
     </div>
   </div>;
+}
+
+// Masonry-on-CSS-Grid: a card's rendered height is measured and converted into a
+// row span against a fine grid-auto-rows unit, so cards pack tightly upward while
+// keeping an explicit column position. This is what CSS multi-column could not do.
+// Row unit is 1px and the ROW gap is 0, so a card can reserve its exact measured
+// height plus one gap. An 8px unit with an 18px row gap quantised every card to a
+// 26px step, leaving up to 25px of slack below it — visibly uneven gutters, which
+// is the bug this grid existed to fix. The column gap is still a real gap.
+const GRID_ROW_UNIT=1;   // px per implicit row
+const GRID_GAP=18;       // px between cards, both axes
+
+function HomeGridCard({span,editing,title,onSpan,onDragStart,onDragOver,isDragging,isDropTarget,children}){
+  const ref=React.useRef(null);
+  const [rows,setRows]=React.useState(20);
+  React.useLayoutEffect(function(){
+    const el=ref.current;
+    if(!el)return;
+    function measure(){
+      const h=el.getBoundingClientRect().height;
+      setRows(Math.max(1,Math.ceil(h)+GRID_GAP));
+    }
+    measure();
+    if(typeof ResizeObserver==="undefined")return;
+    const ro=new ResizeObserver(measure);
+    ro.observe(el);
+    return function(){ro.disconnect();};
+  },[]);   // see Task 2 — [] is deliberate; ResizeObserver catches height changes itself
+  return(
+    <div style={{gridColumn:"span "+span,gridRow:"span "+rows,opacity:isDragging?0.35:1,
+                 outline:isDropTarget?"2px dashed "+T.accent:"none",outlineOffset:4,borderRadius:22,
+                 transition:"opacity 0.12s"}}
+         onPointerEnter={editing?onDragOver:undefined}>
+      {/* home-grid-cell zeroes the card's own bottom margin (see dashboard.css) so the
+          measured height is exactly what you see, and all vertical spacing comes from
+          the one GRID_GAP this cell reserves. flow-root keeps that measurement honest. */}
+      <div ref={ref} className="home-grid-cell" style={{display:"flow-root"}}>
+        {editing&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                               gap:8,padding:"6px 10px",marginBottom:6,borderRadius:10,
+                               background:"rgba(91,140,255,0.10)",border:"1px solid rgba(91,140,255,0.35)"}}>
+          <span onPointerDown={onDragStart}
+                style={{cursor:"grab",fontSize:14,color:T.accent,userSelect:"none",touchAction:"none"}}
+                title="Drag to move">⠿</span>
+          <span style={{fontSize:10,color:T.text2,flex:1,minWidth:0,overflow:"hidden",
+                        textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{title}</span>
+          <span style={{display:"flex",gap:3}}>
+            {[1,2,3].map(function(n){return(
+              <button key={n} onClick={function(){onSpan(n);}}
+                style={{...btnGlass,padding:"1px 7px",fontSize:10,
+                        color:span===n?T.accent:T.text3,
+                        borderColor:span===n?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.12)"}}
+                title={n===1?"One column":n===2?"Two columns wide":"Full width"}>{n}</button>);})}
+          </span>
+        </div>}
+        <div style={editing?{pointerEvents:"none",userSelect:"none"}:undefined}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// Shared by the home page (7 days) and the Uni tab (28 days) so the two
+// cannot drift apart. `events` is the deduped Google Calendar event list.
+// evColor/evLabel are passed in because they live inside App() — evLabel
+// closes over data.uni.subjects and cannot be hoisted.
+function UpcomingClassesCard({events,days,gcalConnected,evColor,evLabel,cardStyle}){
+  const today=todayStr();
+  const end=(function(){const d=new Date();d.setDate(d.getDate()+days);return dStr(d);})();
+  const classes=(events||[])
+    .filter(function(ev){return isUniCalEv(ev)&&!isAssessmentEvent(ev)&&!ev.allDay
+                                &&ev.date>=today&&ev.date<=end;})
+    .sort(function(a,b){return a.date.localeCompare(b.date)||(a.time||"").localeCompare(b.time||"");});
+  let lastDate="";
+  return(
+    <div className="card-rim" style={cardStyle}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <div style={sTGlobal}>Upcoming Classes</div>
+        <div style={{fontSize:9,color:T.text3}}>next {days} days</div>
+      </div>
+      {classes.length===0
+        ?<div style={{fontSize:12,color:T.text2}}>
+          {gcalConnected?"No upcoming classes in the next "+days+" days.":"Connect Google Calendar to see your schedule."}</div>
+        :classes.map(function(ev){
+          const showDate=ev.date!==lastDate;lastDate=ev.date;
+          const col=evColor(ev);const isToday=ev.date===today;
+          return(<div key={ev.id}>
+            {showDate&&<div style={{fontSize:10,fontWeight:600,color:isToday?T.accent:T.text2,
+                                    marginTop:10,marginBottom:6,paddingTop:8,
+                                    borderTop:"0.5px solid "+T.border}}>
+              {isToday?"Today · ":""}
+              {new Date(ev.date+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"short"})}
+            </div>}
+            <div style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start"}}>
+              <div style={{width:2,borderRadius:2,background:col,alignSelf:"stretch",minHeight:28,flexShrink:0}}/>
+              <div style={{flex:1}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.text2,marginBottom:1}}>{evLabel(ev)}</div>
+                <div style={{fontSize:12,color:T.text,lineHeight:1.5}}>{ev.title}</div>
+                {ev.description&&<div style={{fontSize:10,color:T.text3,marginTop:2,lineHeight:1.4}}>
+                  {ev.description.slice(0,120)}{ev.description.length>120?"…":""}</div>}
+                <div style={{fontSize:10,color:T.text3,marginTop:2}}>{ev.time}</div>
+              </div>
+            </div>
+          </div>);})}
+    </div>);
 }
 
 function App(){
@@ -2785,6 +2908,7 @@ function App(){
   const [editTaskForm,setEditTaskForm]=useState({});
   const [gymDraftBanner,setGymDraftBanner]=useState(false);
   const [scheduleTaskId,setScheduleTaskId]=useState(null);
+  const [catFilter,setCatFilter]=useState(null);
   const [scheduleForDay,setScheduleForDay]=useState(null);
   const [scheduleTime,setScheduleTime]=useState("09:00");
   const [scheduleDuration,setScheduleDuration]=useState(60);
@@ -2795,6 +2919,10 @@ function App(){
   const [reflIn,setReflIn]=useState("");
   const [reflAnalysis,setReflAnalysis]=useState(null);
   const [modal,setModal]=useState(null);
+  // Modals that own their whole body: they render their own heading and their own
+  // Close, and get neither the generic title bar nor the generic Save/Cancel. Save
+  // would fall through to saveModal()'s default branch and toast "Saved!" over a no-op.
+  const closeOnlyModal=CLOSE_ONLY_MODALS.indexOf(modal)>=0;
   const [mForm,setMForm]=useState({});
   const [syncStatus,setSyncStatus]=useState("loading");
   const [obsExportStatus,setObsExportStatus]=useState("idle"); // idle | running | done | error
@@ -3196,12 +3324,42 @@ function App(){
   // Upcoming pulls from structured assessments — no GCal keyword matching needed
   const allAssessments=data.uni.assessments||SYLLABUS_ASSESSMENTS;
   const upcoming=allAssessments.filter(function(a){return !a.done&&a.date>=todayStr();}).sort(function(a,b){return a.date.localeCompare(b.date);}).slice(0,8).map(function(a){return{id:a.id,title:a.name,date:a.date,subject:a.subject,badge:typeBadge(a.type)};});
-  const activeTasks=data.personal.tasks.filter(function(t){return !t.done;});
   const doneTasks=data.personal.tasks.filter(function(t){return t.done;});
-  const urgTasks=activeTasks.filter(function(t){return t.priority==="urgent";}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});
-  const normTasks=activeTasks.filter(function(t){return t.priority==="normal";}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});
   const todayEvs=visibleGcalEvents.filter(function(ev){return ev.date===todayStr()&&!ev.allDay;}).sort(function(a,b){return(a.time||"").localeCompare(b.time||"");});
   const shifts=visibleGcalEvents.filter(isGoTabEvent);
+  const homeLayout=React.useMemo(function(){
+    return window.HomeLayout.normalizeLayout(data.homeLayout);
+  },[data.homeLayout]);
+  const [layoutEditing,setLayoutEditing]=useState(false);
+  const [dragId,setDragId]=useState(null);
+  const [dropIdx,setDropIdx]=useState(null);
+
+  function saveLayout(next){
+    trk("home.layout_save");
+    setData(function(p){return{...p,homeLayout:next};});
+  }
+  React.useEffect(function(){
+    if(!dragId)return;
+    function clear(){setDragId(null);setDropIdx(null);}
+    function commit(){
+      const from=homeLayout.findIndex(function(x){return x.id===dragId;});
+      if(from>=0&&dropIdx!==null&&dropIdx!==from){
+        saveLayout(window.HomeLayout.moveCard(homeLayout,from,dropIdx));
+      }
+      clear();
+    }
+    function disarmIfReleased(ev){if(ev.buttons===0)clear();}
+    window.addEventListener("pointerup",commit);
+    window.addEventListener("pointercancel",clear);
+    window.addEventListener("pointermove",disarmIfReleased);
+    window.addEventListener("blur",clear);
+    return function(){
+      window.removeEventListener("pointerup",commit);
+      window.removeEventListener("pointercancel",clear);
+      window.removeEventListener("pointermove",disarmIfReleased);
+      window.removeEventListener("blur",clear);
+    };
+  },[dragId,dropIdx,homeLayout]);
 
   function doCheckin(){
     setCheckinLoading(true);setCheckinBlocks([]);
@@ -3469,7 +3627,7 @@ function App(){
     setBrGoalProposals(function(p){return p.filter(function(g){return g.title!==proposed.title;});});
   }
   function brAcceptTask(text){
-    setData(function(p){var ts=(p.personal&&p.personal.tasks)||[];return{...p,personal:{...p.personal,tasks:ts.concat([{id:Date.now(),name:text,cat:"Errands",priority:"normal",due:null,done:false,addedAt:todayStr(),editedAt:null}])}};});
+    setData(function(p){var ts=(p.personal&&p.personal.tasks)||[];return{...p,personal:{...p.personal,tasks:ts.concat([{id:Date.now(),name:text,cat:"Errands",priority:"normal",due:null,done:false,addedAt:todayStr(),editedAt:null,state:"todo",updates:[]}])}};});
     setBrTaskProposals(function(p){return p.filter(function(t){return t!==text;});});
     showToast("Task added","success");
   }
@@ -3642,6 +3800,39 @@ function App(){
   }
   function completeTask(id,dateStr,timeStr){trk("task.complete");setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.map(function(t){return t.id===id?{...t,done:true,completedAt:dateStr||todayStr(),completedTime:timeStr||null}:t;})}}; });}
   function openBackdateModal(id){setModal("complete_task");setMForm({taskId:id,date:todayStr(),time:""});}
+  function setTaskState(id,state){
+    trk("task.state");
+    setData(function(p){const ts=p.personal.tasks||[];
+      return{...p,personal:{...p.personal,tasks:ts.map(function(t){
+        if(t.id!==id)return t;
+        // Re-picking the state you are already on is not a touch. Without this,
+        // opening a task and clicking its current state clears an "untouched 12d"
+        // badge without any work having happened, and the badge stops meaning anything.
+        if((t.state||"todo")===state)return t;
+        return{...t,state:state,editedAt:todayStr()};})}};});
+  }
+  // Writing an update is a real interaction with the task, so it refreshes
+  // editedAt — that is what clears the "untouched Nd" badge.
+  function addTaskUpdate(id,text){
+    const clean=(text||"").trim();
+    if(!clean)return;
+    trk("task.update_add");
+    setData(function(p){const ts=p.personal.tasks||[];
+      return{...p,personal:{...p.personal,tasks:ts.map(function(t){
+        if(t.id!==id)return t;
+        // Random suffix, not a bare timestamp: this doc is written from three devices
+        // and deleteTaskUpdate filters by id, so a collision would delete two entries.
+        const uid=Date.now()+"-"+Math.random().toString(36).slice(2,6);
+        const ups=(t.updates||[]).concat([{id:uid,at:todayStr(),text:clean}]);
+        return{...t,updates:ups,editedAt:todayStr()};})}};});
+  }
+  function deleteTaskUpdate(id,updateId){
+    trk("task.update_delete");
+    setData(function(p){const ts=p.personal.tasks||[];
+      return{...p,personal:{...p.personal,tasks:ts.map(function(t){
+        return t.id===id?{...t,updates:(t.updates||[]).filter(function(u){return u.id!==updateId;})}:t;})}};});
+  }
+  function openTaskDetail(id){setModal("task_detail");setMForm({taskId:id,updateText:""});}
   function archiveDone(){trk("task.archive");setData(function(p){const ts=p.personal.tasks||[];const done=ts.filter(function(t){return t.done;}).map(function(t){return{...t,archivedAt:todayStr()};});return{...p,personal:{...p.personal,tasks:ts.filter(function(t){return !t.done;}),archived:(p.personal.archived||[]).concat(done)}};});}
   function restoreTask(id){trk("task.restore");setData(function(p){const arch=p.personal.archived||[];const match=arch.filter(function(t){return t.id===id;});if(match.length===0)return p;const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.concat([{...match[0],done:false,archivedAt:undefined,completedAt:null,completedTime:null}]),archived:arch.filter(function(x){return x.id!==id;})}};});}
   function saveEditTask(){
@@ -3819,7 +4010,7 @@ function App(){
     else if(modal==="edit_subject"){trk("uni.subject_edit");setData(function(p){var subs=p.uni.subjects||[];return{...p,uni:{...p.uni,subjects:subs.map(function(s){return s.id===mForm.editId?{...s,name:mForm.name.trim(),color:mForm.color||s.color}:s;})}};});}
     else if(modal==="add_exercise"){trk("gym.exercise_add");setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.concat([{id:Date.now(),name:mForm.name,logs:[]}])}};});}
     else if(modal==="log_weight")setData(function(p){return{...p,gym:{...p.gym,exercises:p.gym.exercises.map(function(ex){return ex.id===mForm.exId?{...ex,logs:ex.logs.concat([{date:todayStr(),weight:Number(mForm.weight)}])}:ex;})}};});
-    else if(modal==="add_task"){trk("task.add");setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.concat([{id:Date.now(),name:mForm.name,cat:mForm.cat||"Errands",priority:mForm.priority||"normal",due:mForm.due||null,done:false,addedAt:todayStr(),editedAt:null}])}};});}
+    else if(modal==="add_task"){trk("task.add");setData(function(p){const ts=p.personal.tasks||[];return{...p,personal:{...p.personal,tasks:ts.concat([{id:Date.now(),name:mForm.name,cat:mForm.cat||"Errands",priority:mForm.priority||"normal",due:mForm.due||null,done:false,addedAt:todayStr(),editedAt:null,state:"todo",updates:[]}])}};});}
     else if(modal==="edit_rotation"){
       var ri=mForm.rotIdx;
       setData(function(p){
@@ -3872,6 +4063,21 @@ function App(){
   function evColor(ev){return ev.calColor||"#4285F4";}
   function evLabel(ev){const keys=(data.uni.subjects||[]).map(function(s){return s.name;});const match=keys.find(function(k){return ev.title&&k&&ev.title.toUpperCase().includes(k.toUpperCase());});return match||ev.calName||"Google";}
 
+  // What actually got done, by day. Reads `archived` as well as `tasks` on purpose:
+  // archiveDone() moves completed tasks out of the live list, and without this the
+  // calendar's history would empty itself every time the task list is tidied.
+  // Local only — nothing here touches Google Calendar.
+  const completionsByDay=React.useMemo(function(){
+    const map={};
+    const all=((data.personal&&data.personal.tasks)||[])
+      .concat((data.personal&&data.personal.archived)||[]);
+    all.forEach(function(t){
+      if(!t.done||!t.completedAt)return;
+      (map[t.completedAt]=map[t.completedAt]||[]).push(t);
+    });
+    return map;
+  },[data.personal]);
+
   function renderWeek(){
     if(mob){
       const dayEvs=visibleGcalEvents.filter(function(ev){return ev.date===activeDay;}).sort(function(a,b){return(a.time||"").localeCompare(b.time||"");});
@@ -3901,6 +4107,18 @@ function App(){
                 </div>
               </div>
             );})}
+          {(completionsByDay[activeDay]||[]).length>0&&<div style={{marginTop:14,paddingTop:10,
+              borderTop:"0.5px solid "+T.border}}>
+            <div style={{fontSize:10,color:T.text3,marginBottom:8,textTransform:"uppercase",
+                         letterSpacing:0.5}}>Finished {activeDay===todayStr()?"today":"that day"}</div>
+            {(completionsByDay[activeDay]||[]).map(function(t){
+              const col=catColor(t.cat||"Other");
+              return(
+                <div key={t.id} style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+                  <span style={{width:6,height:6,borderRadius:"50%",background:col,flexShrink:0}}/>
+                  <span style={{fontSize:12,color:T.text2,flex:1}}>{t.name}</span>
+                </div>);})}
+          </div>}
         </div>
       );
     }
@@ -3933,6 +4151,25 @@ function App(){
                 {timedEvs.map(function(ev){const col=evColor(ev);const tp=parseTimes(ev.time);return(<div key={ev.id} style={{position:"absolute",top:(tp.start-minH*60)*PPM,left:1,right:1,height:Math.max((tp.end-tp.start)*PPM,10),borderRadius:3,background:col+"18",borderLeft:"2px solid "+col,padding:"1px 3px",overflow:"hidden",boxSizing:"border-box",zIndex:5}}><div style={{fontSize:6.5,fontWeight:700,color:col,whiteSpace:"nowrap",overflow:"hidden"}}>{evLabel(ev)}</div></div>);})}
                 {data.personal.tasks.filter(function(t){return t.scheduledDate===ds&&t.scheduledTime;}).map(function(t){const sm=toMins(t.scheduledTime);const em=sm+(t.scheduledDuration||60);const isDone=!!t.done;return(<div key={"sched_"+t.id} title={(isDone?"✓ Done · ":"")+t.name+" · "+t.scheduledTime+" ("+(t.scheduledDuration||60)+"min)"} style={{position:"absolute",top:Math.max((sm-minH*60)*PPM,0),left:1,right:1,height:Math.max((em-sm)*PPM,10),borderRadius:3,background:isDone?"rgba(105,240,174,0.14)":"rgba(91,140,255,0.18)",border:isDone?"1px solid rgba(105,240,174,0.55)":"1px dashed rgba(91,140,255,0.65)",padding:"1px 3px",overflow:"hidden",boxSizing:"border-box",zIndex:6,cursor:"pointer",opacity:isDone?0.7:1}} onClick={function(e){e.stopPropagation();openSchedulePicker(t.id,t.scheduledDate,t.scheduledTime,t.scheduledDuration);}}><div style={{fontSize:6.5,fontWeight:700,color:isDone?T.success:T.accent,whiteSpace:"nowrap",overflow:"hidden",textDecoration:isDone?"line-through":"none"}}>{isDone?"✓ ":""}{t.name}</div></div>);})}
               </div>
+              {/* Finished-that-day strip. Lives inside the day column rather than as a
+                  separate band below the grid, so it stays aligned without restructuring
+                  the calendar. No strikethrough — this is a record of work done, not of
+                  something cancelled. */}
+              {(completionsByDay[ds]||[]).length>0&&<div style={{padding:"6px 4px 0",marginTop:6,borderTop:"0.5px solid "+T.border}}>
+                {(completionsByDay[ds]||[]).slice(0,3).map(function(t){
+                  const col=catColor(t.cat||"Other");
+                  return(
+                    <div key={t.id} style={{display:"flex",gap:5,alignItems:"center",marginBottom:3}}>
+                      <span style={{width:5,height:5,borderRadius:"50%",background:col,flexShrink:0,
+                                    boxShadow:"0 0 5px "+col+"90"}}/>
+                      <span style={{fontSize:9,color:T.text2,overflow:"hidden",textOverflow:"ellipsis",
+                                    whiteSpace:"nowrap"}} title={t.name}>{t.name}</span>
+                    </div>);})}
+                {(completionsByDay[ds]||[]).length>3&&<button
+                  onClick={function(e){e.stopPropagation();setModal("day_done");setMForm({date:ds});}}
+                  style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:9,
+                          padding:0}}>+{(completionsByDay[ds]||[]).length-3} more</button>}
+              </div>}
             </div>);
           })}
         </div>
@@ -3941,7 +4178,7 @@ function App(){
   }
 
   function card(ex){return{position:"relative",background:cardBg,backdropFilter:"blur(24px) saturate(1.4)",WebkitBackdropFilter:"blur(24px) saturate(1.4)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:20,padding:"18px 20px",marginBottom:12,boxShadow:cardShadow,...(ex||{})};}
-  const sT={fontSize:13,fontWeight:600,marginBottom:12,color:"#cdd5e2",letterSpacing:"-0.01em"};
+  const sT=sTGlobal;   // one definition, so App-local cards and module-level cards cannot drift
   const btn={...btnGlass,padding:"5px 12px"};
   const btnP={...btnGlassP};
   const inp={width:"100%",padding:"7px 10px",borderRadius:8,border:"0.5px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:T.text,fontSize:12,boxSizing:"border-box"};
@@ -3985,6 +4222,374 @@ function App(){
       </div>
     </div>
   );}
+
+  function renderCalendarCard(){
+    return(<React.Fragment>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:T.text,letterSpacing:"-0.01em"}}>{new Date(dStr(weekDates[0])).toLocaleDateString("en-AU",{month:"long",year:"numeric"})}</div>
+          <div style={{fontSize:10,color:T.text3,marginTop:1}}>{fmtDate(dStr(weekDates[0]))} · {fmtDate(dStr(weekDates[6]))}</div>
+        </div>
+        <div style={{display:"flex",gap:5,alignItems:"center"}}>
+          {gcalReady&&!gcalConnected&&<button style={{...btn,fontSize:10,color:"#4285F4",border:"0.5px solid rgba(66,133,244,0.35)",display:"inline-flex",alignItems:"center",gap:4}} onClick={function(){window.GCalSync&&window.GCalSync.connect();}}><UIcon name="calendar" size={10}/>Connect</button>}
+          {gcalConnected&&<button style={{...btn,fontSize:10,color:T.text2,display:"inline-flex",alignItems:"center",gap:4}} onClick={function(){setShowCalPicker(true);}}><UIcon name="calendar" size={10}/>{gcalEvents.length}</button>}
+          <button style={{...btn,padding:"4px 10px",fontSize:13}} onClick={function(){setWkOff(function(o){return o-1;});}}>←</button>
+          <button style={{...btn,padding:"4px 10px",color:wkOff===0?T.accent:T.text2,border:wkOff===0?"0.5px solid rgba(91,140,255,0.4)":"0.5px solid rgba(255,255,255,0.12)"}} onClick={function(){setWkOff(0);setActiveDay(todayStr());}}>Today</button>
+          <button style={{...btn,padding:"4px 10px",fontSize:13}} onClick={function(){setWkOff(function(o){return o+1;});}}>→</button>
+        </div>
+      </div>
+      {renderWeek()}
+      {gcalCalendars.length>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10,paddingTop:8,borderTop:"0.5px solid "+T.border}}>
+        {gcalCalendars.slice(0,6).map(function(cal){return<div key={cal.id} style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:6,height:6,borderRadius:2,background:cal.backgroundColor||"#4285F4"}}/><span style={{fontSize:9,color:T.text3}}>{cal.summary}</span></div>;})}
+      </div>}
+    </React.Fragment>);
+  }
+
+  function renderCheckinCard(){
+    return(
+      <div className="card-rim" style={card()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:16,marginBottom:(checkinOpen||todayEvs.length>0)?10:0}}>
+          <div style={{fontSize:10,color:T.text3,display:"flex",alignItems:"center",gap:5}}><div style={{width:5,height:5,borderRadius:"50%",background:T.accent}}/>Daily Check-in · {new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long"})}</div>
+          {checkinOpen
+            ?<div style={{display:"flex",gap:6}}><button style={{...btn,fontSize:11}} onClick={function(){trk("checkin.generate");doCheckin();}}>Refresh</button><button style={{...btn,fontSize:11}} onClick={function(){setCheckinOpen(false);}}>Hide</button></div>
+            :<button style={{...btnP,fontSize:11,padding:"5px 12px"}} onClick={function(){setCheckinOpen(true);if(checkinBlocks.length===0&&!checkinLoading){trk("checkin.generate");doCheckin();}}}>Generate check-in</button>}
+        </div>
+        {checkinOpen&&(checkinLoading?<div style={{fontSize:12,color:T.accent,display:"flex",alignItems:"center",gap:6}}><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:T.accent,animation:"pulse 1.2s ease-in-out infinite"}}/>AI is thinking...</div>:checkinBlocks.length===0?<div style={{fontSize:12,color:T.text3}}>Generating today's check-in…</div>:checkinBlocks.map(function(block,bi){return(<div key={bi} style={{marginBottom:10}}>{block.header&&<div style={{fontSize:11,fontWeight:600,color:T.accent,marginBottom:4}}>{block.header}</div>}{block.items.map(function(item,ii){return<div key={ii} style={{fontSize:13,lineHeight:1.7,color:T.text}}>{item}</div>;})}</div>);}))}
+        {todayEvs.length>0&&<div style={{marginTop:12,paddingTop:10,borderTop:"0.5px solid "+T.border,display:"flex",gap:6,flexWrap:"wrap"}}>{todayEvs.map(function(ev){const col=evColor(ev);return(<div key={ev.id} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 9px",borderRadius:6,background:col+"18",border:"0.5px solid "+col+"40",flexShrink:0}}><div><div style={{fontSize:10,fontWeight:600,color:col}}>{evLabel(ev)}<span style={{fontWeight:400,color:T.text3}}> · {ev.time}</span></div><div style={{fontSize:9,color:T.text2}}>{ev.title.slice(0,32)}</div></div></div>);})}</div>}
+      </div>
+    );
+  }
+
+  function renderGoalsCard(){
+    var b=data.boardroom||{};
+    if(!b.onboarded) return null;
+    var ag=(b.goals||[]).filter(function(g){return g.status==="active";});
+    var ns=b.northStar||"";
+    if(!ag.length&&!ns) return null;
+    return(
+      <div className="card-rim" style={{...card(),borderLeft:"3px solid rgba(91,140,255,0.6)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:ns?10:12}}>
+          <div style={sT}>Goals</div>
+          <button onClick={function(){setPage("Boardroom");}} style={{...btnGlass,fontSize:11,padding:"3px 10px"}}>Boardroom →</button>
+        </div>
+        {ns&&<div style={{fontSize:12,color:"rgba(255,255,255,0.42)",fontStyle:"italic",lineHeight:1.65,marginBottom:ag.length?14:4,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>"{ns}"</div>}
+        {ag.length===0&&<div style={{fontSize:12,color:T.text3,marginTop:4}}>Start a session to set your first goal.</div>}
+        {ag.map(function(g,i){
+          var ts=getTagStyle(g.area);
+          return(
+            <div key={g.id} style={{display:"flex",alignItems:"center",gap:9,padding:"7px 0",borderBottom:i<ag.length-1?"0.5px solid rgba(255,255,255,0.06)":"none"}}>
+              <span style={{width:6,height:6,borderRadius:"50%",flexShrink:0,background:ts.color,boxShadow:"0 0 6px "+ts.color}}/>
+              <span style={{fontSize:10,padding:"2px 6px",borderRadius:4,...ts,flexShrink:0}}>{g.area}</span>
+              <span style={{fontSize:13,color:"rgba(255,255,255,0.82)",lineHeight:1.4}}>{g.title}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderAssessmentsCard(){
+    return(
+      <div className="card-rim" style={card()}>
+          <div style={sT}>Upcoming assessments</div>
+          {upcoming.length===0?<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>:upcoming.map(function(a){const days=daysBetween(a.date);const col=subjectColor(data.uni.subjects,a.subject)||T.accent;const dayLabel=days===0?"Today":days===1?"Tomorrow":days<=13?WX_DAYS[new Date(a.date+"T00:00").getDay()]+" · "+days+" days":fmtDate(a.date);return(<div key={a.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:6,cursor:"pointer"}} onClick={function(){setPage("Uni");}}>
+            <div style={{width:7,height:7,borderRadius:"50%",background:col,flexShrink:0}}/>
+            <div style={{flex:1,minWidth:0,fontSize:12,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:col,fontWeight:700}}>{a.subject}</span>{" · "}{a.title}</div>
+            <div style={{fontSize:10,color:days<=3?T.danger:T.text2,fontWeight:600,flexShrink:0,whiteSpace:"nowrap"}}>{dayLabel}</div>
+          </div>);})}
+        </div>
+    );
+  }
+
+  function renderGymNextCard(){
+    return(
+      <div className="card-rim" style={card()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:nextRot?4:0}}>
+              <div>
+                <div style={sT}>Next session · pre-fill weights</div>
+                {nextRot&&<div style={{fontSize:11,color:T.text2,marginTop:2}}>{nextRot.name}{nextRot.focus?" · "+nextRot.focus:""}</div>}
+              </div>
+              <button style={editPill} onClick={function(){setPage("Gym");}}>Open →</button>
+            </div>
+            {!nextRot&&<div style={{fontSize:11,color:T.text2,marginBottom:8}}>Set up your rotation in the Gym tab.</div>}
+            {gymDraftBanner&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 13px",borderRadius:12,background:"rgba(225,234,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",boxShadow:"0 0 20px rgba(255,209,102,0.3),inset 0 1px 0 rgba(255,255,255,0.05)",marginBottom:10}}>
+              <span style={{fontSize:11,color:T.warn}}>Unfinished session restored · keep logging or discard</span>
+              <button onClick={function(){try{localStorage.removeItem('gym_draft');}catch(_){}setGymDraftBanner(false);setNxtRows(nextRot&&nextRot.exercises&&nextRot.exercises.length>0?nextRot.exercises.map(function(ex,i){return{id:ex.id||i+1,exercise:ex.exercise||"",sets:ex.sets||"",reps:ex.reps||"",weight:ex.weight||""};}):[{id:1,exercise:"",sets:"",reps:"",weight:""},{id:2,exercise:"",sets:"",reps:"",weight:""},{id:3,exercise:"",sets:"",reps:"",weight:""}]);}} style={{...btnGlass,fontSize:10,padding:"3px 10px"}}>Discard</button>
+            </div>}
+            <datalist id="homeExSuggestions">{(function(){var seen={};var names=[];((data.gym||{}).exercises||[]).forEach(function(ex){var n=(ex.name||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});((data.gym||{}).rotation||[]).forEach(function(r){(r.exercises||[]).forEach(function(ex){var n=(ex.exercise||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});});return names;})().map(function(n){return React.createElement("option",{key:n,value:n});})}</datalist>
+            {mob?nxtRows.map(function(row,i){return(<div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 52px 52px 64px",gap:5,marginBottom:6}}>
+              <input style={{...inp,padding:"8px 8px",fontSize:12}} list="homeExSuggestions" placeholder={["Bench Press","Squat","OHP"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
+              <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="Sets" value={row.sets} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,sets:ev.target.value}:x;});});}}/>
+              <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="Reps" value={row.reps} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,reps:ev.target.value}:x;});});}}/>
+              <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="kg" value={row.weight} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,weight:ev.target.value}:x;});});}}/>
+            </div>);}):(
+            <div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 50px 50px 60px",gap:6,marginBottom:4}}>{["Exercise","Sets","Reps","kg"].map(function(h){return<div key={h} style={{fontSize:9,color:T.text3}}>{h}</div>;})}</div>
+            {nxtRows.map(function(row,i){return(<div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 50px 50px 60px",gap:6,marginBottom:6}}>
+              <input style={inp} list="homeExSuggestions" placeholder={["Bench Press","Squat","Overhead Press"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
+              <input style={inp} type="number" placeholder="4" value={row.sets} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,sets:ev.target.value}:x;});});}}/>
+              <input style={inp} type="number" placeholder="8" value={row.reps} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,reps:ev.target.value}:x;});});}}/>
+              <input style={inp} type="number" placeholder="80" value={row.weight} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,weight:ev.target.value}:x;});});}}/>
+            </div>);})}
+            </div>)}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4}}>
+              <button style={btn} onClick={function(){setNxtRows(function(r){return r.concat([{id:Date.now(),exercise:"",sets:"",reps:"",weight:""}]);});}}>+ Row</button>
+              <button style={btnP} onClick={saveNextSess}>Save to Gym →</button>
+            </div>
+          </div>
+    );
+  }
+
+  function renderBodyweightCard(){
+    return(
+      <div className="card-rim" style={card((!bwLogged&&dLeft<=3)?{boxShadow:"0 0 26px "+bwColMap[bwUrg]+"55,"+cardShadow}:{})}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontSize:12,fontWeight:600,color:"#f3f7fd"}}>Weekly body weight</div>
+          {!bwLogged&&<div style={{fontSize:10,color:bwColMap[bwUrg],fontWeight:600,padding:"2px 7px",borderRadius:99,background:bwColMap[bwUrg]+"18"}}>{dLeft}d left</div>}
+        </div>
+        {bwLogged&&!bwEditing
+          ?<div>
+            <div style={{display:"flex",alignItems:"center",gap:12,padding:"4px 0 8px"}}>
+              <div style={{fontSize:32,color:T.success,lineHeight:1,fontWeight:700}}>✓</div>
+              <div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{fontSize:22,fontWeight:700,color:T.success,lineHeight:1.1}}>{(function(){const e=(data.gym.bodyWeight||[]).find(function(e){return e.date>=thisWeek;});return e?e.weight+" kg":"Logged";})()}</div>
+                  <button style={{background:"none",border:"none",cursor:"pointer",color:T.text3,fontSize:16,opacity:0.45,lineHeight:1,padding:"0 2px"}} title="Delete this entry" onClick={function(){const e=(data.gym.bodyWeight||[]).find(function(en){return en.date>=thisWeek;});if(e)deleteBWEntry(e.date);}}>×</button>
+                </div>
+                <div style={{fontSize:10,color:T.success,opacity:0.75,marginTop:2}}>Logged this week</div>
+              </div>
+            </div>
+            {(data.gym.bodyWeight||[]).length>=2&&<Sparkline data={data.gym.bodyWeight} color={T.success} width={180} height={40}/>}
+            <button style={{...btn,fontSize:10,padding:"4px 10px",marginTop:8}} onClick={function(){const e=(data.gym.bodyWeight||[]).find(function(e){return e.date>=thisWeek;});if(e){setBwIn(String(e.weight));setBwDate(e.date);}else{setBwIn("");setBwDate(todayStr());}setBwEditing(true);}}>Edit / add past entry</button>
+          </div>
+          :<div>
+            <div style={{fontSize:10,color:T.text3,marginBottom:8}}>{bwEditing?"Update your entry or add a past entry below":dLeft<=1?"Last chance, ends tomorrow!":dLeft<=3?"Log before the week ends":"Log once this week"}</div>
+            <div style={{display:"flex",gap:6,marginBottom:6}}><input style={{...inp,flex:1}} type="number" step="0.1" placeholder="e.g. 81.2 kg" value={bwIn} onChange={function(ev){setBwIn(ev.target.value);}}/><button style={btnP} onClick={logBW}>Log</button></div>
+            <input type="date" style={{...inp,padding:"6px 10px",fontSize:11,color:T.text3}} value={bwDate} onChange={function(ev){setBwDate(ev.target.value);}}/>
+            {bwLogged&&bwEditing&&<button style={{...btn,fontSize:10,padding:"4px 10px",marginTop:6,opacity:0.6}} onClick={function(){setBwEditing(false);setBwIn("");setBwDate(todayStr());}}>Cancel</button>}
+          </div>
+        }
+      </div>
+    );
+  }
+
+  function catColor(c){return (window.TASK_CAT_COLORS||{})[c]||window.TASK_CAT_FALLBACK||"#8f97a6";}
+
+  function renderTaskRow(t,group){
+    const cat=t.cat||"Other";
+    const col=catColor(cat);
+    const isActive=scheduleTaskId===t.id;
+    const latest=(t.updates&&t.updates.length)?t.updates[t.updates.length-1]:null;
+    // Only worth printing when the row is NOT already under its own heading — a doing
+    // task pulled into Overdue by the match order still needs to say so.
+    const stateBadge=(group!==t.state)&&(t.state==="doing"?"▶ In progress":t.state==="waiting"?"⏸ Waiting":null);
+    // Done rows say when, not "done" — the clock button exists to set that date, so it
+    // has to be visible. Waiting keeps its overdue text but in the dimmest tone.
+    const meta=group==="done"
+      ?(t.completedAt?fmtDate(t.completedAt)+(t.completedTime?" · "+fmtTime12(t.completedTime):""):"")
+      :taskLabel(t);
+    const metaColor=group==="waiting"?T.text3:group==="overdue"?T.danger:T.text3;
+    return(
+      <div key={t.id} className="glow-item task-row"
+        style={{display:"flex",gap:9,marginBottom:7,alignItems:"flex-start",padding:"10px 12px",
+                borderRadius:12,opacity:group==="done"?0.5:1,
+                background:isActive?"rgba(91,140,255,0.12)":"rgba(225,234,255,0.04)",
+                border:"1px solid "+(isActive?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.07)"),
+                borderLeft:"3px solid "+col,transition:"background 0.15s"}}>
+        <span style={{marginTop:1,display:"flex"}}>
+          <TickCircle done={!!t.done} size={18} onClick={function(){toggleTask(t.id);}}/></span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:11,fontWeight:500,color:T.text,
+                       textDecoration:t.done?"line-through":"none"}}>{t.name}</div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:2}}>
+            {/* The 3px bar already carries the hue, so the word itself reads brighter. */}
+            <span style={{fontSize:9,color:T.text2}}>{cat}</span>
+            {stateBadge&&<span style={{fontSize:9,color:T.accent}}>{stateBadge}</span>}
+            {/* Grouping is by due date and staleness, so the Urgent flag has no other
+                voice on this card. Without this it is a control you can set that
+                visibly does nothing. */}
+            {!t.done&&t.priority==="urgent"&&<span style={{fontSize:9,color:T.danger,fontWeight:700,
+              textTransform:"uppercase",letterSpacing:0.4}}>urgent</span>}
+            {meta&&<span style={{fontSize:9,color:metaColor}}>{meta}</span>}
+          </div>
+          {latest&&<div style={{fontSize:9,color:T.text3,marginTop:3,fontStyle:"italic",
+                                overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+            "{latest.text}" — {fmtDate(latest.at)}</div>}
+        </div>
+        {/* Three controls on every row is a lot of furniture for a list you mostly read.
+            On a mouse they fade in on hover (and on keyboard focus); on touch, where
+            there is no hover, they stay visible. `is-armed` keeps the schedule button
+            showing while it is waiting for a calendar day. */}
+        <span className={"row-actions"+(isActive?" is-armed":"")}
+              style={{display:"flex",flexShrink:0,marginTop:1}}>
+        <button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",
+                        color:T.text3,flexShrink:0,opacity:0.45,display:"flex"}}
+          title="Open task" onClick={function(e){e.stopPropagation();openTaskDetail(t.id);}}>
+          <UIcon name="pencil" size={12}/></button>
+        <button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",
+                        color:T.text3,flexShrink:0,opacity:0.45,display:"flex"}}
+          title="Mark done on a different day"
+          onClick={function(e){e.stopPropagation();openBackdateModal(t.id);}}>
+          <UIcon name="clock" size={12}/></button>
+        {/* Arms calendar scheduling — the ONLY thing that sets scheduleTaskId, which the
+            week grid reads to turn days into drop targets. Do not remove without
+            removing that path too. */}
+        <button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",
+                        color:isActive?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,
+                        opacity:isActive?1:0.45,transition:"opacity 0.15s,color 0.15s"}}
+          title="Schedule"
+          onClick={function(e){e.stopPropagation();
+            if(scheduleTaskId===t.id){setScheduleTaskId(null);}
+            else{trk("task.schedule");setScheduleTaskId(t.id);
+                 showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button>
+        </span>
+      </div>);
+  }
+
+  function renderTasksCard(){
+    const TG=window.TaskGrouping;
+    const all=(data.personal.tasks)||[];
+    const counts=TG.categoryCounts(all);
+    const shown=catFilter?all.filter(function(t){return (t.cat||"Other")===catFilter;}):all;
+    const groups=TG.groupTasks(shown,todayStr());
+    const empty=TG.DISPLAY_ORDER.every(function(g){return groups[g].length===0;});
+    return(
+      <div className="card-rim" style={card()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={sT}>Tasks</div>
+          <button style={{...editPill,fontSize:14,padding:"2px 12px"}}
+            onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands",state:"todo"});}}>+</button>
+        </div>
+
+        {scheduleTaskId&&<div style={{fontSize:9,color:T.accent,marginBottom:6,padding:"3px 8px",borderRadius:6,background:T.accentBg,border:"0.5px solid rgba(91,140,255,0.3)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
+          <span>Tap a calendar day to schedule (or ESC)</span>
+          <button onClick={function(){setScheduleTaskId(null);}} title="Cancel scheduling"
+            style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:14,padding:"0 4px",lineHeight:1,fontWeight:700}}>×</button>
+        </div>}
+
+        {/* Load bar — where the work is piling up. Click to filter. */}
+        {/* `||catFilter` matters: counts covers OPEN tasks only, so ticking the last open
+            task in a filtered category would otherwise unmount the bar and strand the
+            filter with no way to clear it. */}
+        {(counts.length>0||catFilter)&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12,
+                                       paddingBottom:10,borderBottom:"0.5px solid "+T.border}}>
+          {counts.map(function(c){
+            const on=catFilter===c.cat;
+            return(
+              <button key={c.cat} onClick={function(){setCatFilter(on?null:c.cat);}}
+                style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 9px",borderRadius:999,
+                        cursor:"pointer",fontSize:10,
+                        background:on?catColor(c.cat)+"28":"rgba(255,255,255,0.04)",
+                        border:"1px solid "+(on?catColor(c.cat)+"90":"rgba(255,255,255,0.10)"),
+                        color:on?T.text:T.text2}}>
+                <span style={{width:7,height:7,borderRadius:"50%",background:catColor(c.cat),
+                              boxShadow:"0 0 6px "+catColor(c.cat)+"90",flexShrink:0}}/>
+                {/* The count is the whole point of the bar — it must not be the dimmest thing on it. */}
+                {c.cat}<span style={{color:T.text,fontWeight:700}}>{c.count}</span>
+              </button>);})}
+          {catFilter&&<button onClick={function(){setCatFilter(null);}}
+            style={{...btn,fontSize:10,padding:"3px 9px"}}>Clear</button>}
+        </div>}
+
+        {/* "All clear" would be a lie while a filter is hiding the rest of the list. */}
+        {empty&&<div style={{fontSize:12,color:T.text2}}>
+          {catFilter?"Nothing in "+catFilter:"All clear ✓"}</div>}
+
+        {TG.DISPLAY_ORDER.map(function(g){
+          if(groups[g].length===0)return null;
+          return(
+            <div key={g}>
+              <div style={{fontSize:9,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",
+                           letterSpacing:0.5,color:g==="overdue"?T.danger:T.text3,
+                           display:"flex",gap:6,alignItems:"center"}}>
+                {TG.GROUP_LABEL[g]}<span style={{color:T.text3,fontWeight:600}}>{groups[g].length}</span>
+              </div>
+              {groups[g].map(function(t){return renderTaskRow(t,g);})}
+            </div>);})}
+      </div>);
+  }
+
+  function renderNecessitiesCard(){
+    const W=window.WeekUtils;
+    const nec=(data.personal&&data.personal.necessities)||{items:[],ticks:{}};
+    const items=nec.items||[];
+    const today=todayStr();
+    const isDone=function(id){return W.isDoneThisWeek((nec.ticks||{})[id],today);};
+    const doneCount=items.filter(function(i){return isDone(i.id);}).length;
+    const elapsed=W.weekElapsedFraction(today);
+    const progress=items.length?doneCount/items.length:0;
+    // With no items there is nothing to be behind on — otherwise the card nags from
+    // Tuesday onward about an empty list.
+    const behind=items.length>0&&progress<elapsed-0.15;
+    const daysLeft=Math.round((1-elapsed)*7);
+
+    function toggle(id){
+      setData(function(p){
+        const cur=(p.personal&&p.personal.necessities)||{items:[],ticks:{}};
+        const ticks={...(cur.ticks||{})};
+        if(W.isDoneThisWeek(ticks[id],todayStr())) delete ticks[id];
+        else ticks[id]=todayStr();
+        return{...p,personal:{...p.personal,necessities:{...cur,items:cur.items||[],ticks:ticks}}};
+      });
+    }
+
+    return(
+      <div className="card-rim" style={card()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={sT}>Weekly necessities</div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <span style={{fontSize:10,color:T.text3}}>{doneCount}/{items.length}</span>
+            <button style={{...btn,fontSize:10,padding:"2px 9px"}}
+              onClick={function(){setModal("edit_necessities");setMForm({newItem:""});}}>Edit</button>
+          </div>
+        </div>
+
+        <div style={{height:5,borderRadius:3,background:"rgba(255,255,255,0.06)",overflow:"hidden",marginBottom:4}}>
+          <div style={{width:(progress*100)+"%",height:"100%",borderRadius:3,
+                       background:behind?T.warn:T.success,transition:"width 0.25s"}}/>
+        </div>
+        <div style={{fontSize:9,color:T.text3,marginBottom:10}}>
+          {daysLeft===0?"Last day · resets Monday":daysLeft+" day"+(daysLeft===1?"":"s")+" left · resets Monday"}
+        </div>
+
+        {items.length===0&&<div style={{fontSize:12,color:T.text2}}>
+          No necessities yet — hit Edit to add the things you do every week.</div>}
+
+        {items.map(function(i){
+          const done=isDone(i.id);
+          const urgent=!done&&daysLeft<=2;   // Friday onward — matches the spec
+          return(
+            <div key={i.id} onClick={function(){toggle(i.id);}}
+              style={{display:"flex",gap:9,alignItems:"center",padding:"8px 10px",marginBottom:5,
+                      borderRadius:10,cursor:"pointer",opacity:done?0.5:1,
+                      background:"rgba(225,234,255,0.04)",
+                      border:"1px solid "+(urgent?T.warn+"55":"rgba(255,255,255,0.07)")}}>
+              {/* inert: the whole row is the click target */}
+              <TickCircle done={done} size={18} inert/>
+              <span style={{fontSize:12,color:T.text,flex:1,minWidth:0,
+                            textDecoration:done?"line-through":"none"}}>{i.name}</span>
+              {urgent&&<span style={{fontSize:9,color:T.warn,flexShrink:0}}>
+                {daysLeft===0?"today":daysLeft+" day"+(daysLeft===1?"":"s")+" left"}</span>}
+            </div>);})}
+      </div>);
+  }
+
+  function renderHomeCard(id){
+    switch(id){
+      case "shopping":    return <ErrorBoundary name="ShoppingHome"><ShoppingHomeCard items={data.shopping||[]} onUpdate={updateShopping} onOpen={function(){setPage("Shopping");}} cardStyle={card()} mob={mob}/></ErrorBoundary>;
+      case "weather":     return <WeatherWidget mob={mob}/>;
+      case "checkin":     return renderCheckinCard();
+      case "goals":       return renderGoalsCard();       // returns null when not onboarded
+      case "assessments": return renderAssessmentsCard();
+      case "gym-next":    return renderGymNextCard();
+      case "bodyweight":  return renderBodyweightCard();
+      case "tasks":       return renderTasksCard();
+      case "classes":     return <UpcomingClassesCard events={dedupedEvents} days={7}
+        gcalConnected={gcalConnected} evColor={evColor} evLabel={evLabel} cardStyle={card()}/>;
+      case "necessities": return renderNecessitiesCard();
+      default:            return null;
+    }
+  }
 
   return(
     <div className="dashboard-reveal" style={{fontFamily:"'Geist',system-ui,sans-serif",minHeight:"100vh",background:"transparent",color:T.text,position:"relative",boxSizing:"border-box",paddingLeft:mob?0:(navCollapsed?80:230),transition:"padding-left 0.22s cubic-bezier(0.23,1,0.32,1)"}}>
@@ -4102,157 +4707,50 @@ function App(){
       <div style={{padding:mob?"10px 12px":"24px 28px",maxWidth:mob?430:1180,margin:"0 auto",position:"relative",zIndex:1,paddingBottom:mob?80:40}}>
         {page==="Dashboard"&&<div>
           {/* Greeting */}
-          <div style={{marginBottom:18}}>
-            <div style={{fontSize:mob?20:24,fontWeight:800,letterSpacing:"-0.02em",color:"#eef3fb"}}>{(function(){var h=new Date().getHours();return h<12?"Good morning":h<18?"Good afternoon":"Good evening";})()}, Ashley</div>
-            <div style={{fontSize:13,color:"#7a85a0",marginTop:4}}>{new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
-          </div>
-          {/* Bento masonry — cards pack by height, no dead gaps */}
-          <div style={{columnCount:mob?1:3,columnGap:18}}>
-            <div className="card-rim" style={card({columnSpan:"all",breakInside:"avoid",padding:"16px 20px"})}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                <div>
-                  <div style={{fontSize:13,fontWeight:700,color:T.text,letterSpacing:"-0.01em"}}>{new Date(dStr(weekDates[0])).toLocaleDateString("en-AU",{month:"long",year:"numeric"})}</div>
-                  <div style={{fontSize:10,color:T.text3,marginTop:1}}>{fmtDate(dStr(weekDates[0]))} · {fmtDate(dStr(weekDates[6]))}</div>
-                </div>
-                <div style={{display:"flex",gap:5,alignItems:"center"}}>
-                  {gcalReady&&!gcalConnected&&<button style={{...btn,fontSize:10,color:"#4285F4",border:"0.5px solid rgba(66,133,244,0.35)",display:"inline-flex",alignItems:"center",gap:4}} onClick={function(){window.GCalSync&&window.GCalSync.connect();}}><UIcon name="calendar" size={10}/>Connect</button>}
-                  {gcalConnected&&<button style={{...btn,fontSize:10,color:T.text2,display:"inline-flex",alignItems:"center",gap:4}} onClick={function(){setShowCalPicker(true);}}><UIcon name="calendar" size={10}/>{gcalEvents.length}</button>}
-                  <button style={{...btn,padding:"4px 10px",fontSize:13}} onClick={function(){setWkOff(function(o){return o-1;});}}>←</button>
-                  <button style={{...btn,padding:"4px 10px",color:wkOff===0?T.accent:T.text2,border:wkOff===0?"0.5px solid rgba(91,140,255,0.4)":"0.5px solid rgba(255,255,255,0.12)"}} onClick={function(){setWkOff(0);setActiveDay(todayStr());}}>Today</button>
-                  <button style={{...btn,padding:"4px 10px",fontSize:13}} onClick={function(){setWkOff(function(o){return o+1;});}}>→</button>
-                </div>
-              </div>
-              {renderWeek()}
-              {gcalCalendars.length>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10,paddingTop:8,borderTop:"0.5px solid "+T.border}}>
-                {gcalCalendars.slice(0,6).map(function(cal){return<div key={cal.id} style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:6,height:6,borderRadius:2,background:cal.backgroundColor||"#4285F4"}}/><span style={{fontSize:9,color:T.text3}}>{cal.summary}</span></div>;})}
-              </div>}
+          <div style={{marginBottom:18,display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12}}>
+            <div>
+              <div style={{fontSize:mob?20:24,fontWeight:800,letterSpacing:"-0.02em",color:"#eef3fb"}}>{(function(){var h=new Date().getHours();return h<12?"Good morning":h<18?"Good afternoon":"Good evening";})()}, Ashley</div>
+              <div style={{fontSize:13,color:"#7a85a0",marginTop:4}}>{new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
             </div>
-            <ErrorBoundary name="ShoppingHome"><ShoppingHomeCard items={data.shopping||[]} onUpdate={updateShopping} onOpen={function(){setPage("Shopping");}} cardStyle={card({breakInside:"avoid"})} mob={mob}/></ErrorBoundary>
-            <div style={{breakInside:"avoid",marginBottom:12}}><WeatherWidget mob={mob}/></div>
-
-          {/* Check-in (slim) */}
-          <div className="card-rim" style={{...card({breakInside:"avoid"}),marginBottom:12}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:16,marginBottom:(checkinOpen||todayEvs.length>0)?10:0}}>
-              <div style={{fontSize:10,color:T.text3,display:"flex",alignItems:"center",gap:5}}><div style={{width:5,height:5,borderRadius:"50%",background:T.accent}}/>Daily Check-in · {new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long"})}</div>
-              {checkinOpen
-                ?<div style={{display:"flex",gap:6}}><button style={{...btn,fontSize:11}} onClick={function(){trk("checkin.generate");doCheckin();}}>Refresh</button><button style={{...btn,fontSize:11}} onClick={function(){setCheckinOpen(false);}}>Hide</button></div>
-                :<button style={{...btnP,fontSize:11,padding:"5px 12px"}} onClick={function(){setCheckinOpen(true);if(checkinBlocks.length===0&&!checkinLoading){trk("checkin.generate");doCheckin();}}}>Generate check-in</button>}
-            </div>
-            {checkinOpen&&(checkinLoading?<div style={{fontSize:12,color:T.accent,display:"flex",alignItems:"center",gap:6}}><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:T.accent,animation:"pulse 1.2s ease-in-out infinite"}}/>AI is thinking...</div>:checkinBlocks.length===0?<div style={{fontSize:12,color:T.text3}}>Generating today's check-in…</div>:checkinBlocks.map(function(block,bi){return(<div key={bi} style={{marginBottom:10}}>{block.header&&<div style={{fontSize:11,fontWeight:600,color:T.accent,marginBottom:4}}>{block.header}</div>}{block.items.map(function(item,ii){return<div key={ii} style={{fontSize:13,lineHeight:1.7,color:T.text}}>{item}</div>;})}</div>);}))}
-            {todayEvs.length>0&&<div style={{marginTop:12,paddingTop:10,borderTop:"0.5px solid "+T.border,display:"flex",gap:6,flexWrap:"wrap"}}>{todayEvs.map(function(ev){const col=evColor(ev);return(<div key={ev.id} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 9px",borderRadius:6,background:col+"18",border:"0.5px solid "+col+"40",flexShrink:0}}><div><div style={{fontSize:10,fontWeight:600,color:col}}>{evLabel(ev)}<span style={{fontWeight:400,color:T.text3}}> · {ev.time}</span></div><div style={{fontSize:9,color:T.text2}}>{ev.title.slice(0,32)}</div></div></div>);})}</div>}
-          </div>
-
-          {/* Goals */}
-          {(function(){
-            var b=data.boardroom||{};
-            if(!b.onboarded) return null;
-            var ag=(b.goals||[]).filter(function(g){return g.status==="active";});
-            var ns=b.northStar||"";
-            if(!ag.length&&!ns) return null;
-            return(
-              <div className="card-rim" style={{...card({breakInside:"avoid"}),borderLeft:"3px solid rgba(91,140,255,0.6)"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:ns?10:12}}>
-                  <div style={sT}>Goals</div>
-                  <button onClick={function(){setPage("Boardroom");}} style={{...btnGlass,fontSize:11,padding:"3px 10px"}}>Boardroom →</button>
-                </div>
-                {ns&&<div style={{fontSize:12,color:"rgba(255,255,255,0.42)",fontStyle:"italic",lineHeight:1.65,marginBottom:ag.length?14:4,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>"{ns}"</div>}
-                {ag.length===0&&<div style={{fontSize:12,color:T.text3,marginTop:4}}>Start a session to set your first goal.</div>}
-                {ag.map(function(g,i){
-                  var ts=getTagStyle(g.area);
-                  return(
-                    <div key={g.id} style={{display:"flex",alignItems:"center",gap:9,padding:"7px 0",borderBottom:i<ag.length-1?"0.5px solid rgba(255,255,255,0.06)":"none"}}>
-                      <span style={{width:6,height:6,borderRadius:"50%",flexShrink:0,background:ts.color,boxShadow:"0 0 6px "+ts.color}}/>
-                      <span style={{fontSize:10,padding:"2px 6px",borderRadius:4,...ts,flexShrink:0}}>{g.area}</span>
-                      <span style={{fontSize:13,color:"rgba(255,255,255,0.82)",lineHeight:1.4}}>{g.title}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-
-          {/* Assessments */}
-          <div className="card-rim" style={card({breakInside:"avoid"})}>
-              <div style={sT}>Upcoming assessments</div>
-              {upcoming.length===0?<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>:upcoming.map(function(a){const days=daysBetween(a.date);const col=subjectColor(data.uni.subjects,a.subject)||T.accent;const dayLabel=days===0?"Today":days===1?"Tomorrow":days<=13?WX_DAYS[new Date(a.date+"T00:00").getDay()]+" · "+days+" days":fmtDate(a.date);return(<div key={a.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:8,background:T.bg3,border:"0.5px solid "+T.border,marginBottom:6,cursor:"pointer"}} onClick={function(){setPage("Uni");}}>
-                <div style={{width:7,height:7,borderRadius:"50%",background:col,flexShrink:0}}/>
-                <div style={{flex:1,minWidth:0,fontSize:12,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:col,fontWeight:700}}>{a.subject}</span>{" · "}{a.title}</div>
-                <div style={{fontSize:10,color:days<=3?T.danger:T.text2,fontWeight:600,flexShrink:0,whiteSpace:"nowrap"}}>{dayLabel}</div>
-              </div>);})}
-            </div>
-          {/* Pre-fill weights */}
-          <div className="card-rim" style={card({breakInside:"avoid"})}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:nextRot?4:0}}>
-                  <div>
-                    <div style={sT}>Next session · pre-fill weights</div>
-                    {nextRot&&<div style={{fontSize:11,color:T.text2,marginTop:2}}>{nextRot.name}{nextRot.focus?" · "+nextRot.focus:""}</div>}
-                  </div>
-                  <button style={editPill} onClick={function(){setPage("Gym");}}>Open →</button>
-                </div>
-                {!nextRot&&<div style={{fontSize:11,color:T.text2,marginBottom:8}}>Set up your rotation in the Gym tab.</div>}
-                {gymDraftBanner&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 13px",borderRadius:12,background:"rgba(225,234,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",boxShadow:"0 0 20px rgba(255,209,102,0.3),inset 0 1px 0 rgba(255,255,255,0.05)",marginBottom:10}}>
-                  <span style={{fontSize:11,color:T.warn}}>Unfinished session restored · keep logging or discard</span>
-                  <button onClick={function(){try{localStorage.removeItem('gym_draft');}catch(_){}setGymDraftBanner(false);setNxtRows(nextRot&&nextRot.exercises&&nextRot.exercises.length>0?nextRot.exercises.map(function(ex,i){return{id:ex.id||i+1,exercise:ex.exercise||"",sets:ex.sets||"",reps:ex.reps||"",weight:ex.weight||""};}):[{id:1,exercise:"",sets:"",reps:"",weight:""},{id:2,exercise:"",sets:"",reps:"",weight:""},{id:3,exercise:"",sets:"",reps:"",weight:""}]);}} style={{...btnGlass,fontSize:10,padding:"3px 10px"}}>Discard</button>
-                </div>}
-                <datalist id="homeExSuggestions">{(function(){var seen={};var names=[];((data.gym||{}).exercises||[]).forEach(function(ex){var n=(ex.name||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});((data.gym||{}).rotation||[]).forEach(function(r){(r.exercises||[]).forEach(function(ex){var n=(ex.exercise||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});});return names;})().map(function(n){return React.createElement("option",{key:n,value:n});})}</datalist>
-                {mob?nxtRows.map(function(row,i){return(<div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 52px 52px 64px",gap:5,marginBottom:6}}>
-                  <input style={{...inp,padding:"8px 8px",fontSize:12}} list="homeExSuggestions" placeholder={["Bench Press","Squat","OHP"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
-                  <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="Sets" value={row.sets} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,sets:ev.target.value}:x;});});}}/>
-                  <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="Reps" value={row.reps} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,reps:ev.target.value}:x;});});}}/>
-                  <input style={{...inp,padding:"8px 4px",fontSize:12}} type="number" placeholder="kg" value={row.weight} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,weight:ev.target.value}:x;});});}}/>
-                </div>);}):(
-                <div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 50px 50px 60px",gap:6,marginBottom:4}}>{["Exercise","Sets","Reps","kg"].map(function(h){return<div key={h} style={{fontSize:9,color:T.text3}}>{h}</div>;})}</div>
-                {nxtRows.map(function(row,i){return(<div key={row.id} style={{display:"grid",gridTemplateColumns:"1fr 50px 50px 60px",gap:6,marginBottom:6}}>
-                  <input style={inp} list="homeExSuggestions" placeholder={["Bench Press","Squat","Overhead Press"][i]||"Exercise"} value={row.exercise} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,exercise:ev.target.value}:x;});});}}/>
-                  <input style={inp} type="number" placeholder="4" value={row.sets} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,sets:ev.target.value}:x;});});}}/>
-                  <input style={inp} type="number" placeholder="8" value={row.reps} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,reps:ev.target.value}:x;});});}}/>
-                  <input style={inp} type="number" placeholder="80" value={row.weight} onChange={function(ev){setNxtRows(function(r){return r.map(function(x,j){return j===i?{...x,weight:ev.target.value}:x;});});}}/>
-                </div>);})}
-                </div>)}
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4}}>
-                  <button style={btn} onClick={function(){setNxtRows(function(r){return r.concat([{id:Date.now(),exercise:"",sets:"",reps:"",weight:""}]);});}}>+ Row</button>
-                  <button style={btnP} onClick={saveNextSess}>Save to Gym →</button>
-                </div>
-              </div>
-              <div className="card-rim" style={card((!bwLogged&&dLeft<=3)?{boxShadow:"0 0 26px "+bwColMap[bwUrg]+"55,"+cardShadow,breakInside:"avoid"}:{breakInside:"avoid"})}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                  <div style={{fontSize:12,fontWeight:600,color:"#f3f7fd"}}>Weekly body weight</div>
-                  {!bwLogged&&<div style={{fontSize:10,color:bwColMap[bwUrg],fontWeight:600,padding:"2px 7px",borderRadius:99,background:bwColMap[bwUrg]+"18"}}>{dLeft}d left</div>}
-                </div>
-                {bwLogged&&!bwEditing
-                  ?<div>
-                    <div style={{display:"flex",alignItems:"center",gap:12,padding:"4px 0 8px"}}>
-                      <div style={{fontSize:32,color:T.success,lineHeight:1,fontWeight:700}}>✓</div>
-                      <div>
-                        <div style={{display:"flex",alignItems:"center",gap:8}}>
-                          <div style={{fontSize:22,fontWeight:700,color:T.success,lineHeight:1.1}}>{(function(){const e=(data.gym.bodyWeight||[]).find(function(e){return e.date>=thisWeek;});return e?e.weight+" kg":"Logged";})()}</div>
-                          <button style={{background:"none",border:"none",cursor:"pointer",color:T.text3,fontSize:16,opacity:0.45,lineHeight:1,padding:"0 2px"}} title="Delete this entry" onClick={function(){const e=(data.gym.bodyWeight||[]).find(function(en){return en.date>=thisWeek;});if(e)deleteBWEntry(e.date);}}>×</button>
-                        </div>
-                        <div style={{fontSize:10,color:T.success,opacity:0.75,marginTop:2}}>Logged this week</div>
-                      </div>
-                    </div>
-                    {(data.gym.bodyWeight||[]).length>=2&&<Sparkline data={data.gym.bodyWeight} color={T.success} width={180} height={40}/>}
-                    <button style={{...btn,fontSize:10,padding:"4px 10px",marginTop:8}} onClick={function(){const e=(data.gym.bodyWeight||[]).find(function(e){return e.date>=thisWeek;});if(e){setBwIn(String(e.weight));setBwDate(e.date);}else{setBwIn("");setBwDate(todayStr());}setBwEditing(true);}}>Edit / add past entry</button>
-                  </div>
-                  :<div>
-                    <div style={{fontSize:10,color:T.text3,marginBottom:8}}>{bwEditing?"Update your entry or add a past entry below":dLeft<=1?"Last chance, ends tomorrow!":dLeft<=3?"Log before the week ends":"Log once this week"}</div>
-                    <div style={{display:"flex",gap:6,marginBottom:6}}><input style={{...inp,flex:1}} type="number" step="0.1" placeholder="e.g. 81.2 kg" value={bwIn} onChange={function(ev){setBwIn(ev.target.value);}}/><button style={btnP} onClick={logBW}>Log</button></div>
-                    <input type="date" style={{...inp,padding:"6px 10px",fontSize:11,color:T.text3}} value={bwDate} onChange={function(ev){setBwDate(ev.target.value);}}/>
-                    {bwLogged&&bwEditing&&<button style={{...btn,fontSize:10,padding:"4px 10px",marginTop:6,opacity:0.6}} onClick={function(){setBwEditing(false);setBwIn("");setBwDate(todayStr());}}>Cancel</button>}
-                  </div>
+            {!mob&&<div style={{display:"flex",gap:8,alignItems:"center"}}>
+              {layoutEditing&&<button style={{...btn,color:T.danger,borderColor:T.danger+"50"}} onClick={function(){
+                if(window.confirm("Reset the home page to its default layout?")){
+                  saveLayout(window.HomeLayout.defaultLayout());
                 }
-              </div>
-          {/* Tasks */}
-          <div className="card-rim" style={card({breakInside:"avoid"})}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={sT}>Tasks</div><button style={{...editPill,fontSize:14,padding:"2px 12px"}} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+</button></div>
-              {urgTasks.length===0&&normTasks.length===0&&doneTasks.length===0&&<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>}
-              {scheduleTaskId&&<div style={{fontSize:9,color:T.accent,marginBottom:6,padding:"3px 8px",borderRadius:6,background:T.accentBg,border:"0.5px solid rgba(91,140,255,0.3)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}><span>Tap a calendar day to schedule (or ESC)</span><button onClick={function(){setScheduleTaskId(null);}} title="Cancel scheduling" style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:14,padding:"0 4px",lineHeight:1,fontWeight:700}}>×</button></div>}
-              {urgTasks.length>0&&<div><div style={{fontSize:9,color:T.danger,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Urgent</div>{urgTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:9,marginBottom:7,alignItems:"flex-start",padding:"10px 12px",borderRadius:12,background:isActive?"rgba(91,140,255,0.12)":"rgba(225,234,255,0.04)",border:"1px solid "+(isActive?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.07)"),boxShadow:"inset 10px 0 9px -8px "+TUC[urg],cursor:"default",transition:"background 0.15s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:T.text3,flexShrink:0,opacity:0.45,display:"flex",transition:"opacity 0.15s"}} title="Mark done on a different day" onClick={function(e){e.stopPropagation();openBackdateModal(t.id);}}><UIcon name="clock" size={12}/></button><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();if(scheduleTaskId===t.id){setScheduleTaskId(null);}else{trk("task.schedule");setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button></div>);})}</div>}
-              {normTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Normal</div>{normTasks.map(function(t){const urg=taskUrg(t);const isActive=scheduleTaskId===t.id;return(<div key={t.id} className="glow-item" style={{display:"flex",gap:9,marginBottom:7,alignItems:"flex-start",padding:"10px 12px",borderRadius:12,background:isActive?"rgba(91,140,255,0.12)":"rgba(225,234,255,0.04)",border:"1px solid "+(isActive?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.07)"),boxShadow:"inset 10px 0 9px -8px "+TUC[urg],cursor:"default",transition:"background 0.15s"}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:9,color:TUC[urg]}}>{taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:T.text3,flexShrink:0,opacity:0.45,display:"flex",transition:"opacity 0.15s"}} title="Mark done on a different day" onClick={function(e){e.stopPropagation();openBackdateModal(t.id);}}><UIcon name="clock" size={12}/></button><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:scheduleTaskId===t.id?T.accent:T.text3,fontSize:14,flexShrink:0,lineHeight:1,opacity:scheduleTaskId===t.id?1:0.45,transition:"opacity 0.15s,color 0.15s"}} title="Schedule" onClick={function(e){e.stopPropagation();if(scheduleTaskId===t.id){setScheduleTaskId(null);}else{trk("task.schedule");setScheduleTaskId(t.id);showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button></div>);})}</div>}
-              {doneTasks.length>0&&<div><div style={{fontSize:9,color:T.text3,fontWeight:700,marginBottom:6,marginTop:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneTasks.map(function(t){return(<div key={t.id} style={{display:"flex",gap:7,marginBottom:5,alignItems:"center",opacity:0.45}}><input type="checkbox" checked={true} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,flexShrink:0}}/><div style={{fontSize:11,color:T.text3,textDecoration:"line-through",flex:1,minWidth:0}}>{t.name}</div>{t.completedAt&&<div style={{fontSize:9,color:T.text3,flexShrink:0}}>{fmtDate(t.completedAt)}{t.completedTime?" · "+fmtTime12(t.completedTime):""}</div>}</div>);})}</div>}
-            </div>
+              }}>Reset layout</button>}
+              <button style={layoutEditing?btnP:btn} onClick={function(){setLayoutEditing(function(v){return !v;});}}>
+                {layoutEditing?"Done":"Edit layout"}
+              </button>
+            </div>}
           </div>
+          {/* Pinned: calendar always spans the full width above the grid */}
+          <div className="card-rim" style={card({padding:"16px 20px",marginBottom:mob?12:GRID_GAP})}>
+            {renderCalendarCard()}
+          </div>
+
+          {mob
+            ?<div>{homeLayout.map(function(e){
+                const body=renderHomeCard(e.id);
+                return body?<div key={e.id} style={{marginBottom:12}}>{body}</div>:null;
+              })}</div>
+            :<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gridAutoRows:GRID_ROW_UNIT+"px",gridAutoFlow:"row dense",columnGap:GRID_GAP,rowGap:0,alignItems:"start"}}>
+              {homeLayout.map(function(e,idx){
+                const body=renderHomeCard(e.id);
+                if(!body)return null;
+                const meta=window.HomeLayout.HOME_CARDS.filter(function(c){return c.id===e.id;})[0]||{};
+                return(
+                  <HomeGridCard key={e.id} span={e.span} editing={layoutEditing} title={meta.title||e.id}
+                    isDragging={dragId===e.id} isDropTarget={layoutEditing&&dropIdx===idx&&dragId!==null&&dragId!==e.id}
+                    onSpan={function(n){saveLayout(window.HomeLayout.setSpan(homeLayout,e.id,n));}}
+                    onDragStart={function(ev){
+                      if(ev.button!==0||!ev.isPrimary)return;
+                      ev.preventDefault();setDragId(e.id);setDropIdx(idx);}}
+                    onDragOver={function(){if(dragId)setDropIdx(idx);}}>
+                    {body}
+                  </HomeGridCard>
+                );
+              })}
+            </div>}
           {appVersion&&<div style={{textAlign:"center",padding:"10px 0 2px",fontSize:10,color:T.text3,opacity:0.5}}>
             <span onClick={function(){trk("version.click");}} title={"Released "+appVersion.date} style={{cursor:"pointer"}}>{appVersion.version}</span>
             {" · "}<a href={"https://github.com/jaydenpineda30-glitch/Main/releases"} target="_blank" rel="noreferrer" style={{color:T.text3,textDecoration:"none"}}>patch notes ↗</a>
@@ -4263,10 +4761,6 @@ function App(){
           {(function(){
             const assessments=data.uni.assessments||SYLLABUS_ASSESSMENTS;
             const totalA=assessments.length;const doneA=assessments.filter(function(a){return a.done;}).length;
-            const UNI_KEYS=["uni","tafe","rmit","university","curtin","monash","deakin","uts","usyd","uq","uwa","anu","unsw","federation"];
-            function isUniCalEv(ev){return ev.calName&&UNI_KEYS.some(function(k){return ev.calName.toLowerCase().includes(k);});}
-            const uc28=new Date();uc28.setDate(uc28.getDate()+28);const ucEnd=dStr(uc28);
-            const upcomingClasses=dedupedEvents.filter(function(ev){return isUniCalEv(ev)&&!isAssessmentEvent(ev)&&!ev.allDay&&ev.date>=todayStr()&&ev.date<=ucEnd;}).sort(function(a,b){return a.date.localeCompare(b.date)||(a.time||"").localeCompare(b.time||"");});
             return(<React.Fragment>
               {/* ── Assessments ── */}
               <div className="card-rim" style={card()}>
@@ -4339,13 +4833,8 @@ function App(){
                   </div>);})}</div>}
               </div>
               {/* ── Upcoming Classes ── */}
-              <div className="card-rim" style={card()}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                  <div style={sT}>Upcoming Classes</div>
-                  <div style={{fontSize:9,color:T.text3}}>next 28 days</div>
-                </div>
-                {upcomingClasses.length===0?<div style={{fontSize:12,color:T.text2}}>{gcalConnected?"No upcoming classes in the next 28 days.":"Connect Google Calendar to see your schedule."}</div>:(function(){let lastDate2="";return upcomingClasses.map(function(ev){const showDate=ev.date!==lastDate2;lastDate2=ev.date;const col=evColor(ev);const isToday=ev.date===todayStr();return(<div key={ev.id}>{showDate&&<div style={{fontSize:10,fontWeight:600,color:isToday?T.accent:T.text2,marginTop:10,marginBottom:6,paddingTop:8,borderTop:"0.5px solid "+T.border}}>{isToday?"Today · ":""}{new Date(ev.date+"T12:00:00").toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"short"})}</div>}<div style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start"}}><div style={{width:2,borderRadius:2,background:col,alignSelf:"stretch",minHeight:28,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:T.text2,marginBottom:1}}>{evLabel(ev)}</div><div style={{fontSize:12,color:T.text,lineHeight:1.5}}>{ev.title}</div>{ev.description&&<div style={{fontSize:10,color:T.text3,marginTop:2,lineHeight:1.4}}>{ev.description.slice(0,120)}{ev.description.length>120?"…":""}</div>}<div style={{fontSize:10,color:T.text3,marginTop:2}}>{ev.time}</div></div></div></div>);});}())}
-              </div>
+              <UpcomingClassesCard events={dedupedEvents} days={28} gcalConnected={gcalConnected}
+                evColor={evColor} evLabel={evLabel} cardStyle={card()}/>
             </React.Fragment>);
           })()}
         </div>}
@@ -4377,8 +4866,8 @@ function App(){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={sT}>Tasks</div><div style={{display:"flex",gap:6}}>{doneTasks.length>0&&<button style={{...btn,color:T.success,borderColor:T.success+"50"}} onClick={archiveDone}>Archive done</button>}<button style={btn} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+ Task</button></div></div>
             {editTaskId&&<div style={{marginBottom:14,padding:"10px 12px",background:T.bg3,borderRadius:8,border:"0.5px solid "+T.accent+"40"}}><div style={{fontSize:11,color:T.accent,marginBottom:8,fontWeight:500}}>Editing task</div><div style={{display:"flex",flexDirection:"column",gap:6}}><input style={inp} value={editTaskForm.name||""} onChange={function(ev){setEditTaskForm(function(f){return{...f,name:ev.target.value};});}} placeholder="Task name"/><div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:6}}><select style={inp} value={editTaskForm.cat||"Errands"} onChange={function(ev){setEditTaskForm(function(f){return{...f,cat:ev.target.value};});}}>{TASK_CATS.map(function(c){return<option key={c}>{c}</option>;})}</select><select style={inp} value={editTaskForm.priority||"normal"} onChange={function(ev){setEditTaskForm(function(f){return{...f,priority:ev.target.value};});}}><option value="normal">Normal</option><option value="urgent">Urgent</option></select><input type="date" style={inp} value={editTaskForm.due||""} onChange={function(ev){setEditTaskForm(function(f){return{...f,due:ev.target.value};});}}/></div><div style={{display:"flex",gap:6,justifyContent:"flex-end"}}><button style={btn} onClick={function(){setEditTaskId(null);}}>Cancel</button><button style={btnP} onClick={saveEditTask}>Save</button></div></div></div>}
             {data.personal.tasks.length===0&&<div style={{fontSize:12,color:T.text2}}>No tasks yet.</div>}
-            {["urgent","normal"].map(function(pri){const tasks=data.personal.tasks.filter(function(t){return t.priority===pri&&!t.done;}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});if(tasks.length===0)return null;return(<div key={pri} style={{marginBottom:14}}><div style={{fontSize:9,fontWeight:700,color:pri==="urgent"?T.danger:T.text3,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>{pri}</div>{tasks.map(function(t){const urg=taskUrg(t);const col=TUC[urg];return(<div key={t.id} style={{display:"flex",alignItems:"flex-start",gap:9,marginBottom:8,padding:"11px 13px",borderRadius:12,background:"rgba(225,234,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",boxShadow:"inset 10px 0 9px -8px "+col}}><input type="checkbox" checked={t.done} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,marginTop:2,flexShrink:0}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:10,color:col,marginTop:1}}>{t.cat} · {taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:T.text3,flexShrink:0,opacity:0.5,display:"flex"}} title="Mark done on a different day" onClick={function(){openBackdateModal(t.id);}}><UIcon name="clock" size={13}/></button><button onClick={function(){setEditTaskId(t.id);setEditTaskForm({name:t.name,cat:t.cat,priority:t.priority,due:t.due});}} style={{...btn,fontSize:10,padding:"2px 7px"}}>Edit</button></div>);})}</div>);})}
-            {(function(){const doneP=data.personal.tasks.filter(function(t){return t.done;});if(doneP.length===0)return null;return(<div style={{marginBottom:14}}><div style={{fontSize:9,fontWeight:700,color:T.text3,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneP.map(function(t){return(<div key={t.id} style={{display:"flex",alignItems:"center",gap:9,marginBottom:6,padding:"9px 13px",borderRadius:12,background:"rgba(225,234,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",opacity:0.55}}><input type="checkbox" checked={true} onChange={function(){toggleTask(t.id);}} style={{accentColor:T.accent,flexShrink:0}}/><div style={{flex:1,minWidth:0,fontSize:12,color:T.text3,textDecoration:"line-through"}}>{t.name}</div>{t.completedAt&&<div style={{fontSize:10,color:T.text3,flexShrink:0}}>{fmtDate(t.completedAt)}{t.completedTime?" · "+fmtTime12(t.completedTime):""}</div>}</div>);})}</div>);})()}
+            {["urgent","normal"].map(function(pri){const tasks=data.personal.tasks.filter(function(t){return t.priority===pri&&!t.done;}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});if(tasks.length===0)return null;return(<div key={pri} style={{marginBottom:14}}><div style={{fontSize:9,fontWeight:700,color:pri==="urgent"?T.danger:T.text3,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>{pri}</div>{tasks.map(function(t){const urg=taskUrg(t);const col=TUC[urg];return(<div key={t.id} style={{display:"flex",alignItems:"flex-start",gap:9,marginBottom:8,padding:"11px 13px",borderRadius:12,background:"rgba(225,234,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",boxShadow:"inset 10px 0 9px -8px "+col}}><span style={{marginTop:1,display:"flex"}}><TickCircle done={!!t.done} size={18} onClick={function(){toggleTask(t.id);}}/></span><div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:10,color:col,marginTop:1}}>{t.cat} · {taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:T.text3,flexShrink:0,opacity:0.5,display:"flex"}} title="Mark done on a different day" onClick={function(){openBackdateModal(t.id);}}><UIcon name="clock" size={13}/></button><button onClick={function(){setEditTaskId(t.id);setEditTaskForm({name:t.name,cat:t.cat,priority:t.priority,due:t.due});}} style={{...btn,fontSize:10,padding:"2px 7px"}}>Edit</button></div>);})}</div>);})}
+            {(function(){const doneP=data.personal.tasks.filter(function(t){return t.done;});if(doneP.length===0)return null;return(<div style={{marginBottom:14}}><div style={{fontSize:9,fontWeight:700,color:T.text3,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneP.map(function(t){return(<div key={t.id} style={{display:"flex",alignItems:"center",gap:9,marginBottom:6,padding:"9px 13px",borderRadius:12,background:"rgba(225,234,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",opacity:0.55}}><TickCircle done={true} size={18} onClick={function(){toggleTask(t.id);}}/><div style={{flex:1,minWidth:0,fontSize:12,color:T.text3,textDecoration:"line-through"}}>{t.name}</div>{t.completedAt&&<div style={{fontSize:10,color:T.text3,flexShrink:0}}>{fmtDate(t.completedAt)}{t.completedTime?" · "+fmtTime12(t.completedTime):""}</div>}</div>);})}</div>);})()}
           </div>
           {(data.personal.archived||[]).length>0&&<div className="card-rim" style={card()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:12,fontWeight:500,color:T.text3}}>Archived ({(data.personal.archived||[]).length})</div><button style={btn} onClick={function(){setShowArch(function(a){return !a;});}}>{showArch?"Hide":"Show"}</button></div>{showArch&&(data.personal.archived||[]).slice().reverse().map(function(t){return(<div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"6px 0",borderBottom:"0.5px solid "+T.border}}><div><span style={{color:T.text3,textDecoration:"line-through"}}>{t.name}</span><span style={{fontSize:10,color:T.text3,marginLeft:8}}>{fmtDate(t.archivedAt)}</span></div><button onClick={function(){restoreTask(t.id);}} style={{...btn,fontSize:10,padding:"2px 8px",color:T.accent,borderColor:T.accent+"50"}}>Restore</button></div>);})}</div>}
           <div className="card-rim" style={card()}><div style={sT}>Knowledge base</div><div style={{fontSize:11,color:T.text2,marginBottom:10}}>Notes here feed your daily check-in context.</div>{(data.docs||[]).map(function(d){return(<div key={d.id} style={{marginBottom:8,padding:"8px 10px",background:T.bg3,borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><div style={{fontSize:12,fontWeight:500,color:T.text}}>{d.title}</div><div style={{fontSize:10,color:T.text3,marginTop:2}}>{d.content.slice(0,80)}...</div><div style={{marginTop:4,display:"flex",gap:4}}>{(d.tags||[]).map(function(tag){return<span key={tag} style={{fontSize:9,padding:"1px 6px",borderRadius:99,background:T.accentBg,color:T.accent}}>{tag}</span>;})}</div></div><button onClick={function(){trk("kb.doc_delete");setData(function(p){return{...p,docs:(p.docs||[]).filter(function(x){return x.id!==d.id;})};});}} style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:16,marginLeft:8}}>×</button></div>);})}<div style={{marginTop:12,display:"flex",flexDirection:"column",gap:6}}><input style={inp} placeholder="Title" value={docIn.title} onChange={function(ev){setDocIn(function(p){return{...p,title:ev.target.value};});}}/><input style={inp} placeholder="Tags (comma separated)" value={docIn.tags} onChange={function(ev){setDocIn(function(p){return{...p,tags:ev.target.value};});}}/><textarea style={{...inp,resize:"vertical"}} rows={3} placeholder="Content..." value={docIn.content} onChange={function(ev){setDocIn(function(p){return{...p,content:ev.target.value};});}}/><button style={btnP} onClick={function(){if(!docIn.title||!docIn.content)return;trk("kb.doc_add");setData(function(p){return{...p,docs:(p.docs||[]).concat([{id:"doc"+Date.now(),title:docIn.title,tags:docIn.tags.split(",").map(function(t){return t.trim();}),content:docIn.content}])};});setDocIn({title:"",tags:"",content:""});}}>Add document</button></div></div>
@@ -4562,9 +5051,45 @@ function App(){
       </div>
 
       {modal&&<div style={{position:"fixed",inset:0,background:"rgba(5,7,26,0.82)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:mob?"flex-end":"center",justifyContent:"center",zIndex:200,padding:mob?"0":"16px"}} onClick={function(){setModal(null);}}>
-        <div style={{background:"rgba(14,16,40,0.97)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 32px":"22px",width:mob?"100%":modal==="edit_rotation"?"480px":"340px",maxWidth:"100%",border:"0.5px solid rgba(91,140,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.1)"}} onClick={function(ev){ev.stopPropagation();}}>
+        <div style={{background:"rgba(14,16,40,0.97)",backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",borderRadius:mob?"20px 20px 0 0":"16px",padding:mob?"24px 20px 32px":"22px",width:mob?"100%":modal==="edit_rotation"?"480px":modal==="task_detail"?"380px":"340px",maxWidth:"100%",border:"0.5px solid rgba(91,140,255,0.25)",boxShadow:"0 8px 32px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.1)"}} onClick={function(ev){ev.stopPropagation();}}>
           {mob&&<div style={{width:36,height:4,borderRadius:2,background:"rgba(255,255,255,0.2)",margin:"0 auto 20px"}}/>}
-          <div style={{fontSize:15,fontWeight:600,marginBottom:16,color:T.text}}>{modal==="add_subject"&&"Add subject"}{modal==="add_exercise"&&"Add exercise"}{modal==="log_weight"&&"Log weight · "+(mForm.exName||"")}{modal==="add_task"&&"Add task"}{modal==="edit_rotation"&&"Edit rotation template"}{modal==="complete_task"&&"Mark task done"}{modal==="edit_subject"&&"Edit subject"}</div>
+          {!closeOnlyModal&&<div style={{fontSize:15,fontWeight:600,marginBottom:16,color:T.text}}>{modal==="add_subject"&&"Add subject"}{modal==="add_exercise"&&"Add exercise"}{modal==="log_weight"&&"Log weight · "+(mForm.exName||"")}{modal==="add_task"&&"Add task"}{modal==="edit_rotation"&&"Edit rotation template"}{modal==="complete_task"&&"Mark task done"}{modal==="edit_subject"&&"Edit subject"}</div>}
+          {modal==="edit_necessities"&&(function(){
+            const nec=(data.personal&&data.personal.necessities)||{items:[],ticks:{}};
+            function setItems(next,dropTickId){
+              setData(function(p){
+                const cur=(p.personal&&p.personal.necessities)||{items:[],ticks:{}};
+                // Ticks are the only durable truth here, so a removed item must take its
+                // tick with it — otherwise every deletion leaves a dead key in the doc
+                // that syncs to three devices and never goes away.
+                const ticks={...(cur.ticks||{})};
+                if(dropTickId!==undefined)delete ticks[dropTickId];
+                return{...p,personal:{...p.personal,necessities:{...cur,items:next,ticks:ticks}}};
+              });
+            }
+            return(<div>
+              <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:12}}>Weekly necessities</div>
+              {(nec.items||[]).map(function(i){return(
+                <div key={i.id} style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+                  <span style={{fontSize:12,color:T.text,flex:1}}>{i.name}</span>
+                  <button onClick={function(){setItems((nec.items||[]).filter(function(x){return x.id!==i.id;}),i.id);}}
+                    style={{background:"none",border:"none",color:T.danger,cursor:"pointer",fontSize:15,
+                            lineHeight:1,padding:"0 4px"}} title="Remove">×</button>
+                </div>);})}
+              <div style={{display:"flex",gap:6,marginTop:12}}>
+                <input style={{...PINP,flex:1}} placeholder="Add a weekly necessity…" value={mForm.newItem||""}
+                  onChange={function(e){setMForm(function(f){return{...f,newItem:e.target.value};});}}
+                  onKeyDown={function(e){if(e.key==="Enter"){e.preventDefault();
+                    const v=(mForm.newItem||"").trim();if(!v)return;
+                    setItems((nec.items||[]).concat([{id:Date.now(),name:v}]));
+                    setMForm(function(f){return{...f,newItem:""};});}}}/>
+                <button style={btnP} onClick={function(){
+                  const v=(mForm.newItem||"").trim();if(!v)return;
+                  setItems((nec.items||[]).concat([{id:Date.now(),name:v}]));
+                  setMForm(function(f){return{...f,newItem:""};});}}>Add</button>
+              </div>
+            </div>);
+          })()}
           {modal==="add_exercise"&&(function(){
             var names=[];var seen={};
             (data.gym.exercises||[]).forEach(function(ex){var n=(ex.name||"").trim();if(n&&!seen[n.toLowerCase()]){seen[n.toLowerCase()]=true;names.push(n);}});
@@ -4613,10 +5138,75 @@ function App(){
             </div>);})}
             <button style={{...btn,marginTop:4,fontSize:11}} onClick={function(){setMForm(function(f){return{...f,exercises:(f.exercises||[]).concat([{id:Date.now(),exercise:"",sets:"",reps:"",weight:""}])};});}}>+ Exercise</button>
           </div>}
-          <div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
+          {modal==="task_detail"&&(function(){
+            const t=(data.personal.tasks||[]).filter(function(x){return x.id===mForm.taskId;})[0];
+            // Archived or deleted from another device while this was open — say so
+            // rather than leaving a blank box with a lone Close button.
+            if(!t)return <div style={{fontSize:12,color:T.text3}}>This task is no longer available.</div>;
+            const ups=(t.updates||[]).slice().reverse();
+            return(<div>
+              <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:4}}>{t.name}</div>
+              <div style={{fontSize:10,color:catColor(t.cat||"Other"),marginBottom:14}}>{t.cat||"Other"}</div>
+
+              <div style={{fontSize:10,color:T.text3,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>State</div>
+              <div style={{display:"flex",gap:6,marginBottom:16}}>
+                {[{v:"todo",l:"Not started"},{v:"doing",l:"In progress"},{v:"waiting",l:"Waiting"}].map(function(o){
+                  const on=(t.state||"todo")===o.v;
+                  return<button key={o.v} onClick={function(){setTaskState(t.id,o.v);}}
+                    style={{...btn,fontSize:11,color:on?T.accent:T.text2,
+                            borderColor:on?"rgba(91,140,255,0.5)":"rgba(255,255,255,0.12)",
+                            background:on?T.accentBg:"transparent"}}>{o.l}</button>;})}
+              </div>
+
+              <div style={{fontSize:10,color:T.text3,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Updates</div>
+              {ups.length===0&&<div style={{fontSize:12,color:T.text3,marginBottom:10}}>No updates yet.</div>}
+              {ups.map(function(u){return(
+                <div key={u.id} style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:8,
+                                        paddingBottom:8,borderBottom:"0.5px solid "+T.border}}>
+                  <div style={{fontSize:10,color:T.text3,flexShrink:0,width:52}}>{fmtDate(u.at)}</div>
+                  <div style={{fontSize:12,color:T.text,flex:1,lineHeight:1.5}}>{u.text}</div>
+                  <button onClick={function(){deleteTaskUpdate(t.id,u.id);}}
+                    style={{background:"none",border:"none",color:T.text3,cursor:"pointer",fontSize:14,
+                            lineHeight:1,padding:"0 2px",flexShrink:0}} title="Delete update">×</button>
+                </div>);})}
+
+              <div style={{display:"flex",gap:6,marginTop:12}}>
+                <input style={{...PINP,flex:1}} placeholder="Write an update…" value={mForm.updateText||""}
+                  onChange={function(e){setMForm(function(f){return{...f,updateText:e.target.value};});}}
+                  onKeyDown={function(e){if(e.key==="Enter"){e.preventDefault();
+                    addTaskUpdate(t.id,mForm.updateText);
+                    setMForm(function(f){return{...f,updateText:""};});}}}/>
+                <button style={btnP} onClick={function(){
+                  addTaskUpdate(t.id,mForm.updateText);
+                  setMForm(function(f){return{...f,updateText:""};});}}>Add</button>
+              </div>
+            </div>);
+          })()}
+          {modal==="day_done"&&(function(){
+            const done=completionsByDay[mForm.date]||[];
+            return(<div>
+              <div style={{fontSize:14,fontWeight:600,color:T.text,marginBottom:12}}>
+                Finished {new Date(mForm.date+"T12:00:00").toLocaleDateString("en-AU",
+                  {weekday:"long",day:"numeric",month:"long"})}</div>
+              {done.length===0&&<div style={{fontSize:12,color:T.text3}}>Nothing recorded for this day.</div>}
+              {done.map(function(t){
+                const col=catColor(t.cat||"Other");
+                return(
+                  <div key={t.id} style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
+                    <span style={{width:6,height:6,borderRadius:"50%",background:col,flexShrink:0}}/>
+                    <span style={{fontSize:12,color:T.text,flex:1}}>{t.name}</span>
+                    <span style={{fontSize:10,color:T.text3}}>
+                      {t.completedTime?fmtTime12(t.completedTime):""}</span>
+                  </div>);})}
+            </div>);
+          })()}
+          {!closeOnlyModal&&<div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
             {mob?<button style={{...btnP,padding:"13px",fontSize:14,width:"100%",borderRadius:10}} onClick={saveModal}>Save</button>:<button style={btnP} onClick={saveModal}>Save</button>}
             <button style={{...(mob?{...btn,padding:"11px",fontSize:13,width:"100%",borderRadius:10,textAlign:"center"}:btn)}} onClick={function(){setModal(null);}}>Cancel</button>
-          </div>
+          </div>}
+          {closeOnlyModal&&<div style={{display:"flex",gap:8,marginTop:16,flexDirection:mob?"column":"row",justifyContent:"flex-end"}}>
+            <button style={mob?{...btnP,padding:"13px",fontSize:14,width:"100%",borderRadius:10}:btnP} onClick={function(){setModal(null);}}>Close</button>
+          </div>}
         </div>
       </div>}
 
@@ -4901,7 +5491,7 @@ function App(){
                           var text=typeof c==="string"?c:c.text;
                           return(
                             <label key={ci} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"4px 0",cursor:typeof c==="object"?"pointer":"default"}}>
-                              <input type="checkbox" checked={isDone} readOnly={typeof c==="string"} onChange={typeof c==="object"?function(){brToggleCommitment((b.keyMoments||[]).length-1-i,ci);}:undefined} style={{marginTop:2,flexShrink:0,accentColor:"#5b8cff"}}/>
+                              <span style={{marginTop:1,display:"flex"}}><TickCircle done={isDone} size={17} inert={typeof c==="string"} onClick={typeof c==="object"?function(){brToggleCommitment((b.keyMoments||[]).length-1-i,ci);}:undefined}/></span>
                               <span style={{fontSize:12,color:isDone?"rgba(255,255,255,0.3)":"rgba(255,255,255,0.75)",textDecoration:isDone?"line-through":"none"}}>{text}</span>
                             </label>
                           );

@@ -127,3 +127,32 @@ button:active:not([disabled]){transform:scale(0.97);}
 .br-tl-wrap{position:relative;display:flex;flex-direction:column;gap:14px;}
 .br-tl-wrap::before{content:'';position:absolute;left:15px;top:15px;bottom:15px;width:2px;background:rgba(91,140,255,0.18);z-index:0;}
 .br-tl-item{position:relative;display:flex;gap:12px;align-items:flex-start;}
+
+/* --- Home grid cells --- */
+/* Cards set their own bottom margin for the old stacked layout. Inside the home
+   grid that margin would add to the grid's reserved gap and make gutters uneven,
+   so it is removed here: the grid owns all vertical spacing. */
+.home-grid-cell > div > *{margin-bottom:0!important;}
+
+/* --- Tick controls --- */
+/* One tick style app-wide (TickCircle in app.jsx). Hover/active cannot be expressed
+   inline, so the interaction lives here. */
+.tick-circle:hover{border-color:rgba(255,255,255,0.55);background:rgba(255,255,255,0.08);}
+.tick-circle.is-done:hover{filter:brightness(1.12);}
+.tick-circle:active{transform:scale(0.88);}
+.tick-circle.is-done svg{animation:tick-pop .22s cubic-bezier(0.34,1.56,0.64,1) both;}
+@keyframes tick-pop{from{opacity:0;transform:scale(0.4);}to{opacity:1;transform:scale(1);}}
+@media (prefers-reduced-motion: reduce){
+  .tick-circle:active{transform:none;}
+  .tick-circle.is-done svg{animation:none;}
+}
+
+/* --- Task row controls --- */
+/* Reveal the per-row buttons on hover for mouse users. Touch devices have no hover,
+   so the media query leaves them permanently visible there. */
+@media (hover:hover) and (pointer:fine){
+  .task-row .row-actions{opacity:0;transition:opacity .15s;}
+  .task-row:hover .row-actions,
+  .task-row .row-actions:focus-within,
+  .task-row .row-actions.is-armed{opacity:1;}
+}

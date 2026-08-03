@@ -998,6 +998,13 @@ function isAssessmentEvent(ev) {
   })) return true;
   return false;
 }
+var CLOSE_ONLY_MODALS = ["task_detail", "edit_necessities", "day_done"];
+var UNI_KEYS = ["uni", "tafe", "rmit", "university", "curtin", "monash", "deakin", "uts", "usyd", "uq", "uwa", "anu", "unsw", "federation"];
+function isUniCalEv(ev) {
+  return ev.calName && UNI_KEYS.some(function (k) {
+    return ev.calName.toLowerCase().includes(k);
+  });
+}
 function isGoTabEvent(ev) {
   return !ev.allDay && ev.time && ev.time !== "All day" && (ev.calName && (ev.calName.toLowerCase().includes("gotab") || ev.calName.toLowerCase().includes("jayden.pineda")) || ev._email && ev._email.toLowerCase().includes("gotab") || ev.title && (ev.title.toLowerCase().includes("gotab") || ev.title.toLowerCase().includes("shift")));
 }
@@ -9833,6 +9840,15 @@ var PINP = {
   boxSizing: "border-box",
   outline: "none"
 };
+// Module-level copy of App()'s sT (app.jsx ~4066), identical value — needed by
+// module-level components (e.g. UpcomingClassesCard) that render outside App().
+var sTGlobal = {
+  fontSize: 13,
+  fontWeight: 600,
+  marginBottom: 12,
+  color: "#cdd5e2",
+  letterSpacing: "-0.01em"
+};
 var MONO = "ui-monospace,Menlo,Consolas,monospace";
 
 // Pull a leading emoji off a title string ("🔑 Anime Keychain" -> {emoji,title}).
@@ -9985,24 +10001,34 @@ function ProgressBar(props) {
     }
   }));
 }
+
+// The one tick control for the whole app. `inert` renders it as a non-interactive
+// indicator for rows that already carry their own click handler — it still looks
+// identical, so a list never mixes two styles of tick.
 function TickCircle(props) {
   var done = props.done;
   var size = props.size || 26;
+  var ring = done ? T.success : props.accent || "rgba(255,255,255,0.28)";
   return /*#__PURE__*/React.createElement("button", {
-    onClick: props.onClick,
+    type: "button",
+    onClick: props.inert ? undefined : props.onClick,
     "aria-label": done ? "Mark not done" : "Mark done",
+    className: "tick-circle" + (done ? " is-done" : ""),
+    tabIndex: props.inert ? -1 : 0,
     style: {
       flexShrink: 0,
       width: size,
       height: size,
       borderRadius: "50%",
-      border: "2px solid " + (done ? T.success : props.accent || "rgba(255,255,255,0.28)"),
-      background: done ? T.success : "transparent",
-      cursor: "pointer",
+      border: "2px solid " + ring,
+      background: done ? T.success : "rgba(255,255,255,0.03)",
+      cursor: props.inert ? "inherit" : "pointer",
       display: "grid",
       placeItems: "center",
       padding: 0,
-      transition: "all .18s"
+      pointerEvents: props.inert ? "none" : "auto",
+      boxShadow: done ? "0 0 10px " + T.success + "70" : "none",
+      transition: "background .18s,border-color .18s,box-shadow .18s,transform .12s"
     }
   }, done && /*#__PURE__*/React.createElement("svg", {
     width: size * 0.5,
@@ -10759,9 +10785,7 @@ function ShoppingHomeCard(_ref6) {
   }
   return /*#__PURE__*/React.createElement("div", {
     className: "card-rim",
-    style: _objectSpread(_objectSpread({}, cardStyle || PCARD), {}, {
-      breakInside: "avoid"
-    })
+    style: _objectSpread({}, cardStyle || PCARD)
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -10871,6 +10895,238 @@ function ShoppingHomeCard(_ref6) {
     }),
     onClick: add
   }, "Add")));
+}
+
+// Masonry-on-CSS-Grid: a card's rendered height is measured and converted into a
+// row span against a fine grid-auto-rows unit, so cards pack tightly upward while
+// keeping an explicit column position. This is what CSS multi-column could not do.
+// Row unit is 1px and the ROW gap is 0, so a card can reserve its exact measured
+// height plus one gap. An 8px unit with an 18px row gap quantised every card to a
+// 26px step, leaving up to 25px of slack below it — visibly uneven gutters, which
+// is the bug this grid existed to fix. The column gap is still a real gap.
+var GRID_ROW_UNIT = 1; // px per implicit row
+var GRID_GAP = 18; // px between cards, both axes
+
+function HomeGridCard(_ref7) {
+  var span = _ref7.span,
+    editing = _ref7.editing,
+    title = _ref7.title,
+    onSpan = _ref7.onSpan,
+    onDragStart = _ref7.onDragStart,
+    onDragOver = _ref7.onDragOver,
+    isDragging = _ref7.isDragging,
+    isDropTarget = _ref7.isDropTarget,
+    children = _ref7.children;
+  var ref = React.useRef(null);
+  var _React$useState = React.useState(20),
+    _React$useState2 = _slicedToArray(_React$useState, 2),
+    rows = _React$useState2[0],
+    setRows = _React$useState2[1];
+  React.useLayoutEffect(function () {
+    var el = ref.current;
+    if (!el) return;
+    function measure() {
+      var h = el.getBoundingClientRect().height;
+      setRows(Math.max(1, Math.ceil(h) + GRID_GAP));
+    }
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    var ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return function () {
+      ro.disconnect();
+    };
+  }, []); // see Task 2 — [] is deliberate; ResizeObserver catches height changes itself
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      gridColumn: "span " + span,
+      gridRow: "span " + rows,
+      opacity: isDragging ? 0.35 : 1,
+      outline: isDropTarget ? "2px dashed " + T.accent : "none",
+      outlineOffset: 4,
+      borderRadius: 22,
+      transition: "opacity 0.12s"
+    },
+    onPointerEnter: editing ? onDragOver : undefined
+  }, /*#__PURE__*/React.createElement("div", {
+    ref: ref,
+    className: "home-grid-cell",
+    style: {
+      display: "flow-root"
+    }
+  }, editing && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 8,
+      padding: "6px 10px",
+      marginBottom: 6,
+      borderRadius: 10,
+      background: "rgba(91,140,255,0.10)",
+      border: "1px solid rgba(91,140,255,0.35)"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    onPointerDown: onDragStart,
+    style: {
+      cursor: "grab",
+      fontSize: 14,
+      color: T.accent,
+      userSelect: "none",
+      touchAction: "none"
+    },
+    title: "Drag to move"
+  }, "\u283F"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      color: T.text2,
+      flex: 1,
+      minWidth: 0,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, title), /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "flex",
+      gap: 3
+    }
+  }, [1, 2, 3].map(function (n) {
+    return /*#__PURE__*/React.createElement("button", {
+      key: n,
+      onClick: function onClick() {
+        onSpan(n);
+      },
+      style: _objectSpread(_objectSpread({}, btnGlass), {}, {
+        padding: "1px 7px",
+        fontSize: 10,
+        color: span === n ? T.accent : T.text3,
+        borderColor: span === n ? "rgba(91,140,255,0.5)" : "rgba(255,255,255,0.12)"
+      }),
+      title: n === 1 ? "One column" : n === 2 ? "Two columns wide" : "Full width"
+    }, n);
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: editing ? {
+      pointerEvents: "none",
+      userSelect: "none"
+    } : undefined
+  }, children)));
+}
+
+// Shared by the home page (7 days) and the Uni tab (28 days) so the two
+// cannot drift apart. `events` is the deduped Google Calendar event list.
+// evColor/evLabel are passed in because they live inside App() — evLabel
+// closes over data.uni.subjects and cannot be hoisted.
+function UpcomingClassesCard(_ref8) {
+  var events = _ref8.events,
+    days = _ref8.days,
+    gcalConnected = _ref8.gcalConnected,
+    evColor = _ref8.evColor,
+    evLabel = _ref8.evLabel,
+    cardStyle = _ref8.cardStyle;
+  var today = todayStr();
+  var end = function () {
+    var d = new Date();
+    d.setDate(d.getDate() + days);
+    return dStr(d);
+  }();
+  var classes = (events || []).filter(function (ev) {
+    return isUniCalEv(ev) && !isAssessmentEvent(ev) && !ev.allDay && ev.date >= today && ev.date <= end;
+  }).sort(function (a, b) {
+    return a.date.localeCompare(b.date) || (a.time || "").localeCompare(b.time || "");
+  });
+  var lastDate = "";
+  return /*#__PURE__*/React.createElement("div", {
+    className: "card-rim",
+    style: cardStyle
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: sTGlobal
+  }, "Upcoming Classes"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9,
+      color: T.text3
+    }
+  }, "next ", days, " days")), classes.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: T.text2
+    }
+  }, gcalConnected ? "No upcoming classes in the next " + days + " days." : "Connect Google Calendar to see your schedule.") : classes.map(function (ev) {
+    var showDate = ev.date !== lastDate;
+    lastDate = ev.date;
+    var col = evColor(ev);
+    var isToday = ev.date === today;
+    return /*#__PURE__*/React.createElement("div", {
+      key: ev.id
+    }, showDate && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        fontWeight: 600,
+        color: isToday ? T.accent : T.text2,
+        marginTop: 10,
+        marginBottom: 6,
+        paddingTop: 8,
+        borderTop: "0.5px solid " + T.border
+      }
+    }, isToday ? "Today · " : "", new Date(ev.date + "T12:00:00").toLocaleDateString("en-AU", {
+      weekday: "long",
+      day: "numeric",
+      month: "short"
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 10,
+        marginBottom: 10,
+        alignItems: "flex-start"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 2,
+        borderRadius: 2,
+        background: col,
+        alignSelf: "stretch",
+        minHeight: 28,
+        flexShrink: 0
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        fontWeight: 700,
+        color: T.text2,
+        marginBottom: 1
+      }
+    }, evLabel(ev)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text,
+        lineHeight: 1.5
+      }
+    }, ev.title), ev.description && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        marginTop: 2,
+        lineHeight: 1.4
+      }
+    }, ev.description.slice(0, 120), ev.description.length > 120 ? "…" : ""), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        marginTop: 2
+      }
+    }, ev.time))));
+  }));
 }
 function App() {
   var _useState153 = useState("Dashboard"),
@@ -11122,90 +11378,98 @@ function App() {
     setScheduleTaskId = _useState230[1];
   var _useState231 = useState(null),
     _useState232 = _slicedToArray(_useState231, 2),
-    scheduleForDay = _useState232[0],
-    setScheduleForDay = _useState232[1];
-  var _useState233 = useState("09:00"),
+    catFilter = _useState232[0],
+    setCatFilter = _useState232[1];
+  var _useState233 = useState(null),
     _useState234 = _slicedToArray(_useState233, 2),
-    scheduleTime = _useState234[0],
-    setScheduleTime = _useState234[1];
-  var _useState235 = useState(60),
+    scheduleForDay = _useState234[0],
+    setScheduleForDay = _useState234[1];
+  var _useState235 = useState("09:00"),
     _useState236 = _slicedToArray(_useState235, 2),
-    scheduleDuration = _useState236[0],
-    setScheduleDuration = _useState236[1];
-  var _useState237 = useState(false),
+    scheduleTime = _useState236[0],
+    setScheduleTime = _useState236[1];
+  var _useState237 = useState(60),
     _useState238 = _slicedToArray(_useState237, 2),
-    showTimePicker = _useState238[0],
-    setShowTimePicker = _useState238[1];
+    scheduleDuration = _useState238[0],
+    setScheduleDuration = _useState238[1];
   var _useState239 = useState(false),
     _useState240 = _slicedToArray(_useState239, 2),
-    showArch = _useState240[0],
-    setShowArch = _useState240[1];
-  var _useState241 = useState(0),
+    showTimePicker = _useState240[0],
+    setShowTimePicker = _useState240[1];
+  var _useState241 = useState(false),
     _useState242 = _slicedToArray(_useState241, 2),
-    reflStep = _useState242[0],
-    setReflStep = _useState242[1];
-  var _useState243 = useState([]),
+    showArch = _useState242[0],
+    setShowArch = _useState242[1];
+  var _useState243 = useState(0),
     _useState244 = _slicedToArray(_useState243, 2),
-    reflAns = _useState244[0],
-    setReflAns = _useState244[1];
-  var _useState245 = useState(""),
+    reflStep = _useState244[0],
+    setReflStep = _useState244[1];
+  var _useState245 = useState([]),
     _useState246 = _slicedToArray(_useState245, 2),
-    reflIn = _useState246[0],
-    setReflIn = _useState246[1];
-  var _useState247 = useState(null),
+    reflAns = _useState246[0],
+    setReflAns = _useState246[1];
+  var _useState247 = useState(""),
     _useState248 = _slicedToArray(_useState247, 2),
-    reflAnalysis = _useState248[0],
-    setReflAnalysis = _useState248[1];
+    reflIn = _useState248[0],
+    setReflIn = _useState248[1];
   var _useState249 = useState(null),
     _useState250 = _slicedToArray(_useState249, 2),
-    modal = _useState250[0],
-    setModal = _useState250[1];
-  var _useState251 = useState({}),
+    reflAnalysis = _useState250[0],
+    setReflAnalysis = _useState250[1];
+  var _useState251 = useState(null),
     _useState252 = _slicedToArray(_useState251, 2),
-    mForm = _useState252[0],
-    setMForm = _useState252[1];
-  var _useState253 = useState("loading"),
+    modal = _useState252[0],
+    setModal = _useState252[1];
+  // Modals that own their whole body: they render their own heading and their own
+  // Close, and get neither the generic title bar nor the generic Save/Cancel. Save
+  // would fall through to saveModal()'s default branch and toast "Saved!" over a no-op.
+  var closeOnlyModal = CLOSE_ONLY_MODALS.indexOf(modal) >= 0;
+  var _useState253 = useState({}),
     _useState254 = _slicedToArray(_useState253, 2),
-    syncStatus = _useState254[0],
-    setSyncStatus = _useState254[1];
-  var _useState255 = useState("idle"),
+    mForm = _useState254[0],
+    setMForm = _useState254[1];
+  var _useState255 = useState("loading"),
     _useState256 = _slicedToArray(_useState255, 2),
-    obsExportStatus = _useState256[0],
-    setObsExportStatus = _useState256[1]; // idle | running | done | error
-  var _useState257 = useState(null),
+    syncStatus = _useState256[0],
+    setSyncStatus = _useState256[1];
+  var _useState257 = useState("idle"),
     _useState258 = _slicedToArray(_useState257, 2),
-    authUser = _useState258[0],
-    setAuthUser = _useState258[1];
-  var _useState259 = useState(true),
+    obsExportStatus = _useState258[0],
+    setObsExportStatus = _useState258[1]; // idle | running | done | error
+  var _useState259 = useState(null),
     _useState260 = _slicedToArray(_useState259, 2),
-    authLoading = _useState260[0],
-    setAuthLoading = _useState260[1];
+    authUser = _useState260[0],
+    setAuthUser = _useState260[1];
+  var _useState261 = useState(true),
+    _useState262 = _slicedToArray(_useState261, 2),
+    authLoading = _useState262[0],
+    setAuthLoading = _useState262[1];
   var _fbReady = useRef(false);
   var _dataLoaded = useRef(false); // only true after we've confirmed Firebase state
   var _saveTimer = useRef(null);
   var _flushNow = useRef(false); // set to skip the 2s debounce for discrete saves (e.g. shift logs)
-  var _useState261 = useState({
+  var _useState263 = useState({
       title: "",
       tags: "",
       content: ""
     }),
-    _useState262 = _slicedToArray(_useState261, 2),
-    docIn = _useState262[0],
-    setDocIn = _useState262[1];
-  var _useState263 = useState(false),
     _useState264 = _slicedToArray(_useState263, 2),
-    forceMob = _useState264[0],
-    setForceMob = _useState264[1];
-  var _useState265 = useState(function () {
+    docIn = _useState264[0],
+    setDocIn = _useState264[1];
+  var _useState265 = useState(false),
+    _useState266 = _slicedToArray(_useState265, 2),
+    forceMob = _useState266[0],
+    setForceMob = _useState266[1];
+  var _useState267 = useState(function () {
       try {
         return localStorage.getItem("nav_collapsed") === "1";
       } catch (_) {
         return false;
       }
     }),
-    _useState266 = _slicedToArray(_useState265, 2),
-    navCollapsed = _useState266[0],
-    setNavCollapsed = _useState266[1];
+    _useState268 = _slicedToArray(_useState267, 2),
+    navCollapsed = _useState268[0],
+    setNavCollapsed = _useState268[1];
   function toggleNav() {
     setNavCollapsed(function (c) {
       var nv = !c;
@@ -11217,32 +11481,32 @@ function App() {
   }
   var rawMob = useIsMob();
   var mob = forceMob || rawMob;
-  var _useState267 = useState(false),
-    _useState268 = _slicedToArray(_useState267, 2),
-    checkinLoading = _useState268[0],
-    setCheckinLoading = _useState268[1];
   var _useState269 = useState(false),
     _useState270 = _slicedToArray(_useState269, 2),
-    reflAnalysisLoading = _useState270[0],
-    setReflAnalysisLoading = _useState270[1];
+    checkinLoading = _useState270[0],
+    setCheckinLoading = _useState270[1];
   var _useState271 = useState(false),
     _useState272 = _slicedToArray(_useState271, 2),
-    showMonitor = _useState272[0],
-    setShowMonitor = _useState272[1];
-  var _useState273 = useState(null),
+    reflAnalysisLoading = _useState272[0],
+    setReflAnalysisLoading = _useState272[1];
+  var _useState273 = useState(false),
     _useState274 = _slicedToArray(_useState273, 2),
-    toast = _useState274[0],
-    setToast = _useState274[1]; // {msg,type:'error'|'success'|'warn'}
-  var _useState275 = useState([]),
+    showMonitor = _useState274[0],
+    setShowMonitor = _useState274[1];
+  var _useState275 = useState(null),
     _useState276 = _slicedToArray(_useState275, 2),
-    errLog = _useState276[0],
-    setErrLog = _useState276[1];
-  var _useState277 = useState(false),
+    toast = _useState276[0],
+    setToast = _useState276[1]; // {msg,type:'error'|'success'|'warn'}
+  var _useState277 = useState([]),
     _useState278 = _slicedToArray(_useState277, 2),
-    showErrPanel = _useState278[0],
-    setShowErrPanel = _useState278[1];
+    errLog = _useState278[0],
+    setErrLog = _useState278[1];
+  var _useState279 = useState(false),
+    _useState280 = _slicedToArray(_useState279, 2),
+    showErrPanel = _useState280[0],
+    setShowErrPanel = _useState280[1];
   // Google Calendar sync state
-  var _useState279 = useState(function () {
+  var _useState281 = useState(function () {
       try {
         var c = localStorage.getItem('__gcal_events__');
         return c ? JSON.parse(c) : [];
@@ -11250,18 +11514,18 @@ function App() {
         return [];
       }
     }),
-    _useState280 = _slicedToArray(_useState279, 2),
-    gcalEvents = _useState280[0],
-    setGcalEvents = _useState280[1];
-  var _useState281 = useState(false),
     _useState282 = _slicedToArray(_useState281, 2),
-    gcalConnected = _useState282[0],
-    setGcalConnected = _useState282[1];
-  var _useState283 = useState([]),
+    gcalEvents = _useState282[0],
+    setGcalEvents = _useState282[1];
+  var _useState283 = useState(false),
     _useState284 = _slicedToArray(_useState283, 2),
-    gcalCalendars = _useState284[0],
-    setGcalCalendars = _useState284[1];
-  var _useState285 = useState(function () {
+    gcalConnected = _useState284[0],
+    setGcalConnected = _useState284[1];
+  var _useState285 = useState([]),
+    _useState286 = _slicedToArray(_useState285, 2),
+    gcalCalendars = _useState286[0],
+    setGcalCalendars = _useState286[1];
+  var _useState287 = useState(function () {
       try {
         var s = localStorage.getItem('__gcal_selected__');
         return s ? JSON.parse(s) : [];
@@ -11269,72 +11533,72 @@ function App() {
         return [];
       }
     }),
-    _useState286 = _slicedToArray(_useState285, 2),
-    gcalSelectedIds = _useState286[0],
-    setGcalSelectedIds = _useState286[1];
-  var _useState287 = useState(false),
     _useState288 = _slicedToArray(_useState287, 2),
-    gcalReady = _useState288[0],
-    setGcalReady = _useState288[1];
+    gcalSelectedIds = _useState288[0],
+    setGcalSelectedIds = _useState288[1];
   var _useState289 = useState(false),
     _useState290 = _slicedToArray(_useState289, 2),
-    showCalPicker = _useState290[0],
-    setShowCalPicker = _useState290[1];
-  // Syllabus / assessment hub state
+    gcalReady = _useState290[0],
+    setGcalReady = _useState290[1];
   var _useState291 = useState(false),
     _useState292 = _slicedToArray(_useState291, 2),
-    showSyllabusImport = _useState292[0],
-    setShowSyllabusImport = _useState292[1];
-  var _useState293 = useState(""),
+    showCalPicker = _useState292[0],
+    setShowCalPicker = _useState292[1];
+  // Syllabus / assessment hub state
+  var _useState293 = useState(false),
     _useState294 = _slicedToArray(_useState293, 2),
-    syllabusText = _useState294[0],
-    setSyllabusText = _useState294[1];
+    showSyllabusImport = _useState294[0],
+    setShowSyllabusImport = _useState294[1];
   var _useState295 = useState(""),
     _useState296 = _slicedToArray(_useState295, 2),
-    syllabusStart = _useState296[0],
-    setSyllabusStart = _useState296[1];
-  var _useState297 = useState(function () {
+    syllabusText = _useState296[0],
+    setSyllabusText = _useState296[1];
+  var _useState297 = useState(""),
+    _useState298 = _slicedToArray(_useState297, 2),
+    syllabusStart = _useState298[0],
+    setSyllabusStart = _useState298[1];
+  var _useState299 = useState(function () {
       try {
         return localStorage.getItem('__gemini_key__') || "";
       } catch (_) {
         return "";
       }
     }),
-    _useState298 = _slicedToArray(_useState297, 2),
-    geminiKey = _useState298[0],
-    setGeminiKey = _useState298[1];
-  var _useState299 = useState(function () {
+    _useState300 = _slicedToArray(_useState299, 2),
+    geminiKey = _useState300[0],
+    setGeminiKey = _useState300[1];
+  var _useState301 = useState(function () {
       try {
         return localStorage.getItem('__groq_key__') || "";
       } catch (_) {
         return "";
       }
     }),
-    _useState300 = _slicedToArray(_useState299, 2),
-    groqKey = _useState300[0],
-    setGroqKey = _useState300[1];
-  var _useState301 = useState(false),
     _useState302 = _slicedToArray(_useState301, 2),
-    geminiLoading = _useState302[0],
-    setGeminiLoading = _useState302[1];
-  var _useState303 = useState(null),
+    groqKey = _useState302[0],
+    setGroqKey = _useState302[1];
+  var _useState303 = useState(false),
     _useState304 = _slicedToArray(_useState303, 2),
-    geminiPreview = _useState304[0],
-    setGeminiPreview = _useState304[1];
-  var _useState305 = useState(false),
+    geminiLoading = _useState304[0],
+    setGeminiLoading = _useState304[1];
+  var _useState305 = useState(null),
     _useState306 = _slicedToArray(_useState305, 2),
-    showAddAssess = _useState306[0],
-    setShowAddAssess = _useState306[1];
-  var _useState307 = useState({
+    geminiPreview = _useState306[0],
+    setGeminiPreview = _useState306[1];
+  var _useState307 = useState(false),
+    _useState308 = _slicedToArray(_useState307, 2),
+    showAddAssess = _useState308[0],
+    setShowAddAssess = _useState308[1];
+  var _useState309 = useState({
       subject: data.uni.subjects && data.uni.subjects[0] && data.uni.subjects[0].name || "",
       name: "",
       type: "SUBMISSION",
       date: todayStr()
     }),
-    _useState308 = _slicedToArray(_useState307, 2),
-    addAssessForm = _useState308[0],
-    setAddAssessForm = _useState308[1];
-  var _useState309 = useState(function () {
+    _useState310 = _slicedToArray(_useState309, 2),
+    addAssessForm = _useState310[0],
+    setAddAssessForm = _useState310[1];
+  var _useState311 = useState(function () {
       try {
         var x = localStorage.getItem('__gcal_excluded__');
         return x ? JSON.parse(x) : [];
@@ -11342,9 +11606,9 @@ function App() {
         return [];
       }
     }),
-    _useState310 = _slicedToArray(_useState309, 2),
-    gcalExcludedIds = _useState310[0],
-    setGcalExcludedIds = _useState310[1];
+    _useState312 = _slicedToArray(_useState311, 2),
+    gcalExcludedIds = _useState312[0],
+    setGcalExcludedIds = _useState312[1];
 
   // Call this anywhere in App to show a brief auto-dismissing notification.
   // Child components can call window.showToast() which is wired up below.
@@ -11902,21 +12166,8 @@ function App() {
       badge: typeBadge(a.type)
     };
   });
-  var activeTasks = data.personal.tasks.filter(function (t) {
-    return !t.done;
-  });
   var doneTasks = data.personal.tasks.filter(function (t) {
     return t.done;
-  });
-  var urgTasks = activeTasks.filter(function (t) {
-    return t.priority === "urgent";
-  }).sort(function (a, b) {
-    return new Date(a.due || "9999") - new Date(b.due || "9999");
-  });
-  var normTasks = activeTasks.filter(function (t) {
-    return t.priority === "normal";
-  }).sort(function (a, b) {
-    return new Date(a.due || "9999") - new Date(b.due || "9999");
   });
   var todayEvs = visibleGcalEvents.filter(function (ev) {
     return ev.date === todayStr() && !ev.allDay;
@@ -11924,6 +12175,58 @@ function App() {
     return (a.time || "").localeCompare(b.time || "");
   });
   var shifts = visibleGcalEvents.filter(isGoTabEvent);
+  var homeLayout = React.useMemo(function () {
+    return window.HomeLayout.normalizeLayout(data.homeLayout);
+  }, [data.homeLayout]);
+  var _useState313 = useState(false),
+    _useState314 = _slicedToArray(_useState313, 2),
+    layoutEditing = _useState314[0],
+    setLayoutEditing = _useState314[1];
+  var _useState315 = useState(null),
+    _useState316 = _slicedToArray(_useState315, 2),
+    dragId = _useState316[0],
+    setDragId = _useState316[1];
+  var _useState317 = useState(null),
+    _useState318 = _slicedToArray(_useState317, 2),
+    dropIdx = _useState318[0],
+    setDropIdx = _useState318[1];
+  function saveLayout(next) {
+    trk("home.layout_save");
+    setData(function (p) {
+      return _objectSpread(_objectSpread({}, p), {}, {
+        homeLayout: next
+      });
+    });
+  }
+  React.useEffect(function () {
+    if (!dragId) return;
+    function clear() {
+      setDragId(null);
+      setDropIdx(null);
+    }
+    function commit() {
+      var from = homeLayout.findIndex(function (x) {
+        return x.id === dragId;
+      });
+      if (from >= 0 && dropIdx !== null && dropIdx !== from) {
+        saveLayout(window.HomeLayout.moveCard(homeLayout, from, dropIdx));
+      }
+      clear();
+    }
+    function disarmIfReleased(ev) {
+      if (ev.buttons === 0) clear();
+    }
+    window.addEventListener("pointerup", commit);
+    window.addEventListener("pointercancel", clear);
+    window.addEventListener("pointermove", disarmIfReleased);
+    window.addEventListener("blur", clear);
+    return function () {
+      window.removeEventListener("pointerup", commit);
+      window.removeEventListener("pointercancel", clear);
+      window.removeEventListener("pointermove", disarmIfReleased);
+      window.removeEventListener("blur", clear);
+    };
+  }, [dragId, dropIdx, homeLayout]);
   function doCheckin() {
     setCheckinLoading(true);
     setCheckinBlocks([]);
@@ -12430,7 +12733,9 @@ function App() {
             due: null,
             done: false,
             addedAt: todayStr(),
-            editedAt: null
+            editedAt: null,
+            state: "todo",
+            updates: []
           }])
         })
       });
@@ -12899,6 +13204,80 @@ function App() {
       taskId: id,
       date: todayStr(),
       time: ""
+    });
+  }
+  function setTaskState(id, state) {
+    trk("task.state");
+    setData(function (p) {
+      var ts = p.personal.tasks || [];
+      return _objectSpread(_objectSpread({}, p), {}, {
+        personal: _objectSpread(_objectSpread({}, p.personal), {}, {
+          tasks: ts.map(function (t) {
+            if (t.id !== id) return t;
+            // Re-picking the state you are already on is not a touch. Without this,
+            // opening a task and clicking its current state clears an "untouched 12d"
+            // badge without any work having happened, and the badge stops meaning anything.
+            if ((t.state || "todo") === state) return t;
+            return _objectSpread(_objectSpread({}, t), {}, {
+              state: state,
+              editedAt: todayStr()
+            });
+          })
+        })
+      });
+    });
+  }
+  // Writing an update is a real interaction with the task, so it refreshes
+  // editedAt — that is what clears the "untouched Nd" badge.
+  function addTaskUpdate(id, text) {
+    var clean = (text || "").trim();
+    if (!clean) return;
+    trk("task.update_add");
+    setData(function (p) {
+      var ts = p.personal.tasks || [];
+      return _objectSpread(_objectSpread({}, p), {}, {
+        personal: _objectSpread(_objectSpread({}, p.personal), {}, {
+          tasks: ts.map(function (t) {
+            if (t.id !== id) return t;
+            // Random suffix, not a bare timestamp: this doc is written from three devices
+            // and deleteTaskUpdate filters by id, so a collision would delete two entries.
+            var uid = Date.now() + "-" + Math.random().toString(36).slice(2, 6);
+            var ups = (t.updates || []).concat([{
+              id: uid,
+              at: todayStr(),
+              text: clean
+            }]);
+            return _objectSpread(_objectSpread({}, t), {}, {
+              updates: ups,
+              editedAt: todayStr()
+            });
+          })
+        })
+      });
+    });
+  }
+  function deleteTaskUpdate(id, updateId) {
+    trk("task.update_delete");
+    setData(function (p) {
+      var ts = p.personal.tasks || [];
+      return _objectSpread(_objectSpread({}, p), {}, {
+        personal: _objectSpread(_objectSpread({}, p.personal), {}, {
+          tasks: ts.map(function (t) {
+            return t.id === id ? _objectSpread(_objectSpread({}, t), {}, {
+              updates: (t.updates || []).filter(function (u) {
+                return u.id !== updateId;
+              })
+            }) : t;
+          })
+        })
+      });
+    });
+  }
+  function openTaskDetail(id) {
+    setModal("task_detail");
+    setMForm({
+      taskId: id,
+      updateText: ""
     });
   }
   function archiveDone() {
@@ -13390,7 +13769,9 @@ function App() {
                 due: mForm.due || null,
                 done: false,
                 addedAt: todayStr(),
-                editedAt: null
+                editedAt: null,
+                state: "todo",
+                updates: []
               }])
             })
           });
@@ -13546,6 +13927,20 @@ function App() {
     });
     return match || ev.calName || "Google";
   }
+
+  // What actually got done, by day. Reads `archived` as well as `tasks` on purpose:
+  // archiveDone() moves completed tasks out of the live list, and without this the
+  // calendar's history would empty itself every time the task list is tidied.
+  // Local only — nothing here touches Google Calendar.
+  var completionsByDay = React.useMemo(function () {
+    var map = {};
+    var all = (data.personal && data.personal.tasks || []).concat(data.personal && data.personal.archived || []);
+    all.forEach(function (t) {
+      if (!t.done || !t.completedAt) return;
+      (map[t.completedAt] = map[t.completedAt] || []).push(t);
+    });
+    return map;
+  }, [data.personal]);
   function renderWeek() {
     if (mob) {
       var dayEvs = visibleGcalEvents.filter(function (ev) {
@@ -13691,7 +14086,46 @@ function App() {
           name: "pin",
           size: 9
         }), ev.location)));
-      }));
+      }), (completionsByDay[activeDay] || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+        style: {
+          marginTop: 14,
+          paddingTop: 10,
+          borderTop: "0.5px solid " + T.border
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 10,
+          color: T.text3,
+          marginBottom: 8,
+          textTransform: "uppercase",
+          letterSpacing: 0.5
+        }
+      }, "Finished ", activeDay === todayStr() ? "today" : "that day"), (completionsByDay[activeDay] || []).map(function (t) {
+        var col = catColor(t.cat || "Other");
+        return /*#__PURE__*/React.createElement("div", {
+          key: t.id,
+          style: {
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            marginBottom: 6
+          }
+        }, /*#__PURE__*/React.createElement("span", {
+          style: {
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: col,
+            flexShrink: 0
+          }
+        }), /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontSize: 12,
+            color: T.text2,
+            flex: 1
+          }
+        }, t.name));
+      })));
     }
     var PPM = 0.26;
     var allEvs = [];
@@ -13930,7 +14364,58 @@ function App() {
             textDecoration: isDone ? "line-through" : "none"
           }
         }, isDone ? "✓ " : "", t.name));
-      })));
+      })), (completionsByDay[ds] || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+        style: {
+          padding: "6px 4px 0",
+          marginTop: 6,
+          borderTop: "0.5px solid " + T.border
+        }
+      }, (completionsByDay[ds] || []).slice(0, 3).map(function (t) {
+        var col = catColor(t.cat || "Other");
+        return /*#__PURE__*/React.createElement("div", {
+          key: t.id,
+          style: {
+            display: "flex",
+            gap: 5,
+            alignItems: "center",
+            marginBottom: 3
+          }
+        }, /*#__PURE__*/React.createElement("span", {
+          style: {
+            width: 5,
+            height: 5,
+            borderRadius: "50%",
+            background: col,
+            flexShrink: 0,
+            boxShadow: "0 0 5px " + col + "90"
+          }
+        }), /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontSize: 9,
+            color: T.text2,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap"
+          },
+          title: t.name
+        }, t.name));
+      }), (completionsByDay[ds] || []).length > 3 && /*#__PURE__*/React.createElement("button", {
+        onClick: function onClick(e) {
+          e.stopPropagation();
+          setModal("day_done");
+          setMForm({
+            date: ds
+          });
+        },
+        style: {
+          background: "none",
+          border: "none",
+          color: T.text3,
+          cursor: "pointer",
+          fontSize: 9,
+          padding: 0
+        }
+      }, "+", (completionsByDay[ds] || []).length - 3, " more")));
     })));
   }
   function card(ex) {
@@ -13946,13 +14431,7 @@ function App() {
       boxShadow: cardShadow
     }, ex || {});
   }
-  var sT = {
-    fontSize: 13,
-    fontWeight: 600,
-    marginBottom: 12,
-    color: "#cdd5e2",
-    letterSpacing: "-0.01em"
-  };
+  var sT = sTGlobal; // one definition, so App-local cards and module-level cards cannot drift
   var btn = _objectSpread(_objectSpread({}, btnGlass), {}, {
     padding: "5px 12px"
   });
@@ -14143,6 +14622,1384 @@ function App() {
       fill: "#34A853",
       d: "M24 48c6.2 0 11.4-2 15.2-5.5l-7.5-5.8c-2 1.4-4.6 2.3-7.7 2.3-6 0-11.1-4-12.9-9.4l-8.3 6.1C6.9 42.6 14.8 48 24 48z"
     })), "Sign in with Google")));
+  }
+  function renderCalendarCard() {
+    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 14
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        fontWeight: 700,
+        color: T.text,
+        letterSpacing: "-0.01em"
+      }
+    }, new Date(dStr(weekDates[0])).toLocaleDateString("en-AU", {
+      month: "long",
+      year: "numeric"
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        marginTop: 1
+      }
+    }, fmtDate(dStr(weekDates[0])), " \xB7 ", fmtDate(dStr(weekDates[6])))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 5,
+        alignItems: "center"
+      }
+    }, gcalReady && !gcalConnected && /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 10,
+        color: "#4285F4",
+        border: "0.5px solid rgba(66,133,244,0.35)",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4
+      }),
+      onClick: function onClick() {
+        window.GCalSync && window.GCalSync.connect();
+      }
+    }, /*#__PURE__*/React.createElement(UIcon, {
+      name: "calendar",
+      size: 10
+    }), "Connect"), gcalConnected && /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 10,
+        color: T.text2,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4
+      }),
+      onClick: function onClick() {
+        setShowCalPicker(true);
+      }
+    }, /*#__PURE__*/React.createElement(UIcon, {
+      name: "calendar",
+      size: 10
+    }), gcalEvents.length), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        padding: "4px 10px",
+        fontSize: 13
+      }),
+      onClick: function onClick() {
+        setWkOff(function (o) {
+          return o - 1;
+        });
+      }
+    }, "\u2190"), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        padding: "4px 10px",
+        color: wkOff === 0 ? T.accent : T.text2,
+        border: wkOff === 0 ? "0.5px solid rgba(91,140,255,0.4)" : "0.5px solid rgba(255,255,255,0.12)"
+      }),
+      onClick: function onClick() {
+        setWkOff(0);
+        setActiveDay(todayStr());
+      }
+    }, "Today"), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        padding: "4px 10px",
+        fontSize: 13
+      }),
+      onClick: function onClick() {
+        setWkOff(function (o) {
+          return o + 1;
+        });
+      }
+    }, "\u2192"))), renderWeek(), gcalCalendars.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8,
+        flexWrap: "wrap",
+        marginTop: 10,
+        paddingTop: 8,
+        borderTop: "0.5px solid " + T.border
+      }
+    }, gcalCalendars.slice(0, 6).map(function (cal) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: cal.id,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 4
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          width: 6,
+          height: 6,
+          borderRadius: 2,
+          background: cal.backgroundColor || "#4285F4"
+        }
+      }), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 9,
+          color: T.text3
+        }
+      }, cal.summary));
+    })));
+  }
+  function renderCheckinCard() {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card-rim",
+      style: card()
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 16,
+        marginBottom: checkinOpen || todayEvs.length > 0 ? 10 : 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        display: "flex",
+        alignItems: "center",
+        gap: 5
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 5,
+        height: 5,
+        borderRadius: "50%",
+        background: T.accent
+      }
+    }), "Daily Check-in \xB7 ", new Date().toLocaleDateString("en-AU", {
+      weekday: "long",
+      day: "numeric",
+      month: "long"
+    })), checkinOpen ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 11
+      }),
+      onClick: function onClick() {
+        trk("checkin.generate");
+        doCheckin();
+      }
+    }, "Refresh"), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 11
+      }),
+      onClick: function onClick() {
+        setCheckinOpen(false);
+      }
+    }, "Hide")) : /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btnP), {}, {
+        fontSize: 11,
+        padding: "5px 12px"
+      }),
+      onClick: function onClick() {
+        setCheckinOpen(true);
+        if (checkinBlocks.length === 0 && !checkinLoading) {
+          trk("checkin.generate");
+          doCheckin();
+        }
+      }
+    }, "Generate check-in")), checkinOpen && (checkinLoading ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.accent,
+        display: "flex",
+        alignItems: "center",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        display: "inline-block",
+        width: 8,
+        height: 8,
+        borderRadius: "50%",
+        background: T.accent,
+        animation: "pulse 1.2s ease-in-out infinite"
+      }
+    }), "AI is thinking...") : checkinBlocks.length === 0 ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text3
+      }
+    }, "Generating today's check-in\u2026") : checkinBlocks.map(function (block, bi) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: bi,
+        style: {
+          marginBottom: 10
+        }
+      }, block.header && /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11,
+          fontWeight: 600,
+          color: T.accent,
+          marginBottom: 4
+        }
+      }, block.header), block.items.map(function (item, ii) {
+        return /*#__PURE__*/React.createElement("div", {
+          key: ii,
+          style: {
+            fontSize: 13,
+            lineHeight: 1.7,
+            color: T.text
+          }
+        }, item);
+      }));
+    })), todayEvs.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 12,
+        paddingTop: 10,
+        borderTop: "0.5px solid " + T.border,
+        display: "flex",
+        gap: 6,
+        flexWrap: "wrap"
+      }
+    }, todayEvs.map(function (ev) {
+      var col = evColor(ev);
+      return /*#__PURE__*/React.createElement("div", {
+        key: ev.id,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 5,
+          padding: "4px 9px",
+          borderRadius: 6,
+          background: col + "18",
+          border: "0.5px solid " + col + "40",
+          flexShrink: 0
+        }
+      }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 10,
+          fontWeight: 600,
+          color: col
+        }
+      }, evLabel(ev), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontWeight: 400,
+          color: T.text3
+        }
+      }, " \xB7 ", ev.time)), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 9,
+          color: T.text2
+        }
+      }, ev.title.slice(0, 32))));
+    })));
+  }
+  function renderGoalsCard() {
+    var b = data.boardroom || {};
+    if (!b.onboarded) return null;
+    var ag = (b.goals || []).filter(function (g) {
+      return g.status === "active";
+    });
+    var ns = b.northStar || "";
+    if (!ag.length && !ns) return null;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card-rim",
+      style: _objectSpread(_objectSpread({}, card()), {}, {
+        borderLeft: "3px solid rgba(91,140,255,0.6)"
+      })
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: ns ? 10 : 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: sT
+    }, "Goals"), /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        setPage("Boardroom");
+      },
+      style: _objectSpread(_objectSpread({}, btnGlass), {}, {
+        fontSize: 11,
+        padding: "3px 10px"
+      })
+    }, "Boardroom \u2192")), ns && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: "rgba(255,255,255,0.42)",
+        fontStyle: "italic",
+        lineHeight: 1.65,
+        marginBottom: ag.length ? 14 : 4,
+        display: "-webkit-box",
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: "vertical",
+        overflow: "hidden"
+      }
+    }, "\"", ns, "\""), ag.length === 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text3,
+        marginTop: 4
+      }
+    }, "Start a session to set your first goal."), ag.map(function (g, i) {
+      var ts = getTagStyle(g.area);
+      return /*#__PURE__*/React.createElement("div", {
+        key: g.id,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 9,
+          padding: "7px 0",
+          borderBottom: i < ag.length - 1 ? "0.5px solid rgba(255,255,255,0.06)" : "none"
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          flexShrink: 0,
+          background: ts.color,
+          boxShadow: "0 0 6px " + ts.color
+        }
+      }), /*#__PURE__*/React.createElement("span", {
+        style: _objectSpread(_objectSpread({
+          fontSize: 10,
+          padding: "2px 6px",
+          borderRadius: 4
+        }, ts), {}, {
+          flexShrink: 0
+        })
+      }, g.area), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 13,
+          color: "rgba(255,255,255,0.82)",
+          lineHeight: 1.4
+        }
+      }, g.title));
+    }));
+  }
+  function renderAssessmentsCard() {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card-rim",
+      style: card()
+    }, /*#__PURE__*/React.createElement("div", {
+      style: sT
+    }, "Upcoming assessments"), upcoming.length === 0 ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text2
+      }
+    }, "All clear \u2713") : upcoming.map(function (a) {
+      var days = daysBetween(a.date);
+      var col = subjectColor(data.uni.subjects, a.subject) || T.accent;
+      var dayLabel = days === 0 ? "Today" : days === 1 ? "Tomorrow" : days <= 13 ? WX_DAYS[new Date(a.date + "T00:00").getDay()] + " · " + days + " days" : fmtDate(a.date);
+      return /*#__PURE__*/React.createElement("div", {
+        key: a.id,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "8px 10px",
+          borderRadius: 8,
+          background: T.bg3,
+          border: "0.5px solid " + T.border,
+          marginBottom: 6,
+          cursor: "pointer"
+        },
+        onClick: function onClick() {
+          setPage("Uni");
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          width: 7,
+          height: 7,
+          borderRadius: "50%",
+          background: col,
+          flexShrink: 0
+        }
+      }), /*#__PURE__*/React.createElement("div", {
+        style: {
+          flex: 1,
+          minWidth: 0,
+          fontSize: 12,
+          color: T.text,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap"
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: col,
+          fontWeight: 700
+        }
+      }, a.subject), " · ", a.title), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 10,
+          color: days <= 3 ? T.danger : T.text2,
+          fontWeight: 600,
+          flexShrink: 0,
+          whiteSpace: "nowrap"
+        }
+      }, dayLabel));
+    }));
+  }
+  function renderGymNextCard() {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card-rim",
+      style: card()
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        marginBottom: nextRot ? 4 : 0
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: sT
+    }, "Next session \xB7 pre-fill weights"), nextRot && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: T.text2,
+        marginTop: 2
+      }
+    }, nextRot.name, nextRot.focus ? " · " + nextRot.focus : "")), /*#__PURE__*/React.createElement("button", {
+      style: editPill,
+      onClick: function onClick() {
+        setPage("Gym");
+      }
+    }, "Open \u2192")), !nextRot && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: T.text2,
+        marginBottom: 8
+      }
+    }, "Set up your rotation in the Gym tab."), gymDraftBanner && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+        padding: "10px 13px",
+        borderRadius: 12,
+        background: "rgba(225,234,255,0.04)",
+        border: "1px solid rgba(255,255,255,0.07)",
+        boxShadow: "0 0 20px rgba(255,209,102,0.3),inset 0 1px 0 rgba(255,255,255,0.05)",
+        marginBottom: 10
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: T.warn
+      }
+    }, "Unfinished session restored \xB7 keep logging or discard"), /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        try {
+          localStorage.removeItem('gym_draft');
+        } catch (_) {}
+        setGymDraftBanner(false);
+        setNxtRows(nextRot && nextRot.exercises && nextRot.exercises.length > 0 ? nextRot.exercises.map(function (ex, i) {
+          return {
+            id: ex.id || i + 1,
+            exercise: ex.exercise || "",
+            sets: ex.sets || "",
+            reps: ex.reps || "",
+            weight: ex.weight || ""
+          };
+        }) : [{
+          id: 1,
+          exercise: "",
+          sets: "",
+          reps: "",
+          weight: ""
+        }, {
+          id: 2,
+          exercise: "",
+          sets: "",
+          reps: "",
+          weight: ""
+        }, {
+          id: 3,
+          exercise: "",
+          sets: "",
+          reps: "",
+          weight: ""
+        }]);
+      },
+      style: _objectSpread(_objectSpread({}, btnGlass), {}, {
+        fontSize: 10,
+        padding: "3px 10px"
+      })
+    }, "Discard")), /*#__PURE__*/React.createElement("datalist", {
+      id: "homeExSuggestions"
+    }, function () {
+      var seen = {};
+      var names = [];
+      ((data.gym || {}).exercises || []).forEach(function (ex) {
+        var n = (ex.name || "").trim();
+        if (n && !seen[n.toLowerCase()]) {
+          seen[n.toLowerCase()] = true;
+          names.push(n);
+        }
+      });
+      ((data.gym || {}).rotation || []).forEach(function (r) {
+        (r.exercises || []).forEach(function (ex) {
+          var n = (ex.exercise || "").trim();
+          if (n && !seen[n.toLowerCase()]) {
+            seen[n.toLowerCase()] = true;
+            names.push(n);
+          }
+        });
+      });
+      return names;
+    }().map(function (n) {
+      return React.createElement("option", {
+        key: n,
+        value: n
+      });
+    })), mob ? nxtRows.map(function (row, i) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: row.id,
+        style: {
+          display: "grid",
+          gridTemplateColumns: "1fr 52px 52px 64px",
+          gap: 5,
+          marginBottom: 6
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        style: _objectSpread(_objectSpread({}, inp), {}, {
+          padding: "8px 8px",
+          fontSize: 12
+        }),
+        list: "homeExSuggestions",
+        placeholder: ["Bench Press", "Squat", "OHP"][i] || "Exercise",
+        value: row.exercise,
+        onChange: function onChange(ev) {
+          setNxtRows(function (r) {
+            return r.map(function (x, j) {
+              return j === i ? _objectSpread(_objectSpread({}, x), {}, {
+                exercise: ev.target.value
+              }) : x;
+            });
+          });
+        }
+      }), /*#__PURE__*/React.createElement("input", {
+        style: _objectSpread(_objectSpread({}, inp), {}, {
+          padding: "8px 4px",
+          fontSize: 12
+        }),
+        type: "number",
+        placeholder: "Sets",
+        value: row.sets,
+        onChange: function onChange(ev) {
+          setNxtRows(function (r) {
+            return r.map(function (x, j) {
+              return j === i ? _objectSpread(_objectSpread({}, x), {}, {
+                sets: ev.target.value
+              }) : x;
+            });
+          });
+        }
+      }), /*#__PURE__*/React.createElement("input", {
+        style: _objectSpread(_objectSpread({}, inp), {}, {
+          padding: "8px 4px",
+          fontSize: 12
+        }),
+        type: "number",
+        placeholder: "Reps",
+        value: row.reps,
+        onChange: function onChange(ev) {
+          setNxtRows(function (r) {
+            return r.map(function (x, j) {
+              return j === i ? _objectSpread(_objectSpread({}, x), {}, {
+                reps: ev.target.value
+              }) : x;
+            });
+          });
+        }
+      }), /*#__PURE__*/React.createElement("input", {
+        style: _objectSpread(_objectSpread({}, inp), {}, {
+          padding: "8px 4px",
+          fontSize: 12
+        }),
+        type: "number",
+        placeholder: "kg",
+        value: row.weight,
+        onChange: function onChange(ev) {
+          setNxtRows(function (r) {
+            return r.map(function (x, j) {
+              return j === i ? _objectSpread(_objectSpread({}, x), {}, {
+                weight: ev.target.value
+              }) : x;
+            });
+          });
+        }
+      }));
+    }) : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "1fr 50px 50px 60px",
+        gap: 6,
+        marginBottom: 4
+      }
+    }, ["Exercise", "Sets", "Reps", "kg"].map(function (h) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: h,
+        style: {
+          fontSize: 9,
+          color: T.text3
+        }
+      }, h);
+    })), nxtRows.map(function (row, i) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: row.id,
+        style: {
+          display: "grid",
+          gridTemplateColumns: "1fr 50px 50px 60px",
+          gap: 6,
+          marginBottom: 6
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        style: inp,
+        list: "homeExSuggestions",
+        placeholder: ["Bench Press", "Squat", "Overhead Press"][i] || "Exercise",
+        value: row.exercise,
+        onChange: function onChange(ev) {
+          setNxtRows(function (r) {
+            return r.map(function (x, j) {
+              return j === i ? _objectSpread(_objectSpread({}, x), {}, {
+                exercise: ev.target.value
+              }) : x;
+            });
+          });
+        }
+      }), /*#__PURE__*/React.createElement("input", {
+        style: inp,
+        type: "number",
+        placeholder: "4",
+        value: row.sets,
+        onChange: function onChange(ev) {
+          setNxtRows(function (r) {
+            return r.map(function (x, j) {
+              return j === i ? _objectSpread(_objectSpread({}, x), {}, {
+                sets: ev.target.value
+              }) : x;
+            });
+          });
+        }
+      }), /*#__PURE__*/React.createElement("input", {
+        style: inp,
+        type: "number",
+        placeholder: "8",
+        value: row.reps,
+        onChange: function onChange(ev) {
+          setNxtRows(function (r) {
+            return r.map(function (x, j) {
+              return j === i ? _objectSpread(_objectSpread({}, x), {}, {
+                reps: ev.target.value
+              }) : x;
+            });
+          });
+        }
+      }), /*#__PURE__*/React.createElement("input", {
+        style: inp,
+        type: "number",
+        placeholder: "80",
+        value: row.weight,
+        onChange: function onChange(ev) {
+          setNxtRows(function (r) {
+            return r.map(function (x, j) {
+              return j === i ? _objectSpread(_objectSpread({}, x), {}, {
+                weight: ev.target.value
+              }) : x;
+            });
+          });
+        }
+      }));
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginTop: 4
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      style: btn,
+      onClick: function onClick() {
+        setNxtRows(function (r) {
+          return r.concat([{
+            id: Date.now(),
+            exercise: "",
+            sets: "",
+            reps: "",
+            weight: ""
+          }]);
+        });
+      }
+    }, "+ Row"), /*#__PURE__*/React.createElement("button", {
+      style: btnP,
+      onClick: saveNextSess
+    }, "Save to Gym \u2192")));
+  }
+  function renderBodyweightCard() {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card-rim",
+      style: card(!bwLogged && dLeft <= 3 ? {
+        boxShadow: "0 0 26px " + bwColMap[bwUrg] + "55," + cardShadow
+      } : {})
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        fontWeight: 600,
+        color: "#f3f7fd"
+      }
+    }, "Weekly body weight"), !bwLogged && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: bwColMap[bwUrg],
+        fontWeight: 600,
+        padding: "2px 7px",
+        borderRadius: 99,
+        background: bwColMap[bwUrg] + "18"
+      }
+    }, dLeft, "d left")), bwLogged && !bwEditing ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "4px 0 8px"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 32,
+        color: T.success,
+        lineHeight: 1,
+        fontWeight: 700
+      }
+    }, "\u2713"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 22,
+        fontWeight: 700,
+        color: T.success,
+        lineHeight: 1.1
+      }
+    }, function () {
+      var e = (data.gym.bodyWeight || []).find(function (e) {
+        return e.date >= thisWeek;
+      });
+      return e ? e.weight + " kg" : "Logged";
+    }()), /*#__PURE__*/React.createElement("button", {
+      style: {
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        color: T.text3,
+        fontSize: 16,
+        opacity: 0.45,
+        lineHeight: 1,
+        padding: "0 2px"
+      },
+      title: "Delete this entry",
+      onClick: function onClick() {
+        var e = (data.gym.bodyWeight || []).find(function (en) {
+          return en.date >= thisWeek;
+        });
+        if (e) deleteBWEntry(e.date);
+      }
+    }, "\xD7")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.success,
+        opacity: 0.75,
+        marginTop: 2
+      }
+    }, "Logged this week"))), (data.gym.bodyWeight || []).length >= 2 && /*#__PURE__*/React.createElement(Sparkline, {
+      data: data.gym.bodyWeight,
+      color: T.success,
+      width: 180,
+      height: 40
+    }), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 10,
+        padding: "4px 10px",
+        marginTop: 8
+      }),
+      onClick: function onClick() {
+        var e = (data.gym.bodyWeight || []).find(function (e) {
+          return e.date >= thisWeek;
+        });
+        if (e) {
+          setBwIn(String(e.weight));
+          setBwDate(e.date);
+        } else {
+          setBwIn("");
+          setBwDate(todayStr());
+        }
+        setBwEditing(true);
+      }
+    }, "Edit / add past entry")) : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        marginBottom: 8
+      }
+    }, bwEditing ? "Update your entry or add a past entry below" : dLeft <= 1 ? "Last chance, ends tomorrow!" : dLeft <= 3 ? "Log before the week ends" : "Log once this week"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        marginBottom: 6
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      style: _objectSpread(_objectSpread({}, inp), {}, {
+        flex: 1
+      }),
+      type: "number",
+      step: "0.1",
+      placeholder: "e.g. 81.2 kg",
+      value: bwIn,
+      onChange: function onChange(ev) {
+        setBwIn(ev.target.value);
+      }
+    }), /*#__PURE__*/React.createElement("button", {
+      style: btnP,
+      onClick: logBW
+    }, "Log")), /*#__PURE__*/React.createElement("input", {
+      type: "date",
+      style: _objectSpread(_objectSpread({}, inp), {}, {
+        padding: "6px 10px",
+        fontSize: 11,
+        color: T.text3
+      }),
+      value: bwDate,
+      onChange: function onChange(ev) {
+        setBwDate(ev.target.value);
+      }
+    }), bwLogged && bwEditing && /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 10,
+        padding: "4px 10px",
+        marginTop: 6,
+        opacity: 0.6
+      }),
+      onClick: function onClick() {
+        setBwEditing(false);
+        setBwIn("");
+        setBwDate(todayStr());
+      }
+    }, "Cancel")));
+  }
+  function catColor(c) {
+    return (window.TASK_CAT_COLORS || {})[c] || window.TASK_CAT_FALLBACK || "#8f97a6";
+  }
+  function renderTaskRow(t, group) {
+    var cat = t.cat || "Other";
+    var col = catColor(cat);
+    var isActive = scheduleTaskId === t.id;
+    var latest = t.updates && t.updates.length ? t.updates[t.updates.length - 1] : null;
+    // Only worth printing when the row is NOT already under its own heading — a doing
+    // task pulled into Overdue by the match order still needs to say so.
+    var stateBadge = group !== t.state && (t.state === "doing" ? "▶ In progress" : t.state === "waiting" ? "⏸ Waiting" : null);
+    // Done rows say when, not "done" — the clock button exists to set that date, so it
+    // has to be visible. Waiting keeps its overdue text but in the dimmest tone.
+    var meta = group === "done" ? t.completedAt ? fmtDate(t.completedAt) + (t.completedTime ? " · " + fmtTime12(t.completedTime) : "") : "" : taskLabel(t);
+    var metaColor = group === "waiting" ? T.text3 : group === "overdue" ? T.danger : T.text3;
+    return /*#__PURE__*/React.createElement("div", {
+      key: t.id,
+      className: "glow-item task-row",
+      style: {
+        display: "flex",
+        gap: 9,
+        marginBottom: 7,
+        alignItems: "flex-start",
+        padding: "10px 12px",
+        borderRadius: 12,
+        opacity: group === "done" ? 0.5 : 1,
+        background: isActive ? "rgba(91,140,255,0.12)" : "rgba(225,234,255,0.04)",
+        border: "1px solid " + (isActive ? "rgba(91,140,255,0.5)" : "rgba(255,255,255,0.07)"),
+        borderLeft: "3px solid " + col,
+        transition: "background 0.15s"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        marginTop: 1,
+        display: "flex"
+      }
+    }, /*#__PURE__*/React.createElement(TickCircle, {
+      done: !!t.done,
+      size: 18,
+      onClick: function onClick() {
+        toggleTask(t.id);
+      }
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        fontWeight: 500,
+        color: T.text,
+        textDecoration: t.done ? "line-through" : "none"
+      }
+    }, t.name), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8,
+        alignItems: "center",
+        flexWrap: "wrap",
+        marginTop: 2
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 9,
+        color: T.text2
+      }
+    }, cat), stateBadge && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 9,
+        color: T.accent
+      }
+    }, stateBadge), !t.done && t.priority === "urgent" && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 9,
+        color: T.danger,
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: 0.4
+      }
+    }, "urgent"), meta && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 9,
+        color: metaColor
+      }
+    }, meta)), latest && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 9,
+        color: T.text3,
+        marginTop: 3,
+        fontStyle: "italic",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }
+    }, "\"", latest.text, "\" \u2014 ", fmtDate(latest.at))), /*#__PURE__*/React.createElement("span", {
+      className: "row-actions" + (isActive ? " is-armed" : ""),
+      style: {
+        display: "flex",
+        flexShrink: 0,
+        marginTop: 1
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      style: {
+        background: "none",
+        border: "none",
+        padding: "2px 4px",
+        cursor: "pointer",
+        color: T.text3,
+        flexShrink: 0,
+        opacity: 0.45,
+        display: "flex"
+      },
+      title: "Open task",
+      onClick: function onClick(e) {
+        e.stopPropagation();
+        openTaskDetail(t.id);
+      }
+    }, /*#__PURE__*/React.createElement(UIcon, {
+      name: "pencil",
+      size: 12
+    })), /*#__PURE__*/React.createElement("button", {
+      style: {
+        background: "none",
+        border: "none",
+        padding: "2px 4px",
+        cursor: "pointer",
+        color: T.text3,
+        flexShrink: 0,
+        opacity: 0.45,
+        display: "flex"
+      },
+      title: "Mark done on a different day",
+      onClick: function onClick(e) {
+        e.stopPropagation();
+        openBackdateModal(t.id);
+      }
+    }, /*#__PURE__*/React.createElement(UIcon, {
+      name: "clock",
+      size: 12
+    })), /*#__PURE__*/React.createElement("button", {
+      style: {
+        background: "none",
+        border: "none",
+        padding: "2px 4px",
+        cursor: "pointer",
+        color: isActive ? T.accent : T.text3,
+        fontSize: 14,
+        flexShrink: 0,
+        lineHeight: 1,
+        opacity: isActive ? 1 : 0.45,
+        transition: "opacity 0.15s,color 0.15s"
+      },
+      title: "Schedule",
+      onClick: function onClick(e) {
+        e.stopPropagation();
+        if (scheduleTaskId === t.id) {
+          setScheduleTaskId(null);
+        } else {
+          trk("task.schedule");
+          setScheduleTaskId(t.id);
+          showToast("Tap a calendar day to schedule (or ESC)", "warn");
+        }
+      }
+    }, "\u283F")));
+  }
+  function renderTasksCard() {
+    var TG = window.TaskGrouping;
+    var all = data.personal.tasks || [];
+    var counts = TG.categoryCounts(all);
+    var shown = catFilter ? all.filter(function (t) {
+      return (t.cat || "Other") === catFilter;
+    }) : all;
+    var groups = TG.groupTasks(shown, todayStr());
+    var empty = TG.DISPLAY_ORDER.every(function (g) {
+      return groups[g].length === 0;
+    });
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card-rim",
+      style: card()
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: sT
+    }, "Tasks"), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, editPill), {}, {
+        fontSize: 14,
+        padding: "2px 12px"
+      }),
+      onClick: function onClick() {
+        setModal("add_task");
+        setMForm({
+          priority: "normal",
+          cat: "Errands",
+          state: "todo"
+        });
+      }
+    }, "+")), scheduleTaskId && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 9,
+        color: T.accent,
+        marginBottom: 6,
+        padding: "3px 8px",
+        borderRadius: 6,
+        background: T.accentBg,
+        border: "0.5px solid rgba(91,140,255,0.3)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "Tap a calendar day to schedule (or ESC)"), /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        setScheduleTaskId(null);
+      },
+      title: "Cancel scheduling",
+      style: {
+        background: "none",
+        border: "none",
+        color: T.accent,
+        cursor: "pointer",
+        fontSize: 14,
+        padding: "0 4px",
+        lineHeight: 1,
+        fontWeight: 700
+      }
+    }, "\xD7")), (counts.length > 0 || catFilter) && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 6,
+        marginBottom: 12,
+        paddingBottom: 10,
+        borderBottom: "0.5px solid " + T.border
+      }
+    }, counts.map(function (c) {
+      var on = catFilter === c.cat;
+      return /*#__PURE__*/React.createElement("button", {
+        key: c.cat,
+        onClick: function onClick() {
+          setCatFilter(on ? null : c.cat);
+        },
+        style: {
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 5,
+          padding: "3px 9px",
+          borderRadius: 999,
+          cursor: "pointer",
+          fontSize: 10,
+          background: on ? catColor(c.cat) + "28" : "rgba(255,255,255,0.04)",
+          border: "1px solid " + (on ? catColor(c.cat) + "90" : "rgba(255,255,255,0.10)"),
+          color: on ? T.text : T.text2
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          width: 7,
+          height: 7,
+          borderRadius: "50%",
+          background: catColor(c.cat),
+          boxShadow: "0 0 6px " + catColor(c.cat) + "90",
+          flexShrink: 0
+        }
+      }), c.cat, /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: T.text,
+          fontWeight: 700
+        }
+      }, c.count));
+    }), catFilter && /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        setCatFilter(null);
+      },
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 10,
+        padding: "3px 9px"
+      })
+    }, "Clear")), empty && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text2
+      }
+    }, catFilter ? "Nothing in " + catFilter : "All clear ✓"), TG.DISPLAY_ORDER.map(function (g) {
+      if (groups[g].length === 0) return null;
+      return /*#__PURE__*/React.createElement("div", {
+        key: g
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 9,
+          fontWeight: 700,
+          marginBottom: 6,
+          marginTop: 8,
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+          color: g === "overdue" ? T.danger : T.text3,
+          display: "flex",
+          gap: 6,
+          alignItems: "center"
+        }
+      }, TG.GROUP_LABEL[g], /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: T.text3,
+          fontWeight: 600
+        }
+      }, groups[g].length)), groups[g].map(function (t) {
+        return renderTaskRow(t, g);
+      }));
+    }));
+  }
+  function renderNecessitiesCard() {
+    var W = window.WeekUtils;
+    var nec = data.personal && data.personal.necessities || {
+      items: [],
+      ticks: {}
+    };
+    var items = nec.items || [];
+    var today = todayStr();
+    var isDone = function isDone(id) {
+      return W.isDoneThisWeek((nec.ticks || {})[id], today);
+    };
+    var doneCount = items.filter(function (i) {
+      return isDone(i.id);
+    }).length;
+    var elapsed = W.weekElapsedFraction(today);
+    var progress = items.length ? doneCount / items.length : 0;
+    // With no items there is nothing to be behind on — otherwise the card nags from
+    // Tuesday onward about an empty list.
+    var behind = items.length > 0 && progress < elapsed - 0.15;
+    var daysLeft = Math.round((1 - elapsed) * 7);
+    function toggle(id) {
+      setData(function (p) {
+        var cur = p.personal && p.personal.necessities || {
+          items: [],
+          ticks: {}
+        };
+        var ticks = _objectSpread({}, cur.ticks || {});
+        if (W.isDoneThisWeek(ticks[id], todayStr())) delete ticks[id];else ticks[id] = todayStr();
+        return _objectSpread(_objectSpread({}, p), {}, {
+          personal: _objectSpread(_objectSpread({}, p.personal), {}, {
+            necessities: _objectSpread(_objectSpread({}, cur), {}, {
+              items: cur.items || [],
+              ticks: ticks
+            })
+          })
+        });
+      });
+    }
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card-rim",
+      style: card()
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: sT
+    }, "Weekly necessities"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8,
+        alignItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 10,
+        color: T.text3
+      }
+    }, doneCount, "/", items.length), /*#__PURE__*/React.createElement("button", {
+      style: _objectSpread(_objectSpread({}, btn), {}, {
+        fontSize: 10,
+        padding: "2px 9px"
+      }),
+      onClick: function onClick() {
+        setModal("edit_necessities");
+        setMForm({
+          newItem: ""
+        });
+      }
+    }, "Edit"))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        height: 5,
+        borderRadius: 3,
+        background: "rgba(255,255,255,0.06)",
+        overflow: "hidden",
+        marginBottom: 4
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: progress * 100 + "%",
+        height: "100%",
+        borderRadius: 3,
+        background: behind ? T.warn : T.success,
+        transition: "width 0.25s"
+      }
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 9,
+        color: T.text3,
+        marginBottom: 10
+      }
+    }, daysLeft === 0 ? "Last day · resets Monday" : daysLeft + " day" + (daysLeft === 1 ? "" : "s") + " left · resets Monday"), items.length === 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text2
+      }
+    }, "No necessities yet \u2014 hit Edit to add the things you do every week."), items.map(function (i) {
+      var done = isDone(i.id);
+      var urgent = !done && daysLeft <= 2; // Friday onward — matches the spec
+      return /*#__PURE__*/React.createElement("div", {
+        key: i.id,
+        onClick: function onClick() {
+          toggle(i.id);
+        },
+        style: {
+          display: "flex",
+          gap: 9,
+          alignItems: "center",
+          padding: "8px 10px",
+          marginBottom: 5,
+          borderRadius: 10,
+          cursor: "pointer",
+          opacity: done ? 0.5 : 1,
+          background: "rgba(225,234,255,0.04)",
+          border: "1px solid " + (urgent ? T.warn + "55" : "rgba(255,255,255,0.07)")
+        }
+      }, /*#__PURE__*/React.createElement(TickCircle, {
+        done: done,
+        size: 18,
+        inert: true
+      }), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          color: T.text,
+          flex: 1,
+          minWidth: 0,
+          textDecoration: done ? "line-through" : "none"
+        }
+      }, i.name), urgent && /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 9,
+          color: T.warn,
+          flexShrink: 0
+        }
+      }, daysLeft === 0 ? "today" : daysLeft + " day" + (daysLeft === 1 ? "" : "s") + " left"));
+    }));
+  }
+  function renderHomeCard(id) {
+    switch (id) {
+      case "shopping":
+        return /*#__PURE__*/React.createElement(ErrorBoundary, {
+          name: "ShoppingHome"
+        }, /*#__PURE__*/React.createElement(ShoppingHomeCard, {
+          items: data.shopping || [],
+          onUpdate: updateShopping,
+          onOpen: function onOpen() {
+            setPage("Shopping");
+          },
+          cardStyle: card(),
+          mob: mob
+        }));
+      case "weather":
+        return /*#__PURE__*/React.createElement(WeatherWidget, {
+          mob: mob
+        });
+      case "checkin":
+        return renderCheckinCard();
+      case "goals":
+        return renderGoalsCard();
+      // returns null when not onboarded
+      case "assessments":
+        return renderAssessmentsCard();
+      case "gym-next":
+        return renderGymNextCard();
+      case "bodyweight":
+        return renderBodyweightCard();
+      case "tasks":
+        return renderTasksCard();
+      case "classes":
+        return /*#__PURE__*/React.createElement(UpcomingClassesCard, {
+          events: dedupedEvents,
+          days: 7,
+          gcalConnected: gcalConnected,
+          evColor: evColor,
+          evLabel: evLabel,
+          cardStyle: card()
+        });
+      case "necessities":
+        return renderNecessitiesCard();
+      default:
+        return null;
+    }
   }
   return /*#__PURE__*/React.createElement("div", {
     className: "dashboard-reveal",
@@ -14856,9 +16713,13 @@ function App() {
     }
   }, page === "Dashboard" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
-      marginBottom: 18
+      marginBottom: 18,
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: 12
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: mob ? 20 : 24,
       fontWeight: 800,
@@ -14879,1221 +16740,80 @@ function App() {
     day: "numeric",
     month: "long",
     year: "numeric"
-  }))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      columnCount: mob ? 1 : 3,
-      columnGap: 18
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "card-rim",
-    style: card({
-      columnSpan: "all",
-      breakInside: "avoid",
-      padding: "16px 20px"
-    })
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 14
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13,
-      fontWeight: 700,
-      color: T.text,
-      letterSpacing: "-0.01em"
-    }
-  }, new Date(dStr(weekDates[0])).toLocaleDateString("en-AU", {
-    month: "long",
-    year: "numeric"
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: T.text3,
-      marginTop: 1
-    }
-  }, fmtDate(dStr(weekDates[0])), " \xB7 ", fmtDate(dStr(weekDates[6])))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 5,
-      alignItems: "center"
-    }
-  }, gcalReady && !gcalConnected && /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      fontSize: 10,
-      color: "#4285F4",
-      border: "0.5px solid rgba(66,133,244,0.35)",
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 4
-    }),
-    onClick: function onClick() {
-      window.GCalSync && window.GCalSync.connect();
-    }
-  }, /*#__PURE__*/React.createElement(UIcon, {
-    name: "calendar",
-    size: 10
-  }), "Connect"), gcalConnected && /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      fontSize: 10,
-      color: T.text2,
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 4
-    }),
-    onClick: function onClick() {
-      setShowCalPicker(true);
-    }
-  }, /*#__PURE__*/React.createElement(UIcon, {
-    name: "calendar",
-    size: 10
-  }), gcalEvents.length), /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      padding: "4px 10px",
-      fontSize: 13
-    }),
-    onClick: function onClick() {
-      setWkOff(function (o) {
-        return o - 1;
-      });
-    }
-  }, "\u2190"), /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      padding: "4px 10px",
-      color: wkOff === 0 ? T.accent : T.text2,
-      border: wkOff === 0 ? "0.5px solid rgba(91,140,255,0.4)" : "0.5px solid rgba(255,255,255,0.12)"
-    }),
-    onClick: function onClick() {
-      setWkOff(0);
-      setActiveDay(todayStr());
-    }
-  }, "Today"), /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      padding: "4px 10px",
-      fontSize: 13
-    }),
-    onClick: function onClick() {
-      setWkOff(function (o) {
-        return o + 1;
-      });
-    }
-  }, "\u2192"))), renderWeek(), gcalCalendars.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }))), !mob && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
-      flexWrap: "wrap",
-      marginTop: 10,
-      paddingTop: 8,
-      borderTop: "0.5px solid " + T.border
+      alignItems: "center"
     }
-  }, gcalCalendars.slice(0, 6).map(function (cal) {
-    return /*#__PURE__*/React.createElement("div", {
-      key: cal.id,
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 4
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        width: 6,
-        height: 6,
-        borderRadius: 2,
-        background: cal.backgroundColor || "#4285F4"
-      }
-    }), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 9,
-        color: T.text3
-      }
-    }, cal.summary));
-  }))), /*#__PURE__*/React.createElement(ErrorBoundary, {
-    name: "ShoppingHome"
-  }, /*#__PURE__*/React.createElement(ShoppingHomeCard, {
-    items: data.shopping || [],
-    onUpdate: updateShopping,
-    onOpen: function onOpen() {
-      setPage("Shopping");
-    },
-    cardStyle: card({
-      breakInside: "avoid"
-    }),
-    mob: mob
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      breakInside: "avoid",
-      marginBottom: 12
-    }
-  }, /*#__PURE__*/React.createElement(WeatherWidget, {
-    mob: mob
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "card-rim",
-    style: _objectSpread(_objectSpread({}, card({
-      breakInside: "avoid"
-    })), {}, {
-      marginBottom: 12
-    })
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      gap: 16,
-      marginBottom: checkinOpen || todayEvs.length > 0 ? 10 : 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: T.text3,
-      display: "flex",
-      alignItems: "center",
-      gap: 5
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 5,
-      height: 5,
-      borderRadius: "50%",
-      background: T.accent
-    }
-  }), "Daily Check-in \xB7 ", new Date().toLocaleDateString("en-AU", {
-    weekday: "long",
-    day: "numeric",
-    month: "long"
-  })), checkinOpen ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement("button", {
+  }, layoutEditing && /*#__PURE__*/React.createElement("button", {
     style: _objectSpread(_objectSpread({}, btn), {}, {
-      fontSize: 11
+      color: T.danger,
+      borderColor: T.danger + "50"
     }),
     onClick: function onClick() {
-      trk("checkin.generate");
-      doCheckin();
+      if (window.confirm("Reset the home page to its default layout?")) {
+        saveLayout(window.HomeLayout.defaultLayout());
+      }
     }
-  }, "Refresh"), /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      fontSize: 11
-    }),
+  }, "Reset layout"), /*#__PURE__*/React.createElement("button", {
+    style: layoutEditing ? btnP : btn,
     onClick: function onClick() {
-      setCheckinOpen(false);
-    }
-  }, "Hide")) : /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btnP), {}, {
-      fontSize: 11,
-      padding: "5px 12px"
-    }),
-    onClick: function onClick() {
-      setCheckinOpen(true);
-      if (checkinBlocks.length === 0 && !checkinLoading) {
-        trk("checkin.generate");
-        doCheckin();
-      }
-    }
-  }, "Generate check-in")), checkinOpen && (checkinLoading ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: T.accent,
-      display: "flex",
-      alignItems: "center",
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: "inline-block",
-      width: 8,
-      height: 8,
-      borderRadius: "50%",
-      background: T.accent,
-      animation: "pulse 1.2s ease-in-out infinite"
-    }
-  }), "AI is thinking...") : checkinBlocks.length === 0 ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: T.text3
-    }
-  }, "Generating today's check-in\u2026") : checkinBlocks.map(function (block, bi) {
-    return /*#__PURE__*/React.createElement("div", {
-      key: bi,
-      style: {
-        marginBottom: 10
-      }
-    }, block.header && /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        fontWeight: 600,
-        color: T.accent,
-        marginBottom: 4
-      }
-    }, block.header), block.items.map(function (item, ii) {
-      return /*#__PURE__*/React.createElement("div", {
-        key: ii,
-        style: {
-          fontSize: 13,
-          lineHeight: 1.7,
-          color: T.text
-        }
-      }, item);
-    }));
-  })), todayEvs.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 12,
-      paddingTop: 10,
-      borderTop: "0.5px solid " + T.border,
-      display: "flex",
-      gap: 6,
-      flexWrap: "wrap"
-    }
-  }, todayEvs.map(function (ev) {
-    var col = evColor(ev);
-    return /*#__PURE__*/React.createElement("div", {
-      key: ev.id,
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 5,
-        padding: "4px 9px",
-        borderRadius: 6,
-        background: col + "18",
-        border: "0.5px solid " + col + "40",
-        flexShrink: 0
-      }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 10,
-        fontWeight: 600,
-        color: col
-      }
-    }, evLabel(ev), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontWeight: 400,
-        color: T.text3
-      }
-    }, " \xB7 ", ev.time)), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 9,
-        color: T.text2
-      }
-    }, ev.title.slice(0, 32))));
-  }))), function () {
-    var b = data.boardroom || {};
-    if (!b.onboarded) return null;
-    var ag = (b.goals || []).filter(function (g) {
-      return g.status === "active";
-    });
-    var ns = b.northStar || "";
-    if (!ag.length && !ns) return null;
-    return /*#__PURE__*/React.createElement("div", {
-      className: "card-rim",
-      style: _objectSpread(_objectSpread({}, card({
-        breakInside: "avoid"
-      })), {}, {
-        borderLeft: "3px solid rgba(91,140,255,0.6)"
-      })
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        marginBottom: ns ? 10 : 12
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: sT
-    }, "Goals"), /*#__PURE__*/React.createElement("button", {
-      onClick: function onClick() {
-        setPage("Boardroom");
-      },
-      style: _objectSpread(_objectSpread({}, btnGlass), {}, {
-        fontSize: 11,
-        padding: "3px 10px"
-      })
-    }, "Boardroom \u2192")), ns && /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        color: "rgba(255,255,255,0.42)",
-        fontStyle: "italic",
-        lineHeight: 1.65,
-        marginBottom: ag.length ? 14 : 4,
-        display: "-webkit-box",
-        WebkitLineClamp: 2,
-        WebkitBoxOrient: "vertical",
-        overflow: "hidden"
-      }
-    }, "\"", ns, "\""), ag.length === 0 && /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        color: T.text3,
-        marginTop: 4
-      }
-    }, "Start a session to set your first goal."), ag.map(function (g, i) {
-      var ts = getTagStyle(g.area);
-      return /*#__PURE__*/React.createElement("div", {
-        key: g.id,
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: 9,
-          padding: "7px 0",
-          borderBottom: i < ag.length - 1 ? "0.5px solid rgba(255,255,255,0.06)" : "none"
-        }
-      }, /*#__PURE__*/React.createElement("span", {
-        style: {
-          width: 6,
-          height: 6,
-          borderRadius: "50%",
-          flexShrink: 0,
-          background: ts.color,
-          boxShadow: "0 0 6px " + ts.color
-        }
-      }), /*#__PURE__*/React.createElement("span", {
-        style: _objectSpread(_objectSpread({
-          fontSize: 10,
-          padding: "2px 6px",
-          borderRadius: 4
-        }, ts), {}, {
-          flexShrink: 0
-        })
-      }, g.area), /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 13,
-          color: "rgba(255,255,255,0.82)",
-          lineHeight: 1.4
-        }
-      }, g.title));
-    }));
-  }(), /*#__PURE__*/React.createElement("div", {
-    className: "card-rim",
-    style: card({
-      breakInside: "avoid"
-    })
-  }, /*#__PURE__*/React.createElement("div", {
-    style: sT
-  }, "Upcoming assessments"), upcoming.length === 0 ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: T.text2
-    }
-  }, "All clear \u2713") : upcoming.map(function (a) {
-    var days = daysBetween(a.date);
-    var col = subjectColor(data.uni.subjects, a.subject) || T.accent;
-    var dayLabel = days === 0 ? "Today" : days === 1 ? "Tomorrow" : days <= 13 ? WX_DAYS[new Date(a.date + "T00:00").getDay()] + " · " + days + " days" : fmtDate(a.date);
-    return /*#__PURE__*/React.createElement("div", {
-      key: a.id,
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "8px 10px",
-        borderRadius: 8,
-        background: T.bg3,
-        border: "0.5px solid " + T.border,
-        marginBottom: 6,
-        cursor: "pointer"
-      },
-      onClick: function onClick() {
-        setPage("Uni");
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        width: 7,
-        height: 7,
-        borderRadius: "50%",
-        background: col,
-        flexShrink: 0
-      }
-    }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: 1,
-        minWidth: 0,
-        fontSize: 12,
-        color: T.text,
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap"
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: col,
-        fontWeight: 700
-      }
-    }, a.subject), " · ", a.title), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 10,
-        color: days <= 3 ? T.danger : T.text2,
-        fontWeight: 600,
-        flexShrink: 0,
-        whiteSpace: "nowrap"
-      }
-    }, dayLabel));
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "card-rim",
-    style: card({
-      breakInside: "avoid"
-    })
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "flex-start",
-      marginBottom: nextRot ? 4 : 0
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: sT
-  }, "Next session \xB7 pre-fill weights"), nextRot && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: T.text2,
-      marginTop: 2
-    }
-  }, nextRot.name, nextRot.focus ? " · " + nextRot.focus : "")), /*#__PURE__*/React.createElement("button", {
-    style: editPill,
-    onClick: function onClick() {
-      setPage("Gym");
-    }
-  }, "Open \u2192")), !nextRot && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: T.text2,
-      marginBottom: 8
-    }
-  }, "Set up your rotation in the Gym tab."), gymDraftBanner && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 10,
-      padding: "10px 13px",
-      borderRadius: 12,
-      background: "rgba(225,234,255,0.04)",
-      border: "1px solid rgba(255,255,255,0.07)",
-      boxShadow: "0 0 20px rgba(255,209,102,0.3),inset 0 1px 0 rgba(255,255,255,0.05)",
-      marginBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 11,
-      color: T.warn
-    }
-  }, "Unfinished session restored \xB7 keep logging or discard"), /*#__PURE__*/React.createElement("button", {
-    onClick: function onClick() {
-      try {
-        localStorage.removeItem('gym_draft');
-      } catch (_) {}
-      setGymDraftBanner(false);
-      setNxtRows(nextRot && nextRot.exercises && nextRot.exercises.length > 0 ? nextRot.exercises.map(function (ex, i) {
-        return {
-          id: ex.id || i + 1,
-          exercise: ex.exercise || "",
-          sets: ex.sets || "",
-          reps: ex.reps || "",
-          weight: ex.weight || ""
-        };
-      }) : [{
-        id: 1,
-        exercise: "",
-        sets: "",
-        reps: "",
-        weight: ""
-      }, {
-        id: 2,
-        exercise: "",
-        sets: "",
-        reps: "",
-        weight: ""
-      }, {
-        id: 3,
-        exercise: "",
-        sets: "",
-        reps: "",
-        weight: ""
-      }]);
-    },
-    style: _objectSpread(_objectSpread({}, btnGlass), {}, {
-      fontSize: 10,
-      padding: "3px 10px"
-    })
-  }, "Discard")), /*#__PURE__*/React.createElement("datalist", {
-    id: "homeExSuggestions"
-  }, function () {
-    var seen = {};
-    var names = [];
-    ((data.gym || {}).exercises || []).forEach(function (ex) {
-      var n = (ex.name || "").trim();
-      if (n && !seen[n.toLowerCase()]) {
-        seen[n.toLowerCase()] = true;
-        names.push(n);
-      }
-    });
-    ((data.gym || {}).rotation || []).forEach(function (r) {
-      (r.exercises || []).forEach(function (ex) {
-        var n = (ex.exercise || "").trim();
-        if (n && !seen[n.toLowerCase()]) {
-          seen[n.toLowerCase()] = true;
-          names.push(n);
-        }
+      setLayoutEditing(function (v) {
+        return !v;
       });
-    });
-    return names;
-  }().map(function (n) {
-    return React.createElement("option", {
-      key: n,
-      value: n
-    });
-  })), mob ? nxtRows.map(function (row, i) {
-    return /*#__PURE__*/React.createElement("div", {
-      key: row.id,
+    }
+  }, layoutEditing ? "Done" : "Edit layout"))), /*#__PURE__*/React.createElement("div", {
+    className: "card-rim",
+    style: card({
+      padding: "16px 20px",
+      marginBottom: mob ? 12 : GRID_GAP
+    })
+  }, renderCalendarCard()), mob ? /*#__PURE__*/React.createElement("div", null, homeLayout.map(function (e) {
+    var body = renderHomeCard(e.id);
+    return body ? /*#__PURE__*/React.createElement("div", {
+      key: e.id,
       style: {
-        display: "grid",
-        gridTemplateColumns: "1fr 52px 52px 64px",
-        gap: 5,
-        marginBottom: 6
+        marginBottom: 12
       }
-    }, /*#__PURE__*/React.createElement("input", {
-      style: _objectSpread(_objectSpread({}, inp), {}, {
-        padding: "8px 8px",
-        fontSize: 12
-      }),
-      list: "homeExSuggestions",
-      placeholder: ["Bench Press", "Squat", "OHP"][i] || "Exercise",
-      value: row.exercise,
-      onChange: function onChange(ev) {
-        setNxtRows(function (r) {
-          return r.map(function (x, j) {
-            return j === i ? _objectSpread(_objectSpread({}, x), {}, {
-              exercise: ev.target.value
-            }) : x;
-          });
-        });
-      }
-    }), /*#__PURE__*/React.createElement("input", {
-      style: _objectSpread(_objectSpread({}, inp), {}, {
-        padding: "8px 4px",
-        fontSize: 12
-      }),
-      type: "number",
-      placeholder: "Sets",
-      value: row.sets,
-      onChange: function onChange(ev) {
-        setNxtRows(function (r) {
-          return r.map(function (x, j) {
-            return j === i ? _objectSpread(_objectSpread({}, x), {}, {
-              sets: ev.target.value
-            }) : x;
-          });
-        });
-      }
-    }), /*#__PURE__*/React.createElement("input", {
-      style: _objectSpread(_objectSpread({}, inp), {}, {
-        padding: "8px 4px",
-        fontSize: 12
-      }),
-      type: "number",
-      placeholder: "Reps",
-      value: row.reps,
-      onChange: function onChange(ev) {
-        setNxtRows(function (r) {
-          return r.map(function (x, j) {
-            return j === i ? _objectSpread(_objectSpread({}, x), {}, {
-              reps: ev.target.value
-            }) : x;
-          });
-        });
-      }
-    }), /*#__PURE__*/React.createElement("input", {
-      style: _objectSpread(_objectSpread({}, inp), {}, {
-        padding: "8px 4px",
-        fontSize: 12
-      }),
-      type: "number",
-      placeholder: "kg",
-      value: row.weight,
-      onChange: function onChange(ev) {
-        setNxtRows(function (r) {
-          return r.map(function (x, j) {
-            return j === i ? _objectSpread(_objectSpread({}, x), {}, {
-              weight: ev.target.value
-            }) : x;
-          });
-        });
-      }
-    }));
-  }) : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, body) : null;
+  })) : /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
-      gridTemplateColumns: "1fr 50px 50px 60px",
-      gap: 6,
-      marginBottom: 4
+      gridTemplateColumns: "repeat(3,1fr)",
+      gridAutoRows: GRID_ROW_UNIT + "px",
+      gridAutoFlow: "row dense",
+      columnGap: GRID_GAP,
+      rowGap: 0,
+      alignItems: "start"
     }
-  }, ["Exercise", "Sets", "Reps", "kg"].map(function (h) {
-    return /*#__PURE__*/React.createElement("div", {
-      key: h,
-      style: {
-        fontSize: 9,
-        color: T.text3
-      }
-    }, h);
-  })), nxtRows.map(function (row, i) {
-    return /*#__PURE__*/React.createElement("div", {
-      key: row.id,
-      style: {
-        display: "grid",
-        gridTemplateColumns: "1fr 50px 50px 60px",
-        gap: 6,
-        marginBottom: 6
-      }
-    }, /*#__PURE__*/React.createElement("input", {
-      style: inp,
-      list: "homeExSuggestions",
-      placeholder: ["Bench Press", "Squat", "Overhead Press"][i] || "Exercise",
-      value: row.exercise,
-      onChange: function onChange(ev) {
-        setNxtRows(function (r) {
-          return r.map(function (x, j) {
-            return j === i ? _objectSpread(_objectSpread({}, x), {}, {
-              exercise: ev.target.value
-            }) : x;
-          });
-        });
-      }
-    }), /*#__PURE__*/React.createElement("input", {
-      style: inp,
-      type: "number",
-      placeholder: "4",
-      value: row.sets,
-      onChange: function onChange(ev) {
-        setNxtRows(function (r) {
-          return r.map(function (x, j) {
-            return j === i ? _objectSpread(_objectSpread({}, x), {}, {
-              sets: ev.target.value
-            }) : x;
-          });
-        });
-      }
-    }), /*#__PURE__*/React.createElement("input", {
-      style: inp,
-      type: "number",
-      placeholder: "8",
-      value: row.reps,
-      onChange: function onChange(ev) {
-        setNxtRows(function (r) {
-          return r.map(function (x, j) {
-            return j === i ? _objectSpread(_objectSpread({}, x), {}, {
-              reps: ev.target.value
-            }) : x;
-          });
-        });
-      }
-    }), /*#__PURE__*/React.createElement("input", {
-      style: inp,
-      type: "number",
-      placeholder: "80",
-      value: row.weight,
-      onChange: function onChange(ev) {
-        setNxtRows(function (r) {
-          return r.map(function (x, j) {
-            return j === i ? _objectSpread(_objectSpread({}, x), {}, {
-              weight: ev.target.value
-            }) : x;
-          });
-        });
-      }
-    }));
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginTop: 4
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    style: btn,
-    onClick: function onClick() {
-      setNxtRows(function (r) {
-        return r.concat([{
-          id: Date.now(),
-          exercise: "",
-          sets: "",
-          reps: "",
-          weight: ""
-        }]);
-      });
-    }
-  }, "+ Row"), /*#__PURE__*/React.createElement("button", {
-    style: btnP,
-    onClick: saveNextSess
-  }, "Save to Gym \u2192"))), /*#__PURE__*/React.createElement("div", {
-    className: "card-rim",
-    style: card(!bwLogged && dLeft <= 3 ? {
-      boxShadow: "0 0 26px " + bwColMap[bwUrg] + "55," + cardShadow,
-      breakInside: "avoid"
-    } : {
-      breakInside: "avoid"
-    })
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 8
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      fontWeight: 600,
-      color: "#f3f7fd"
-    }
-  }, "Weekly body weight"), !bwLogged && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: bwColMap[bwUrg],
-      fontWeight: 600,
-      padding: "2px 7px",
-      borderRadius: 99,
-      background: bwColMap[bwUrg] + "18"
-    }
-  }, dLeft, "d left")), bwLogged && !bwEditing ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 12,
-      padding: "4px 0 8px"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 32,
-      color: T.success,
-      lineHeight: 1,
-      fontWeight: 700
-    }
-  }, "\u2713"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 8
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 22,
-      fontWeight: 700,
-      color: T.success,
-      lineHeight: 1.1
-    }
-  }, function () {
-    var e = (data.gym.bodyWeight || []).find(function (e) {
-      return e.date >= thisWeek;
-    });
-    return e ? e.weight + " kg" : "Logged";
-  }()), /*#__PURE__*/React.createElement("button", {
-    style: {
-      background: "none",
-      border: "none",
-      cursor: "pointer",
-      color: T.text3,
-      fontSize: 16,
-      opacity: 0.45,
-      lineHeight: 1,
-      padding: "0 2px"
-    },
-    title: "Delete this entry",
-    onClick: function onClick() {
-      var e = (data.gym.bodyWeight || []).find(function (en) {
-        return en.date >= thisWeek;
-      });
-      if (e) deleteBWEntry(e.date);
-    }
-  }, "\xD7")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: T.success,
-      opacity: 0.75,
-      marginTop: 2
-    }
-  }, "Logged this week"))), (data.gym.bodyWeight || []).length >= 2 && /*#__PURE__*/React.createElement(Sparkline, {
-    data: data.gym.bodyWeight,
-    color: T.success,
-    width: 180,
-    height: 40
-  }), /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      fontSize: 10,
-      padding: "4px 10px",
-      marginTop: 8
-    }),
-    onClick: function onClick() {
-      var e = (data.gym.bodyWeight || []).find(function (e) {
-        return e.date >= thisWeek;
-      });
-      if (e) {
-        setBwIn(String(e.weight));
-        setBwDate(e.date);
-      } else {
-        setBwIn("");
-        setBwDate(todayStr());
-      }
-      setBwEditing(true);
-    }
-  }, "Edit / add past entry")) : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: T.text3,
-      marginBottom: 8
-    }
-  }, bwEditing ? "Update your entry or add a past entry below" : dLeft <= 1 ? "Last chance, ends tomorrow!" : dLeft <= 3 ? "Log before the week ends" : "Log once this week"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6,
-      marginBottom: 6
-    }
-  }, /*#__PURE__*/React.createElement("input", {
-    style: _objectSpread(_objectSpread({}, inp), {}, {
-      flex: 1
-    }),
-    type: "number",
-    step: "0.1",
-    placeholder: "e.g. 81.2 kg",
-    value: bwIn,
-    onChange: function onChange(ev) {
-      setBwIn(ev.target.value);
-    }
-  }), /*#__PURE__*/React.createElement("button", {
-    style: btnP,
-    onClick: logBW
-  }, "Log")), /*#__PURE__*/React.createElement("input", {
-    type: "date",
-    style: _objectSpread(_objectSpread({}, inp), {}, {
-      padding: "6px 10px",
-      fontSize: 11,
-      color: T.text3
-    }),
-    value: bwDate,
-    onChange: function onChange(ev) {
-      setBwDate(ev.target.value);
-    }
-  }), bwLogged && bwEditing && /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, btn), {}, {
-      fontSize: 10,
-      padding: "4px 10px",
-      marginTop: 6,
-      opacity: 0.6
-    }),
-    onClick: function onClick() {
-      setBwEditing(false);
-      setBwIn("");
-      setBwDate(todayStr());
-    }
-  }, "Cancel"))), /*#__PURE__*/React.createElement("div", {
-    className: "card-rim",
-    style: card({
-      breakInside: "avoid"
-    })
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: sT
-  }, "Tasks"), /*#__PURE__*/React.createElement("button", {
-    style: _objectSpread(_objectSpread({}, editPill), {}, {
-      fontSize: 14,
-      padding: "2px 12px"
-    }),
-    onClick: function onClick() {
-      setModal("add_task");
-      setMForm({
-        priority: "normal",
-        cat: "Errands"
-      });
-    }
-  }, "+")), urgTasks.length === 0 && normTasks.length === 0 && doneTasks.length === 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: T.text2
-    }
-  }, "All clear \u2713"), scheduleTaskId && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: T.accent,
-      marginBottom: 6,
-      padding: "3px 8px",
-      borderRadius: 6,
-      background: T.accentBg,
-      border: "0.5px solid rgba(91,140,255,0.3)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement("span", null, "Tap a calendar day to schedule (or ESC)"), /*#__PURE__*/React.createElement("button", {
-    onClick: function onClick() {
-      setScheduleTaskId(null);
-    },
-    title: "Cancel scheduling",
-    style: {
-      background: "none",
-      border: "none",
-      color: T.accent,
-      cursor: "pointer",
-      fontSize: 14,
-      padding: "0 4px",
-      lineHeight: 1,
-      fontWeight: 700
-    }
-  }, "\xD7")), urgTasks.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: T.danger,
-      fontWeight: 700,
-      marginBottom: 6,
-      textTransform: "uppercase",
-      letterSpacing: 0.5
-    }
-  }, "Urgent"), urgTasks.map(function (t) {
-    var urg = taskUrg(t);
-    var isActive = scheduleTaskId === t.id;
-    return /*#__PURE__*/React.createElement("div", {
-      key: t.id,
-      className: "glow-item",
-      style: {
-        display: "flex",
-        gap: 9,
-        marginBottom: 7,
-        alignItems: "flex-start",
-        padding: "10px 12px",
-        borderRadius: 12,
-        background: isActive ? "rgba(91,140,255,0.12)" : "rgba(225,234,255,0.04)",
-        border: "1px solid " + (isActive ? "rgba(91,140,255,0.5)" : "rgba(255,255,255,0.07)"),
-        boxShadow: "inset 10px 0 9px -8px " + TUC[urg],
-        cursor: "default",
-        transition: "background 0.15s"
-      }
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "checkbox",
-      checked: t.done,
-      onChange: function onChange() {
-        toggleTask(t.id);
+  }, homeLayout.map(function (e, idx) {
+    var body = renderHomeCard(e.id);
+    if (!body) return null;
+    var meta = window.HomeLayout.HOME_CARDS.filter(function (c) {
+      return c.id === e.id;
+    })[0] || {};
+    return /*#__PURE__*/React.createElement(HomeGridCard, {
+      key: e.id,
+      span: e.span,
+      editing: layoutEditing,
+      title: meta.title || e.id,
+      isDragging: dragId === e.id,
+      isDropTarget: layoutEditing && dropIdx === idx && dragId !== null && dragId !== e.id,
+      onSpan: function onSpan(n) {
+        saveLayout(window.HomeLayout.setSpan(homeLayout, e.id, n));
       },
-      style: {
-        accentColor: T.accent,
-        marginTop: 2,
-        flexShrink: 0
-      }
-    }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: 1,
-        minWidth: 0
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        fontWeight: 500,
-        color: T.text,
-        textDecoration: t.done ? "line-through" : "none"
-      }
-    }, t.name), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 9,
-        color: TUC[urg]
-      }
-    }, taskLabel(t))), /*#__PURE__*/React.createElement("button", {
-      style: {
-        background: "none",
-        border: "none",
-        padding: "2px 4px",
-        cursor: "pointer",
-        color: T.text3,
-        flexShrink: 0,
-        opacity: 0.45,
-        display: "flex",
-        transition: "opacity 0.15s"
+      onDragStart: function onDragStart(ev) {
+        if (ev.button !== 0 || !ev.isPrimary) return;
+        ev.preventDefault();
+        setDragId(e.id);
+        setDropIdx(idx);
       },
-      title: "Mark done on a different day",
-      onClick: function onClick(e) {
-        e.stopPropagation();
-        openBackdateModal(t.id);
+      onDragOver: function onDragOver() {
+        if (dragId) setDropIdx(idx);
       }
-    }, /*#__PURE__*/React.createElement(UIcon, {
-      name: "clock",
-      size: 12
-    })), /*#__PURE__*/React.createElement("button", {
-      style: {
-        background: "none",
-        border: "none",
-        padding: "2px 4px",
-        cursor: "pointer",
-        color: scheduleTaskId === t.id ? T.accent : T.text3,
-        fontSize: 14,
-        flexShrink: 0,
-        lineHeight: 1,
-        opacity: scheduleTaskId === t.id ? 1 : 0.45,
-        transition: "opacity 0.15s,color 0.15s"
-      },
-      title: "Schedule",
-      onClick: function onClick(e) {
-        e.stopPropagation();
-        if (scheduleTaskId === t.id) {
-          setScheduleTaskId(null);
-        } else {
-          trk("task.schedule");
-          setScheduleTaskId(t.id);
-          showToast("Tap a calendar day to schedule (or ESC)", "warn");
-        }
-      }
-    }, "\u283F"));
-  })), normTasks.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: T.text3,
-      fontWeight: 700,
-      marginBottom: 6,
-      marginTop: 8,
-      textTransform: "uppercase",
-      letterSpacing: 0.5
-    }
-  }, "Normal"), normTasks.map(function (t) {
-    var urg = taskUrg(t);
-    var isActive = scheduleTaskId === t.id;
-    return /*#__PURE__*/React.createElement("div", {
-      key: t.id,
-      className: "glow-item",
-      style: {
-        display: "flex",
-        gap: 9,
-        marginBottom: 7,
-        alignItems: "flex-start",
-        padding: "10px 12px",
-        borderRadius: 12,
-        background: isActive ? "rgba(91,140,255,0.12)" : "rgba(225,234,255,0.04)",
-        border: "1px solid " + (isActive ? "rgba(91,140,255,0.5)" : "rgba(255,255,255,0.07)"),
-        boxShadow: "inset 10px 0 9px -8px " + TUC[urg],
-        cursor: "default",
-        transition: "background 0.15s"
-      }
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "checkbox",
-      checked: t.done,
-      onChange: function onChange() {
-        toggleTask(t.id);
-      },
-      style: {
-        accentColor: T.accent,
-        marginTop: 2,
-        flexShrink: 0
-      }
-    }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: 1,
-        minWidth: 0
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        fontWeight: 500,
-        color: T.text,
-        textDecoration: t.done ? "line-through" : "none"
-      }
-    }, t.name), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 9,
-        color: TUC[urg]
-      }
-    }, taskLabel(t))), /*#__PURE__*/React.createElement("button", {
-      style: {
-        background: "none",
-        border: "none",
-        padding: "2px 4px",
-        cursor: "pointer",
-        color: T.text3,
-        flexShrink: 0,
-        opacity: 0.45,
-        display: "flex",
-        transition: "opacity 0.15s"
-      },
-      title: "Mark done on a different day",
-      onClick: function onClick(e) {
-        e.stopPropagation();
-        openBackdateModal(t.id);
-      }
-    }, /*#__PURE__*/React.createElement(UIcon, {
-      name: "clock",
-      size: 12
-    })), /*#__PURE__*/React.createElement("button", {
-      style: {
-        background: "none",
-        border: "none",
-        padding: "2px 4px",
-        cursor: "pointer",
-        color: scheduleTaskId === t.id ? T.accent : T.text3,
-        fontSize: 14,
-        flexShrink: 0,
-        lineHeight: 1,
-        opacity: scheduleTaskId === t.id ? 1 : 0.45,
-        transition: "opacity 0.15s,color 0.15s"
-      },
-      title: "Schedule",
-      onClick: function onClick(e) {
-        e.stopPropagation();
-        if (scheduleTaskId === t.id) {
-          setScheduleTaskId(null);
-        } else {
-          trk("task.schedule");
-          setScheduleTaskId(t.id);
-          showToast("Tap a calendar day to schedule (or ESC)", "warn");
-        }
-      }
-    }, "\u283F"));
-  })), doneTasks.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: T.text3,
-      fontWeight: 700,
-      marginBottom: 6,
-      marginTop: 8,
-      textTransform: "uppercase",
-      letterSpacing: 0.5
-    }
-  }, "Done"), doneTasks.map(function (t) {
-    return /*#__PURE__*/React.createElement("div", {
-      key: t.id,
-      style: {
-        display: "flex",
-        gap: 7,
-        marginBottom: 5,
-        alignItems: "center",
-        opacity: 0.45
-      }
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "checkbox",
-      checked: true,
-      onChange: function onChange() {
-        toggleTask(t.id);
-      },
-      style: {
-        accentColor: T.accent,
-        flexShrink: 0
-      }
-    }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        color: T.text3,
-        textDecoration: "line-through",
-        flex: 1,
-        minWidth: 0
-      }
-    }, t.name), t.completedAt && /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 9,
-        color: T.text3,
-        flexShrink: 0
-      }
-    }, fmtDate(t.completedAt), t.completedTime ? " · " + fmtTime12(t.completedTime) : ""));
-  })))), appVersion && /*#__PURE__*/React.createElement("div", {
+    }, body);
+  })), appVersion && /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       padding: "10px 0 2px",
@@ -16123,20 +16843,6 @@ function App() {
     var doneA = assessments.filter(function (a) {
       return a.done;
     }).length;
-    var UNI_KEYS = ["uni", "tafe", "rmit", "university", "curtin", "monash", "deakin", "uts", "usyd", "uq", "uwa", "anu", "unsw", "federation"];
-    function isUniCalEv(ev) {
-      return ev.calName && UNI_KEYS.some(function (k) {
-        return ev.calName.toLowerCase().includes(k);
-      });
-    }
-    var uc28 = new Date();
-    uc28.setDate(uc28.getDate() + 28);
-    var ucEnd = dStr(uc28);
-    var upcomingClasses = dedupedEvents.filter(function (ev) {
-      return isUniCalEv(ev) && !isAssessmentEvent(ev) && !ev.allDay && ev.date >= todayStr() && ev.date <= ucEnd;
-    }).sort(function (a, b) {
-      return a.date.localeCompare(b.date) || (a.time || "").localeCompare(b.time || "");
-    });
     return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
       className: "card-rim",
       style: card()
@@ -16461,100 +17167,14 @@ function App() {
           removeSubject(s.id);
         }
       }, "\xD7"));
-    }))), /*#__PURE__*/React.createElement("div", {
-      className: "card-rim",
-      style: card()
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 8
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: sT
-    }, "Upcoming Classes"), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 9,
-        color: T.text3
-      }
-    }, "next 28 days")), upcomingClasses.length === 0 ? /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        color: T.text2
-      }
-    }, gcalConnected ? "No upcoming classes in the next 28 days." : "Connect Google Calendar to see your schedule.") : function () {
-      var lastDate2 = "";
-      return upcomingClasses.map(function (ev) {
-        var showDate = ev.date !== lastDate2;
-        lastDate2 = ev.date;
-        var col = evColor(ev);
-        var isToday = ev.date === todayStr();
-        return /*#__PURE__*/React.createElement("div", {
-          key: ev.id
-        }, showDate && /*#__PURE__*/React.createElement("div", {
-          style: {
-            fontSize: 10,
-            fontWeight: 600,
-            color: isToday ? T.accent : T.text2,
-            marginTop: 10,
-            marginBottom: 6,
-            paddingTop: 8,
-            borderTop: "0.5px solid " + T.border
-          }
-        }, isToday ? "Today · " : "", new Date(ev.date + "T12:00:00").toLocaleDateString("en-AU", {
-          weekday: "long",
-          day: "numeric",
-          month: "short"
-        })), /*#__PURE__*/React.createElement("div", {
-          style: {
-            display: "flex",
-            gap: 10,
-            marginBottom: 10,
-            alignItems: "flex-start"
-          }
-        }, /*#__PURE__*/React.createElement("div", {
-          style: {
-            width: 2,
-            borderRadius: 2,
-            background: col,
-            alignSelf: "stretch",
-            minHeight: 28,
-            flexShrink: 0
-          }
-        }), /*#__PURE__*/React.createElement("div", {
-          style: {
-            flex: 1
-          }
-        }, /*#__PURE__*/React.createElement("div", {
-          style: {
-            fontSize: 10,
-            fontWeight: 700,
-            color: T.text2,
-            marginBottom: 1
-          }
-        }, evLabel(ev)), /*#__PURE__*/React.createElement("div", {
-          style: {
-            fontSize: 12,
-            color: T.text,
-            lineHeight: 1.5
-          }
-        }, ev.title), ev.description && /*#__PURE__*/React.createElement("div", {
-          style: {
-            fontSize: 10,
-            color: T.text3,
-            marginTop: 2,
-            lineHeight: 1.4
-          }
-        }, ev.description.slice(0, 120), ev.description.length > 120 ? "…" : ""), /*#__PURE__*/React.createElement("div", {
-          style: {
-            fontSize: 10,
-            color: T.text3,
-            marginTop: 2
-          }
-        }, ev.time))));
-      });
-    }()));
+    }))), /*#__PURE__*/React.createElement(UpcomingClassesCard, {
+      events: dedupedEvents,
+      days: 28,
+      gcalConnected: gcalConnected,
+      evColor: evColor,
+      evLabel: evLabel,
+      cardStyle: card()
+    }));
   }()), page === "Work" && /*#__PURE__*/React.createElement("div", {
     style: {
       maxWidth: mob ? undefined : 900
@@ -16836,18 +17456,18 @@ function App() {
           border: "1px solid rgba(255,255,255,0.07)",
           boxShadow: "inset 10px 0 9px -8px " + col
         }
-      }, /*#__PURE__*/React.createElement("input", {
-        type: "checkbox",
-        checked: t.done,
-        onChange: function onChange() {
-          toggleTask(t.id);
-        },
+      }, /*#__PURE__*/React.createElement("span", {
         style: {
-          accentColor: T.accent,
-          marginTop: 2,
-          flexShrink: 0
+          marginTop: 1,
+          display: "flex"
         }
-      }), /*#__PURE__*/React.createElement("div", {
+      }, /*#__PURE__*/React.createElement(TickCircle, {
+        done: !!t.done,
+        size: 18,
+        onClick: function onClick() {
+          toggleTask(t.id);
+        }
+      })), /*#__PURE__*/React.createElement("div", {
         style: {
           flex: 1,
           minWidth: 0
@@ -16931,15 +17551,11 @@ function App() {
           border: "1px solid rgba(255,255,255,0.05)",
           opacity: 0.55
         }
-      }, /*#__PURE__*/React.createElement("input", {
-        type: "checkbox",
-        checked: true,
-        onChange: function onChange() {
+      }, /*#__PURE__*/React.createElement(TickCircle, {
+        done: true,
+        size: 18,
+        onClick: function onClick() {
           toggleTask(t.id);
-        },
-        style: {
-          accentColor: T.accent,
-          flexShrink: 0
         }
       }), /*#__PURE__*/React.createElement("div", {
         style: {
@@ -18141,7 +18757,7 @@ function App() {
       WebkitBackdropFilter: "blur(24px)",
       borderRadius: mob ? "20px 20px 0 0" : "16px",
       padding: mob ? "24px 20px 32px" : "22px",
-      width: mob ? "100%" : modal === "edit_rotation" ? "480px" : "340px",
+      width: mob ? "100%" : modal === "edit_rotation" ? "480px" : modal === "task_detail" ? "380px" : "340px",
       maxWidth: "100%",
       border: "0.5px solid rgba(91,140,255,0.25)",
       boxShadow: "0 8px 32px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.1)"
@@ -18157,14 +18773,130 @@ function App() {
       background: "rgba(255,255,255,0.2)",
       margin: "0 auto 20px"
     }
-  }), /*#__PURE__*/React.createElement("div", {
+  }), !closeOnlyModal && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 15,
       fontWeight: 600,
       marginBottom: 16,
       color: T.text
     }
-  }, modal === "add_subject" && "Add subject", modal === "add_exercise" && "Add exercise", modal === "log_weight" && "Log weight · " + (mForm.exName || ""), modal === "add_task" && "Add task", modal === "edit_rotation" && "Edit rotation template", modal === "complete_task" && "Mark task done", modal === "edit_subject" && "Edit subject"), modal === "add_exercise" && function () {
+  }, modal === "add_subject" && "Add subject", modal === "add_exercise" && "Add exercise", modal === "log_weight" && "Log weight · " + (mForm.exName || ""), modal === "add_task" && "Add task", modal === "edit_rotation" && "Edit rotation template", modal === "complete_task" && "Mark task done", modal === "edit_subject" && "Edit subject"), modal === "edit_necessities" && function () {
+    var nec = data.personal && data.personal.necessities || {
+      items: [],
+      ticks: {}
+    };
+    function setItems(next, dropTickId) {
+      setData(function (p) {
+        var cur = p.personal && p.personal.necessities || {
+          items: [],
+          ticks: {}
+        };
+        // Ticks are the only durable truth here, so a removed item must take its
+        // tick with it — otherwise every deletion leaves a dead key in the doc
+        // that syncs to three devices and never goes away.
+        var ticks = _objectSpread({}, cur.ticks || {});
+        if (dropTickId !== undefined) delete ticks[dropTickId];
+        return _objectSpread(_objectSpread({}, p), {}, {
+          personal: _objectSpread(_objectSpread({}, p.personal), {}, {
+            necessities: _objectSpread(_objectSpread({}, cur), {}, {
+              items: next,
+              ticks: ticks
+            })
+          })
+        });
+      });
+    }
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        fontWeight: 600,
+        color: T.text,
+        marginBottom: 12
+      }
+    }, "Weekly necessities"), (nec.items || []).map(function (i) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: i.id,
+        style: {
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+          marginBottom: 6
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          color: T.text,
+          flex: 1
+        }
+      }, i.name), /*#__PURE__*/React.createElement("button", {
+        onClick: function onClick() {
+          setItems((nec.items || []).filter(function (x) {
+            return x.id !== i.id;
+          }), i.id);
+        },
+        style: {
+          background: "none",
+          border: "none",
+          color: T.danger,
+          cursor: "pointer",
+          fontSize: 15,
+          lineHeight: 1,
+          padding: "0 4px"
+        },
+        title: "Remove"
+      }, "\xD7"));
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        marginTop: 12
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      style: _objectSpread(_objectSpread({}, PINP), {}, {
+        flex: 1
+      }),
+      placeholder: "Add a weekly necessity\u2026",
+      value: mForm.newItem || "",
+      onChange: function onChange(e) {
+        setMForm(function (f) {
+          return _objectSpread(_objectSpread({}, f), {}, {
+            newItem: e.target.value
+          });
+        });
+      },
+      onKeyDown: function onKeyDown(e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          var v = (mForm.newItem || "").trim();
+          if (!v) return;
+          setItems((nec.items || []).concat([{
+            id: Date.now(),
+            name: v
+          }]));
+          setMForm(function (f) {
+            return _objectSpread(_objectSpread({}, f), {}, {
+              newItem: ""
+            });
+          });
+        }
+      }
+    }), /*#__PURE__*/React.createElement("button", {
+      style: btnP,
+      onClick: function onClick() {
+        var v = (mForm.newItem || "").trim();
+        if (!v) return;
+        setItems((nec.items || []).concat([{
+          id: Date.now(),
+          name: v
+        }]));
+        setMForm(function (f) {
+          return _objectSpread(_objectSpread({}, f), {}, {
+            newItem: ""
+          });
+        });
+      }
+    }, "Add")));
+  }(), modal === "add_exercise" && function () {
     var names = [];
     var seen = {};
     (data.gym.exercises || []).forEach(function (ex) {
@@ -18730,7 +19462,215 @@ function App() {
         });
       });
     }
-  }, "+ Exercise")), /*#__PURE__*/React.createElement("div", {
+  }, "+ Exercise")), modal === "task_detail" && function () {
+    var t = (data.personal.tasks || []).filter(function (x) {
+      return x.id === mForm.taskId;
+    })[0];
+    // Archived or deleted from another device while this was open — say so
+    // rather than leaving a blank box with a lone Close button.
+    if (!t) return /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text3
+      }
+    }, "This task is no longer available.");
+    var ups = (t.updates || []).slice().reverse();
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        fontWeight: 600,
+        color: T.text,
+        marginBottom: 4
+      }
+    }, t.name), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: catColor(t.cat || "Other"),
+        marginBottom: 14
+      }
+    }, t.cat || "Other"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        marginBottom: 6,
+        textTransform: "uppercase",
+        letterSpacing: 0.5
+      }
+    }, "State"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        marginBottom: 16
+      }
+    }, [{
+      v: "todo",
+      l: "Not started"
+    }, {
+      v: "doing",
+      l: "In progress"
+    }, {
+      v: "waiting",
+      l: "Waiting"
+    }].map(function (o) {
+      var on = (t.state || "todo") === o.v;
+      return /*#__PURE__*/React.createElement("button", {
+        key: o.v,
+        onClick: function onClick() {
+          setTaskState(t.id, o.v);
+        },
+        style: _objectSpread(_objectSpread({}, btn), {}, {
+          fontSize: 11,
+          color: on ? T.accent : T.text2,
+          borderColor: on ? "rgba(91,140,255,0.5)" : "rgba(255,255,255,0.12)",
+          background: on ? T.accentBg : "transparent"
+        })
+      }, o.l);
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3,
+        marginBottom: 6,
+        textTransform: "uppercase",
+        letterSpacing: 0.5
+      }
+    }, "Updates"), ups.length === 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text3,
+        marginBottom: 10
+      }
+    }, "No updates yet."), ups.map(function (u) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: u.id,
+        style: {
+          display: "flex",
+          gap: 8,
+          alignItems: "flex-start",
+          marginBottom: 8,
+          paddingBottom: 8,
+          borderBottom: "0.5px solid " + T.border
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 10,
+          color: T.text3,
+          flexShrink: 0,
+          width: 52
+        }
+      }, fmtDate(u.at)), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 12,
+          color: T.text,
+          flex: 1,
+          lineHeight: 1.5
+        }
+      }, u.text), /*#__PURE__*/React.createElement("button", {
+        onClick: function onClick() {
+          deleteTaskUpdate(t.id, u.id);
+        },
+        style: {
+          background: "none",
+          border: "none",
+          color: T.text3,
+          cursor: "pointer",
+          fontSize: 14,
+          lineHeight: 1,
+          padding: "0 2px",
+          flexShrink: 0
+        },
+        title: "Delete update"
+      }, "\xD7"));
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        marginTop: 12
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      style: _objectSpread(_objectSpread({}, PINP), {}, {
+        flex: 1
+      }),
+      placeholder: "Write an update\u2026",
+      value: mForm.updateText || "",
+      onChange: function onChange(e) {
+        setMForm(function (f) {
+          return _objectSpread(_objectSpread({}, f), {}, {
+            updateText: e.target.value
+          });
+        });
+      },
+      onKeyDown: function onKeyDown(e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          addTaskUpdate(t.id, mForm.updateText);
+          setMForm(function (f) {
+            return _objectSpread(_objectSpread({}, f), {}, {
+              updateText: ""
+            });
+          });
+        }
+      }
+    }), /*#__PURE__*/React.createElement("button", {
+      style: btnP,
+      onClick: function onClick() {
+        addTaskUpdate(t.id, mForm.updateText);
+        setMForm(function (f) {
+          return _objectSpread(_objectSpread({}, f), {}, {
+            updateText: ""
+          });
+        });
+      }
+    }, "Add")));
+  }(), modal === "day_done" && function () {
+    var done = completionsByDay[mForm.date] || [];
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        fontWeight: 600,
+        color: T.text,
+        marginBottom: 12
+      }
+    }, "Finished ", new Date(mForm.date + "T12:00:00").toLocaleDateString("en-AU", {
+      weekday: "long",
+      day: "numeric",
+      month: "long"
+    })), done.length === 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text3
+      }
+    }, "Nothing recorded for this day."), done.map(function (t) {
+      var col = catColor(t.cat || "Other");
+      return /*#__PURE__*/React.createElement("div", {
+        key: t.id,
+        style: {
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+          marginBottom: 8
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: col,
+          flexShrink: 0
+        }
+      }), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          color: T.text,
+          flex: 1
+        }
+      }, t.name), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 10,
+          color: T.text3
+        }
+      }, t.completedTime ? fmtTime12(t.completedTime) : ""));
+    }));
+  }(), !closeOnlyModal && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -18760,7 +19700,25 @@ function App() {
     onClick: function onClick() {
       setModal(null);
     }
-  }, "Cancel")))), showTimePicker && /*#__PURE__*/React.createElement("div", {
+  }, "Cancel")), closeOnlyModal && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginTop: 16,
+      flexDirection: mob ? "column" : "row",
+      justifyContent: "flex-end"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: mob ? _objectSpread(_objectSpread({}, btnP), {}, {
+      padding: "13px",
+      fontSize: 14,
+      width: "100%",
+      borderRadius: 10
+    }) : btnP,
+    onClick: function onClick() {
+      setModal(null);
+    }
+  }, "Close")))), showTimePicker && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       inset: 0,
@@ -20092,19 +21050,19 @@ function App() {
             padding: "4px 0",
             cursor: _typeof(c) === "object" ? "pointer" : "default"
           }
-        }, /*#__PURE__*/React.createElement("input", {
-          type: "checkbox",
-          checked: isDone,
-          readOnly: typeof c === "string",
-          onChange: _typeof(c) === "object" ? function () {
-            brToggleCommitment((b.keyMoments || []).length - 1 - i, ci);
-          } : undefined,
+        }, /*#__PURE__*/React.createElement("span", {
           style: {
-            marginTop: 2,
-            flexShrink: 0,
-            accentColor: "#5b8cff"
+            marginTop: 1,
+            display: "flex"
           }
-        }), /*#__PURE__*/React.createElement("span", {
+        }, /*#__PURE__*/React.createElement(TickCircle, {
+          done: isDone,
+          size: 17,
+          inert: typeof c === "string",
+          onClick: _typeof(c) === "object" ? function () {
+            brToggleCommitment((b.keyMoments || []).length - 1 - i, ci);
+          } : undefined
+        })), /*#__PURE__*/React.createElement("span", {
           style: {
             fontSize: 12,
             color: isDone ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.75)",
