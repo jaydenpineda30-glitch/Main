@@ -15521,7 +15521,7 @@ function App() {
     var metaColor = group === "waiting" ? T.text3 : group === "overdue" ? T.danger : T.text3;
     return /*#__PURE__*/React.createElement("div", {
       key: t.id,
-      className: "glow-item",
+      className: "glow-item task-row",
       style: {
         display: "flex",
         gap: 9,
@@ -15591,7 +15591,14 @@ function App() {
         textOverflow: "ellipsis",
         whiteSpace: "nowrap"
       }
-    }, "\"", latest.text, "\" \u2014 ", fmtDate(latest.at))), /*#__PURE__*/React.createElement("button", {
+    }, "\"", latest.text, "\" \u2014 ", fmtDate(latest.at))), /*#__PURE__*/React.createElement("span", {
+      className: "row-actions" + (isActive ? " is-armed" : ""),
+      style: {
+        display: "flex",
+        flexShrink: 0,
+        marginTop: 1
+      }
+    }, /*#__PURE__*/React.createElement("button", {
       style: {
         background: "none",
         border: "none",
@@ -15653,7 +15660,7 @@ function App() {
           showToast("Tap a calendar day to schedule (or ESC)", "warn");
         }
       }
-    }, "\u283F"));
+    }, "\u283F")));
   }
   function renderTasksCard() {
     var TG = window.TaskGrouping;

@@ -4390,7 +4390,7 @@ function App(){
       :taskLabel(t);
     const metaColor=group==="waiting"?T.text3:group==="overdue"?T.danger:T.text3;
     return(
-      <div key={t.id} className="glow-item"
+      <div key={t.id} className="glow-item task-row"
         style={{display:"flex",gap:9,marginBottom:7,alignItems:"flex-start",padding:"10px 12px",
                 borderRadius:12,opacity:group==="done"?0.5:1,
                 background:isActive?"rgba(91,140,255,0.12)":"rgba(225,234,255,0.04)",
@@ -4411,6 +4411,12 @@ function App(){
                                 overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
             "{latest.text}" — {fmtDate(latest.at)}</div>}
         </div>
+        {/* Three controls on every row is a lot of furniture for a list you mostly read.
+            On a mouse they fade in on hover (and on keyboard focus); on touch, where
+            there is no hover, they stay visible. `is-armed` keeps the schedule button
+            showing while it is waiting for a calendar day. */}
+        <span className={"row-actions"+(isActive?" is-armed":"")}
+              style={{display:"flex",flexShrink:0,marginTop:1}}>
         <button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",
                         color:T.text3,flexShrink:0,opacity:0.45,display:"flex"}}
           title="Open task" onClick={function(e){e.stopPropagation();openTaskDetail(t.id);}}>
@@ -4431,6 +4437,7 @@ function App(){
             if(scheduleTaskId===t.id){setScheduleTaskId(null);}
             else{trk("task.schedule");setScheduleTaskId(t.id);
                  showToast("Tap a calendar day to schedule (or ESC)","warn");}}}>⠿</button>
+        </span>
       </div>);
   }
 

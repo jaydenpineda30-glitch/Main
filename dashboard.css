@@ -146,3 +146,13 @@ button:active:not([disabled]){transform:scale(0.97);}
   .tick-circle:active{transform:none;}
   .tick-circle.is-done svg{animation:none;}
 }
+
+/* --- Task row controls --- */
+/* Reveal the per-row buttons on hover for mouse users. Touch devices have no hover,
+   so the media query leaves them permanently visible there. */
+@media (hover:hover) and (pointer:fine){
+  .task-row .row-actions{opacity:0;transition:opacity .15s;}
+  .task-row:hover .row-actions,
+  .task-row .row-actions:focus-within,
+  .task-row .row-actions.is-armed{opacity:1;}
+}
