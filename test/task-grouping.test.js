@@ -98,3 +98,23 @@ test('every task category has a colour', () => {
     .filter(k => !sandbox.TASK_CATS.includes(k));
   assert.deepStrictEqual(extra, [], 'colours defined for categories that do not exist');
 });
+
+test('the done bucket reads most-recently-finished first', () => {
+  const tasks = [
+    { id: 'a', done: true, completedAt: '2026-07-28', due: '2026-07-01' },
+    { id: 'b', done: true, completedAt: '2026-08-03', due: '2026-12-25' },
+    { id: 'c', done: true, completedAt: '2026-08-01' }
+  ];
+  const g = TG.groupTasks(tasks, '2026-08-03');
+  assert.deepStrictEqual(g.done.map(function (t) { return t.id; }), ['b', 'c', 'a'],
+    'due date is meaningless once a task is finished — completedAt is the real order');
+});
+
+test('a done task with no completedAt sorts last rather than crashing', () => {
+  const tasks = [
+    { id: 'a', done: true },
+    { id: 'b', done: true, completedAt: '2026-08-01' }
+  ];
+  const g = TG.groupTasks(tasks, '2026-08-03');
+  assert.deepStrictEqual(g.done.map(function (t) { return t.id; }), ['b', 'a']);
+});

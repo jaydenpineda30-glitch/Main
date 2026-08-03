@@ -2720,7 +2720,7 @@ function ShoppingHomeCard({items,onUpdate,onOpen,cardStyle,mob}){
   var todo=list.filter(function(x){return !x.done;});
   function add(){var v=inp.trim();if(!v)return;if(list.some(function(x){return !x.done&&x.text.trim().toLowerCase()===v.toLowerCase();})){if(window.showToast)window.showToast(v+" is already on the list","warn");setInp("");return;}onUpdate(list.concat([{id:nid("shp"),key:null,text:v,detail:"",source:"",done:false,addedAt:todayStr()}]));setInp("");}
   function toggle(id){onUpdate(list.map(function(x){return x.id!==id?x:{...x,done:!x.done};}));}
-  return <div className="card-rim" style={{...(cardStyle||PCARD),breakInside:"avoid"}}>
+  return <div className="card-rim" style={{...(cardStyle||PCARD)}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
       <div style={{display:"flex",alignItems:"center",gap:7}}>
         <span style={{color:T.accent,display:"flex"}}><NavGlyph name="Shopping" size={15}/></span>
@@ -2804,7 +2804,7 @@ function HomeGridCard({span,editing,title,onSpan,onDragStart,onDragOver,isDraggi
 // cannot drift apart. `events` is the deduped Google Calendar event list.
 // evColor/evLabel are passed in because they live inside App() — evLabel
 // closes over data.uni.subjects and cannot be hoisted.
-function UpcomingClassesCard({events,days,gcalConnected,evColor,evLabel,cardStyle,mob}){
+function UpcomingClassesCard({events,days,gcalConnected,evColor,evLabel,cardStyle}){
   const today=todayStr();
   const end=(function(){const d=new Date();d.setDate(d.getDate()+days);return dStr(d);})();
   const classes=(events||[])
@@ -4405,6 +4405,11 @@ function App(){
             {/* The 3px bar already carries the hue, so the word itself reads brighter. */}
             <span style={{fontSize:9,color:T.text2}}>{cat}</span>
             {stateBadge&&<span style={{fontSize:9,color:T.accent}}>{stateBadge}</span>}
+            {/* Grouping is by due date and staleness, so the Urgent flag has no other
+                voice on this card. Without this it is a control you can set that
+                visibly does nothing. */}
+            {!t.done&&t.priority==="urgent"&&<span style={{fontSize:9,color:T.danger,fontWeight:700,
+              textTransform:"uppercase",letterSpacing:0.4}}>urgent</span>}
             {meta&&<span style={{fontSize:9,color:metaColor}}>{meta}</span>}
           </div>
           {latest&&<div style={{fontSize:9,color:T.text3,marginTop:3,fontStyle:"italic",
@@ -4486,7 +4491,9 @@ function App(){
             style={{...btn,fontSize:10,padding:"3px 9px"}}>Clear</button>}
         </div>}
 
-        {empty&&<div style={{fontSize:12,color:T.text2}}>All clear ✓</div>}
+        {/* "All clear" would be a lie while a filter is hiding the rest of the list. */}
+        {empty&&<div style={{fontSize:12,color:T.text2}}>
+          {catFilter?"Nothing in "+catFilter:"All clear ✓"}</div>}
 
         {TG.DISPLAY_ORDER.map(function(g){
           if(groups[g].length===0)return null;
@@ -4578,7 +4585,7 @@ function App(){
       case "bodyweight":  return renderBodyweightCard();
       case "tasks":       return renderTasksCard();
       case "classes":     return <UpcomingClassesCard events={dedupedEvents} days={7}
-        gcalConnected={gcalConnected} evColor={evColor} evLabel={evLabel} cardStyle={card()} mob={mob}/>;
+        gcalConnected={gcalConnected} evColor={evColor} evLabel={evLabel} cardStyle={card()}/>;
       case "necessities": return renderNecessitiesCard();
       default:            return null;
     }
@@ -4827,7 +4834,7 @@ function App(){
               </div>
               {/* ── Upcoming Classes ── */}
               <UpcomingClassesCard events={dedupedEvents} days={28} gcalConnected={gcalConnected}
-                evColor={evColor} evLabel={evLabel} cardStyle={card()} mob={mob}/>
+                evColor={evColor} evLabel={evLabel} cardStyle={card()}/>
             </React.Fragment>);
           })()}
         </div>}

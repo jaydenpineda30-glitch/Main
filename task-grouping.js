@@ -57,11 +57,18 @@
     (Array.isArray(tasks) ? tasks : []).forEach(function (t) {
       out[groupOf(t, todayStr)].push(t);
     });
-    // Soonest due first; undated tasks sink to the bottom of their group.
+    // Soonest due first; undated tasks sink to the bottom of their group. Done is the
+    // exception: it is a record of what happened, so it reads most-recent first by the
+    // date it was finished. Sorting finished work by a due date that has since passed
+    // puts it in an order that means nothing.
     DISPLAY_ORDER.forEach(function (g) {
-      out[g].sort(function (a, b) {
-        return String(a.due || '9999-12-31').localeCompare(String(b.due || '9999-12-31'));
-      });
+      out[g].sort(g === 'done'
+        ? function (a, b) {
+            return String(b.completedAt || '').localeCompare(String(a.completedAt || ''));
+          }
+        : function (a, b) {
+            return String(a.due || '9999-12-31').localeCompare(String(b.due || '9999-12-31'));
+          });
     });
     return out;
   }

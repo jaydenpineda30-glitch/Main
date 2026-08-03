@@ -10785,9 +10785,7 @@ function ShoppingHomeCard(_ref6) {
   }
   return /*#__PURE__*/React.createElement("div", {
     className: "card-rim",
-    style: _objectSpread(_objectSpread({}, cardStyle || PCARD), {}, {
-      breakInside: "avoid"
-    })
+    style: _objectSpread({}, cardStyle || PCARD)
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -11025,8 +11023,7 @@ function UpcomingClassesCard(_ref8) {
     gcalConnected = _ref8.gcalConnected,
     evColor = _ref8.evColor,
     evLabel = _ref8.evLabel,
-    cardStyle = _ref8.cardStyle,
-    mob = _ref8.mob;
+    cardStyle = _ref8.cardStyle;
   var today = todayStr();
   var end = function () {
     var d = new Date();
@@ -15576,7 +15573,15 @@ function App() {
         fontSize: 9,
         color: T.accent
       }
-    }, stateBadge), meta && /*#__PURE__*/React.createElement("span", {
+    }, stateBadge), !t.done && t.priority === "urgent" && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 9,
+        color: T.danger,
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: 0.4
+      }
+    }, "urgent"), meta && /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 9,
         color: metaColor
@@ -15783,7 +15788,7 @@ function App() {
         fontSize: 12,
         color: T.text2
       }
-    }, "All clear \u2713"), TG.DISPLAY_ORDER.map(function (g) {
+    }, catFilter ? "Nothing in " + catFilter : "All clear ✓"), TG.DISPLAY_ORDER.map(function (g) {
       if (groups[g].length === 0) return null;
       return /*#__PURE__*/React.createElement("div", {
         key: g
@@ -15988,8 +15993,7 @@ function App() {
           gcalConnected: gcalConnected,
           evColor: evColor,
           evLabel: evLabel,
-          cardStyle: card(),
-          mob: mob
+          cardStyle: card()
         });
       case "necessities":
         return renderNecessitiesCard();
@@ -17169,8 +17173,7 @@ function App() {
       gcalConnected: gcalConnected,
       evColor: evColor,
       evLabel: evLabel,
-      cardStyle: card(),
-      mob: mob
+      cardStyle: card()
     }));
   }()), page === "Work" && /*#__PURE__*/React.createElement("div", {
     style: {
