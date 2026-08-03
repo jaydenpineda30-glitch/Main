@@ -10001,24 +10001,34 @@ function ProgressBar(props) {
     }
   }));
 }
+
+// The one tick control for the whole app. `inert` renders it as a non-interactive
+// indicator for rows that already carry their own click handler — it still looks
+// identical, so a list never mixes two styles of tick.
 function TickCircle(props) {
   var done = props.done;
   var size = props.size || 26;
+  var ring = done ? T.success : props.accent || "rgba(255,255,255,0.28)";
   return /*#__PURE__*/React.createElement("button", {
-    onClick: props.onClick,
+    type: "button",
+    onClick: props.inert ? undefined : props.onClick,
     "aria-label": done ? "Mark not done" : "Mark done",
+    className: "tick-circle" + (done ? " is-done" : ""),
+    tabIndex: props.inert ? -1 : 0,
     style: {
       flexShrink: 0,
       width: size,
       height: size,
       borderRadius: "50%",
-      border: "2px solid " + (done ? T.success : props.accent || "rgba(255,255,255,0.28)"),
-      background: done ? T.success : "transparent",
-      cursor: "pointer",
+      border: "2px solid " + ring,
+      background: done ? T.success : "rgba(255,255,255,0.03)",
+      cursor: props.inert ? "inherit" : "pointer",
       display: "grid",
       placeItems: "center",
       padding: 0,
-      transition: "all .18s"
+      pointerEvents: props.inert ? "none" : "auto",
+      boxShadow: done ? "0 0 10px " + T.success + "70" : "none",
+      transition: "background .18s,border-color .18s,box-shadow .18s,transform .12s"
     }
   }, done && /*#__PURE__*/React.createElement("svg", {
     width: size * 0.5,
@@ -15525,18 +15535,18 @@ function App() {
         borderLeft: "3px solid " + col,
         transition: "background 0.15s"
       }
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "checkbox",
-      checked: !!t.done,
-      onChange: function onChange() {
-        toggleTask(t.id);
-      },
+    }, /*#__PURE__*/React.createElement("span", {
       style: {
-        accentColor: T.accent,
-        marginTop: 2,
-        flexShrink: 0
+        marginTop: 1,
+        display: "flex"
       }
-    }), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement(TickCircle, {
+      done: !!t.done,
+      size: 18,
+      onClick: function onClick() {
+        toggleTask(t.id);
+      }
+    })), /*#__PURE__*/React.createElement("div", {
       style: {
         flex: 1,
         minWidth: 0
@@ -15912,15 +15922,10 @@ function App() {
           background: "rgba(225,234,255,0.04)",
           border: "1px solid " + (urgent ? T.warn + "55" : "rgba(255,255,255,0.07)")
         }
-      }, /*#__PURE__*/React.createElement("input", {
-        type: "checkbox",
-        readOnly: true,
-        checked: done,
-        style: {
-          accentColor: T.accent,
-          flexShrink: 0,
-          pointerEvents: "none"
-        }
+      }, /*#__PURE__*/React.createElement(TickCircle, {
+        done: done,
+        size: 18,
+        inert: true
       }), /*#__PURE__*/React.createElement("span", {
         style: {
           fontSize: 12,
@@ -17441,18 +17446,18 @@ function App() {
           border: "1px solid rgba(255,255,255,0.07)",
           boxShadow: "inset 10px 0 9px -8px " + col
         }
-      }, /*#__PURE__*/React.createElement("input", {
-        type: "checkbox",
-        checked: t.done,
-        onChange: function onChange() {
-          toggleTask(t.id);
-        },
+      }, /*#__PURE__*/React.createElement("span", {
         style: {
-          accentColor: T.accent,
-          marginTop: 2,
-          flexShrink: 0
+          marginTop: 1,
+          display: "flex"
         }
-      }), /*#__PURE__*/React.createElement("div", {
+      }, /*#__PURE__*/React.createElement(TickCircle, {
+        done: !!t.done,
+        size: 18,
+        onClick: function onClick() {
+          toggleTask(t.id);
+        }
+      })), /*#__PURE__*/React.createElement("div", {
         style: {
           flex: 1,
           minWidth: 0
@@ -17536,15 +17541,11 @@ function App() {
           border: "1px solid rgba(255,255,255,0.05)",
           opacity: 0.55
         }
-      }, /*#__PURE__*/React.createElement("input", {
-        type: "checkbox",
-        checked: true,
-        onChange: function onChange() {
+      }, /*#__PURE__*/React.createElement(TickCircle, {
+        done: true,
+        size: 18,
+        onClick: function onClick() {
           toggleTask(t.id);
-        },
-        style: {
-          accentColor: T.accent,
-          flexShrink: 0
         }
       }), /*#__PURE__*/React.createElement("div", {
         style: {
@@ -21039,19 +21040,19 @@ function App() {
             padding: "4px 0",
             cursor: _typeof(c) === "object" ? "pointer" : "default"
           }
-        }, /*#__PURE__*/React.createElement("input", {
-          type: "checkbox",
-          checked: isDone,
-          readOnly: typeof c === "string",
-          onChange: _typeof(c) === "object" ? function () {
-            brToggleCommitment((b.keyMoments || []).length - 1 - i, ci);
-          } : undefined,
+        }, /*#__PURE__*/React.createElement("span", {
           style: {
-            marginTop: 2,
-            flexShrink: 0,
-            accentColor: "#5b8cff"
+            marginTop: 1,
+            display: "flex"
           }
-        }), /*#__PURE__*/React.createElement("span", {
+        }, /*#__PURE__*/React.createElement(TickCircle, {
+          done: isDone,
+          size: 17,
+          inert: typeof c === "string",
+          onClick: _typeof(c) === "object" ? function () {
+            brToggleCommitment((b.keyMoments || []).length - 1 - i, ci);
+          } : undefined
+        })), /*#__PURE__*/React.createElement("span", {
           style: {
             fontSize: 12,
             color: isDone ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.75)",
