@@ -1,6 +1,10 @@
 name: Patch Notes
 
 on:
+  # Manual trigger, for when a release needs regenerating without an app change —
+  # e.g. this workflow itself failed and the fix touched only workflow files, which
+  # the paths filter below deliberately ignores.
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
