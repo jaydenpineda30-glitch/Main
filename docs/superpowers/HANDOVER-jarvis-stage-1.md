@@ -165,7 +165,31 @@ parameter, have `WorkSection` pass its existing local. `dStr` (line 260) is
 already module-level. Still check the Work tab's figures are unchanged — it is
 real money maths — but the lift itself is mechanical.
 
-**Blocker 2 — there is no `billsTotal`. Not a refactor; a decision.**
+**Blocker 2 — RESOLVED 2026-08-07.** `JarvisSignals.billsTotal(data)` now exists,
+pure and tested: it sums `recurringTemplates` tagged `Bills`. Jayden's rule is
+that a bill is something he cannot choose not to pay — electricity $80,
+internet $87, Spotify $25, Claude $35 = **$227**. Trees, Vape and Food are
+ordinary spending he keeps a lid on himself; the $312 fine is a one-off he is
+paying down.
+
+⚠️ **His data still tags Food and Fine as `Bills`**, so `billsTotal` reads **$819**
+until he re-tags those two to `Other` in the app. Do not wire the money signal
+in before that — it would announce a shortfall that is not real. Check it:
+
+```bash
+node -e "const JS=require('./jarvis-signals.js'),fs=require('fs');
+const r=JSON.parse(fs.readFileSync('<backup>.json','utf8'));
+console.log(JS.billsTotal(r.dashData||r.data||r));"   # want 227, not 819
+```
+
+**Blocker 3 — gross vs net. Undecided, and it is Jayden's call.**
+`projectedPay` (`app.jsx:2131`) is `projectedEquiv * hrRate` — **before tax**.
+Comparing that against bills would tell him he is covered when he is not, at
+$41.58/hr. `estimateTax` exists (inside `WorkSection`, just below) and would
+need lifting too. Ask which he wants before building: gross is what the Work
+tab already shows, net is what actually lands in his account.
+
+The original framing of this blocker, kept because it explains the data model:
 `financeSource` gates on `billsTotal > 0`, and no such field exists anywhere in
 the data model. What exists is raw material, in `data.finance` (line ~155):
 
