@@ -103,6 +103,27 @@
   // Each takes the context and returns zero or more candidates. Adding a rule
   // here is all it takes — ranking, the card and the phrasing pick it up.
 
+  // What Jayden owes each cycle. A bill is something he cannot choose not to
+  // pay — electricity, internet, and the two subscriptions. The rest of
+  // recurringTemplates is ordinary spending he keeps a lid on himself, and
+  // counting it would invent a shortfall that is not real.
+  //
+  // The `Bills` category is the marker, so he re-tags an item in the app rather
+  // than waiting on a code change. Anything tagged Bills is treated as due.
+  function billsTotal(data) {
+    if (!data || typeof data !== 'object') return 0;
+    var templates = arr(data.finance && data.finance.recurringTemplates);
+    return templates.reduce(function (sum, t) {
+      if (!t) return sum;
+      if (String(t.cat || '').trim().toLowerCase() !== 'bills') return sum;
+      var amount = Number(t.amount);
+      // Blank, non-numeric and negative amounts contribute nothing rather than
+      // corrupting the total — a wrong bills figure is worse than a low one.
+      if (!isFinite(amount) || amount <= 0) return sum;
+      return sum + amount;
+    }, 0);
+  }
+
   // Money. app.jsx owns the pay-cycle maths (getPayPeriodRange / shiftPay /
   // isWorkEventCounted) and hands the result in already computed, so this module
   // stays pure and the two can never disagree about what a shift pays.
@@ -375,6 +396,7 @@
     daysApart: daysApart,
     isWeeklyClass: isWeeklyClass,
     isAssessmentEvent: isAssessmentEvent,
+    billsTotal: billsTotal,
     rank: rank,
     top: top
   };

@@ -129,6 +129,49 @@ test('not being able to cover bills outranks everything else', () => {
   assert.strictEqual(out[0].band, 'failing');
 });
 
+// ── What counts as a bill ────────────────────────────────────────────────────
+// Jayden's call, 2026-08-07: a bill is something he cannot choose not to pay.
+// Everything else in recurringTemplates is ordinary spending he keeps a lid on
+// himself, and Jarvis must not treat it as an obligation. The marker is the
+// `Bills` category, so he stays in control of it from the app without a code
+// change. Getting this wrong states a false shortfall about real money.
+
+test('billsTotal counts only templates tagged Bills', () => {
+  const data = { finance: { recurringTemplates: [
+    { name: 'electricity', cat: 'Bills', amount: 80 },
+    { name: 'internet', cat: 'Bills', amount: 87 },
+    { name: 'Trees', cat: 'Other', amount: 280 },
+    { name: 'Vape', cat: 'Other', amount: 120 }
+  ] } };
+  assert.strictEqual(JS.billsTotal(data), 167);
+});
+
+test('billsTotal is 0 when finance data is missing entirely', () => {
+  assert.strictEqual(JS.billsTotal({}), 0);
+  assert.strictEqual(JS.billsTotal({ finance: {} }), 0);
+  assert.strictEqual(JS.billsTotal(null), 0);
+});
+
+test('billsTotal ignores entries with no usable amount', () => {
+  const data = { finance: { recurringTemplates: [
+    { name: 'good', cat: 'Bills', amount: 25 },
+    { name: 'blank', cat: 'Bills' },
+    { name: 'text', cat: 'Bills', amount: 'twenty' },
+    { name: 'negative', cat: 'Bills', amount: -10 },
+    null
+  ] } };
+  assert.strictEqual(JS.billsTotal(data), 25);
+});
+
+test('billsTotal matches the category case-insensitively and ignores stray spaces', () => {
+  // Real data has names like " spotify " — the category is typed too.
+  const data = { finance: { recurringTemplates: [
+    { name: 'spotify', cat: ' bills ', amount: 25 },
+    { name: 'claude', cat: 'BILLS', amount: 35 }
+  ] } };
+  assert.strictEqual(JS.billsTotal(data), 60);
+});
+
 test('results are sorted by score, highest first', () => {
   const out = JS.rank(ctx({
     data: {
