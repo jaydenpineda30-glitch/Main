@@ -3,8 +3,8 @@
 **Written:** 2026-08-07, end of session
 **Branch:** `worktree-jarvis-signals`, commit `eb21ca3`
 **Worktree:** `C:\Users\Jayde\my-project\.claude\worktrees\jarvis-signals`
-**State:** stage 1 built and committed. **2 tests deliberately failing** — they
-specify the next job. Read "Pick up here" before anything else.
+**State:** stage 1 built and committed. The two deliberately-failing tests have
+since been fixed — **68 tests, all passing**. See "The floor rule, as built".
 
 ---
 
@@ -38,20 +38,13 @@ To work on it: `cd C:\Users\Jayde\my-project\.claude\worktrees\jarvis-signals`.
 
 ---
 
-## Pick up here — the two failing tests
+## The floor rule, as built
 
 ```
-npm test        # 68 tests, 66 pass, 2 fail
+npm test        # 68 tests, all passing
 ```
 
-Both failures are in `test/jarvis-signals.test.js`:
-
-- `the same get-ahead suggestions appear when nothing is happening`
-- `no candidate claims nothing is wrong while something is`
-
-**They are correct and the code is wrong.** Do not weaken them.
-
-### The bug
+### The bug this fixed
 
 Found by running the ranker over a real dashboard backup rather than trusting
 synthetic tests — worth repeating as a habit. On a day with two failing-band
@@ -67,26 +60,35 @@ items, Jarvis still produced:
 "Nothing is on fire" and "Nothing is due" are simply false with two failing
 items above them. Those strings were written assuming the candidate is the lead.
 
-### The fix the tests expect
+Two tests in `test/jarvis-signals.test.js` pin this down, and both now pass:
 
-1. **Add a `floorOnly: true` flag** to candidates that only make sense when
-   nothing real is happening:
+- `the same get-ahead suggestions appear when nothing is happening`
+- `no candidate claims nothing is wrong while something is`
+
+### How it works now
+
+1. **`floorOnly: true`** marks candidates that only make sense when nothing real
+   is happening:
    - `getAhead.task` in `getAheadSource`
    - the `> 14 days` branch of `uniSource` ("Good day to get ahead on X")
    - the "Bills covered with $X spare" branch of `financeSource`
-2. **In `rank()`**, after sorting: if any non-`floorOnly` candidate scores
-   `>= BANDS.decaying` (30), drop every `floorOnly` candidate. Otherwise keep
-   them. The all-clear fallback still applies if the list ends up empty.
-3. **Make `gymSource`'s `why` context-free** — delete "Nothing is on fire, so
-   this is a genuinely good use of the afternoon". State only its own facts
-   (days idle, which session is next). Gym sits in the decaying band and
-   survives on busy days, so its wording must never assert calm.
+2. **`rank()`**, after sorting, drops every `floorOnly` candidate if any
+   non-`floorOnly` candidate scores `>= BANDS.decaying` (30). Otherwise it keeps
+   them, so a calm day still gets a suggestion instead of silence. The all-clear
+   fallback still applies if the list ends up empty.
+3. **`gymSource`'s `why` is context-free.** Gym sits in the decaying band and
+   survives on busy days, so it was the one non-`floorOnly` candidate asserting
+   calm. It now states only its own facts — days idle, which session is next.
 
 The general rule, worth applying to any new source: **a candidate's text may
 only describe its own facts.** It cannot claim anything about the rest of the
-list, because it does not know where it will rank.
+list, because it does not know where it will rank. If a candidate's wording
+needs the rest of the list to be quiet, it is `floorOnly`; if it does not, its
+wording must survive a busy day.
 
-After fixing, re-run the real-data check (below) before trusting it.
+Verified against the real backup in both directions — busy days no longer carry
+a false get-ahead line, and a simulated calm day still produces one. Re-run that
+check (below) after any ranking change.
 
 ---
 

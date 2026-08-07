@@ -134,7 +134,7 @@
       })];
     }
     return [candidate({
-      id: 'finance.billsCoverage', domain: 'finance', score: 22,
+      id: 'finance.billsCoverage', domain: 'finance', score: 22, floorOnly: true,
       headline: 'Bills covered with $' + buffer + ' spare',
       why: 'Nothing to do here — worth knowing before you plan the rest.',
       cta: { label: 'Finance', page: 'Finance' }, view: 'money', facts: facts
@@ -188,7 +188,8 @@
       }))];
     }
     return [candidate(Object.assign({}, base, {
-      score: 20, headline: 'Good day to get ahead on ' + name,
+      score: 20, floorOnly: true,
+      headline: 'Good day to get ahead on ' + name,
       why: 'It is ' + d + ' days out and nothing is pressing, so this is the best use of the time.'
     }))];
   }
@@ -263,8 +264,10 @@
     return [candidate({
       id: 'gym.idle', domain: 'gym', score: idle >= 7 ? 40 : 32,
       headline: idle + ' days since your last session',
+      // Gym is not floorOnly — it survives a busy day — so this text may only
+      // state its own facts. It cannot assert that the rest of the list is calm.
       why: (nextName ? nextName + ' is up next. ' : '') +
-           'Nothing is on fire, so this is a genuinely good use of the afternoon.',
+           'The gap gets harder to close the longer it runs.',
       cta: { label: 'Gym', page: 'Gym' }, view: 'gym', facts: { idleDays: idle, next: nextName || null }
     })];
   }
@@ -294,7 +297,7 @@
       .filter(function (t) { return t && !t.done && !t.due; });
     if (pending.length) {
       out.push(candidate({
-        id: 'getAhead.task', domain: 'tasks', score: 15,
+        id: 'getAhead.task', domain: 'tasks', score: 15, floorOnly: true,
         headline: 'Nothing is due — good time for "' + trim(pending[0].name, 40) + '"',
         why: 'It has no deadline, which is exactly why it never gets picked. ' +
              pending.length + ' undated ' + plural(pending.length, 'task', 'tasks') + ' waiting.',
@@ -340,6 +343,17 @@
     });
 
     out.sort(function (a, b) { return b.score - a.score; });
+
+    // The floor rule. A floorOnly candidate ("nothing is due — good time for X")
+    // is only true when nothing real is happening; as a runner-up it is a lie.
+    // If anything genuine is in play, drop them all rather than let them mislead.
+    var somethingReal = out.some(function (c) {
+      return !c.floorOnly && c.score >= BANDS.decaying;
+    });
+    if (somethingReal) {
+      out = out.filter(function (c) { return !c.floorOnly; });
+    }
+
     return out.length ? out : [allClear(ctx)];
   }
 
