@@ -1031,6 +1031,53 @@ function GymSection(props){
   );
 }
 
+// Every figure the Finance tab shows, in one place. Lifted verbatim out of
+// FinanceSection so Jarvis can ask the same question the tab answers without a
+// second copy of the maths — the two must never be able to disagree about
+// Jayden's money. `data` is the finance slice; `month` is "YYYY-MM".
+function financeSummary(data,work,gcalEvents,month){
+  data=data||{};
+  const sources=data.sources||[{id:1,name:"GoTab (Rippling)",amount:0},{id:2,name:"Jobseeker",amount:802.40},{id:3,name:"",amount:0}];
+  const monthlyIncome=data.monthlyIncome||{};
+  const allExpenses=data.expenses||[];
+  const recurringTemplates=data.recurringTemplates||[];
+  const monthlyRecurringOverrides=data.monthlyRecurringOverrides||{};
+  const monthOverrides=monthlyRecurringOverrides[month]||{};
+  const recurringThisMonth=recurringTemplates.filter(function(t){return !(monthOverrides[t.id]&&monthOverrides[t.id].excluded);}).map(function(t){const ov=monthOverrides[t.id];return{...t,amount:ov&&ov.amount!==undefined?ov.amount:t.amount,isRecurring:true};});
+  const skippedThisMonth=recurringTemplates.filter(function(t){return monthOverrides[t.id]&&monthOverrides[t.id].excluded;});
+  const oneOffThisMonth=allExpenses.filter(function(e){return e.month===month;});
+  const allThisMonth=recurringThisMonth.concat(oneOffThisMonth);
+  const srcAmounts=monthlyIncome[month]||{};
+  const hourlyRate=Number(data.hourlyRate||0);
+  const _workLogs=(work&&work.shiftLogs)||{};const _workSince=(work&&work.progressiveSince)||"";
+  // Match the Work tab: count only shifts worked + meetings attended (real pay), not all scheduled.
+  const monthShifts=(gcalEvents||[]).filter(function(ev){return ev.date&&ev.date.startsWith(month)&&isGoTabEvent(ev)&&isWorkEventCounted(ev,_workLogs,_workSince);});
+  const calcGoTabIncome=hourlyRate>0?monthShifts.reduce(function(a,ev){const pay=shiftPay(ev.time);return a+(pay?pay.totalEquiv*hourlyRate:0);},0):0;
+  const totalIncome=sources.reduce(function(a,s){var amt=srcAmounts[s.id]!==undefined?Number(srcAmounts[s.id]):Number(s.amount)||0;if(s.id===1&&calcGoTabIncome>0)amt=calcGoTabIncome;return a+amt;},0);
+  const totalExpenses=allThisMonth.reduce(function(a,e){return a+Number(e.amount);},0);
+  const net=totalIncome-totalExpenses;
+  const billsRecurring=recurringThisMonth.filter(function(e){return e.cat==="Bills";});
+  const billsMonthlyTotal=billsRecurring.reduce(function(a,e){return a+Number(e.amount);},0);
+  const weeklyBills=billsMonthlyTotal*12/52;
+  const oneOffTotal=oneOffThisMonth.reduce(function(a,e){return a+Number(e.amount);},0);
+  const disposableBudget=totalIncome-billsMonthlyTotal;
+  const _sgCommit=(function(){var _sg=data.savingsGoal||{};var _t=Number(_sg.target)||0;var _c=Number(_sg.current)||0;var _r=Math.max(0,_t-_c);var _dl=_sg.deadline||"";if(!_dl||!_t)return 0;var fp=month.split("-").map(Number);var tp=_dl.split("-").map(Number);var ml=Math.max(0,(tp[0]-fp[0])*12+(tp[1]-fp[1]));return ml>0?_r/ml:0;})();
+  const disposableLeft=disposableBudget-oneOffTotal-_sgCommit;
+  const weeklyDisposable=disposableLeft/4.33;
+  return{sources,monthlyIncome,allExpenses,recurringTemplates,monthlyRecurringOverrides,monthOverrides,
+    recurringThisMonth,skippedThisMonth,oneOffThisMonth,allThisMonth,srcAmounts,hourlyRate,monthShifts,
+    calcGoTabIncome,totalIncome,totalExpenses,net,billsRecurring,billsMonthlyTotal,weeklyBills,oneOffTotal,
+    disposableBudget,_sgCommit,disposableLeft,weeklyDisposable};
+}
+
+// What Jarvis is handed. Disposable is the honest question — a big surplus over
+// bills means nothing if a savings commitment eats it, which is exactly the
+// situation on 2026-08-07: $1,024 over bills, $202 short in reality.
+function jarvisMoney(dash,gcalEvents){
+  const s=financeSummary((dash&&dash.finance)||{},(dash&&dash.work)||{},gcalEvents,todayStr().slice(0,7));
+  return{income:s.totalIncome,bills:s.billsMonthlyTotal,oneOffs:s.oneOffTotal,savings:s._sgCommit,disposable:s.disposableLeft};
+}
+
 function FinanceSection({data,onUpdate,mob,gcalEvents,work}){
   mob=mob||false;
   const [month,setMonth]=useState(todayStr().slice(0,7));
@@ -1052,34 +1099,14 @@ function FinanceSection({data,onUpdate,mob,gcalEvents,work}){
   function fmtRound(n){return Math.round(n).toLocaleString("en-AU");}
   const CATS=["Bills","Addiction","Other"];
   const CAT_COL={Bills:T.accent,Addiction:T.danger,Other:T.warn};
-  const sources=data.sources||[{id:1,name:"GoTab (Rippling)",amount:0},{id:2,name:"Jobseeker",amount:802.40},{id:3,name:"",amount:0}];
-  const monthlyIncome=data.monthlyIncome||{};
-  const allExpenses=data.expenses||[];
-  const recurringTemplates=data.recurringTemplates||[];
-  const monthlyRecurringOverrides=data.monthlyRecurringOverrides||{};
-  const monthOverrides=monthlyRecurringOverrides[month]||{};
-  const recurringThisMonth=recurringTemplates.filter(function(t){return !(monthOverrides[t.id]&&monthOverrides[t.id].excluded);}).map(function(t){const ov=monthOverrides[t.id];return{...t,amount:ov&&ov.amount!==undefined?ov.amount:t.amount,isRecurring:true};});
-  const skippedThisMonth=recurringTemplates.filter(function(t){return monthOverrides[t.id]&&monthOverrides[t.id].excluded;});
-  const oneOffThisMonth=allExpenses.filter(function(e){return e.month===month;});
-  const allThisMonth=recurringThisMonth.concat(oneOffThisMonth);
-  const srcAmounts=monthlyIncome[month]||{};
-  const hourlyRate=Number(data.hourlyRate||0);
-  const _workLogs=(work&&work.shiftLogs)||{};const _workSince=(work&&work.progressiveSince)||"";
-  // Match the Work tab: count only shifts worked + meetings attended (real pay), not all scheduled.
-  const monthShifts=(gcalEvents||[]).filter(function(ev){return ev.date&&ev.date.startsWith(month)&&isGoTabEvent(ev)&&isWorkEventCounted(ev,_workLogs,_workSince);});
-  const calcGoTabIncome=hourlyRate>0?monthShifts.reduce(function(a,ev){const pay=shiftPay(ev.time);return a+(pay?pay.totalEquiv*hourlyRate:0);},0):0;
-  const totalIncome=sources.reduce(function(a,s){var amt=srcAmounts[s.id]!==undefined?Number(srcAmounts[s.id]):Number(s.amount)||0;if(s.id===1&&calcGoTabIncome>0)amt=calcGoTabIncome;return a+amt;},0);
-  const totalExpenses=allThisMonth.reduce(function(a,e){return a+Number(e.amount);},0);
-  const net=totalIncome-totalExpenses;
+  // Every figure below comes from financeSummary (module level) so that this tab
+  // and the Jarvis card cannot drift apart. Do not recompute any of them here.
+  const _fin=financeSummary(data,work,gcalEvents,month);
+  const {sources,monthlyIncome,allExpenses,recurringTemplates,monthlyRecurringOverrides,monthOverrides,
+    recurringThisMonth,skippedThisMonth,oneOffThisMonth,allThisMonth,srcAmounts,hourlyRate,monthShifts,
+    calcGoTabIncome,totalIncome,totalExpenses,net,billsRecurring,billsMonthlyTotal,weeklyBills,oneOffTotal,
+    disposableBudget,_sgCommit,disposableLeft,weeklyDisposable}=_fin;
   function updateHourlyRate(val){onUpdate({...data,hourlyRate:Number(val)});}
-  const billsRecurring=recurringThisMonth.filter(function(e){return e.cat==="Bills";});
-  const billsMonthlyTotal=billsRecurring.reduce(function(a,e){return a+Number(e.amount);},0);
-  const weeklyBills=billsMonthlyTotal*12/52;
-  const oneOffTotal=oneOffThisMonth.reduce(function(a,e){return a+Number(e.amount);},0);
-  const disposableBudget=totalIncome-billsMonthlyTotal;
-  const _sgCommit=(function(){var _sg=data.savingsGoal||{};var _t=Number(_sg.target)||0;var _c=Number(_sg.current)||0;var _r=Math.max(0,_t-_c);var _dl=_sg.deadline||"";if(!_dl||!_t)return 0;var fp=month.split("-").map(Number);var tp=_dl.split("-").map(Number);var ml=Math.max(0,(tp[0]-fp[0])*12+(tp[1]-fp[1]));return ml>0?_r/ml:0;})();
-  const disposableLeft=disposableBudget-oneOffTotal-_sgCommit;
-  const weeklyDisposable=disposableLeft/4.33;
   function shiftMonth(n){const d=new Date(month+"-15");d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,7);}
   function fmtM(m){return new Date(m+"-15").toLocaleDateString("en-AU",{month:"long",year:"numeric"});}
   function totalForMonth(m){const mo=monthlyRecurringOverrides[m]||{};const rec=recurringTemplates.filter(function(t){return !(mo[t.id]&&mo[t.id].excluded);}).reduce(function(a,t){return a+Number(mo[t.id]&&mo[t.id].amount!==undefined?mo[t.id].amount:t.amount);},0);const oo=allExpenses.filter(function(e){return e.month===m;}).reduce(function(a,e){return a+Number(e.amount);},0);return rec+oo;}
@@ -3334,7 +3361,10 @@ function App(){
     return window.JarvisSignals.rank({
       data:data,
       gcalEvents:dedupedEvents,
-      today:todayStr()
+      today:todayStr(),
+      // Computed by the same function the Finance tab renders from, never
+      // recomputed inside the signals module.
+      money:jarvisMoney(data,dedupedEvents)
     });
   },[data,dedupedEvents]);
   const [layoutEditing,setLayoutEditing]=useState(false);
