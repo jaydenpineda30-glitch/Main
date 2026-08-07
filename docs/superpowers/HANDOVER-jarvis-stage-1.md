@@ -147,9 +147,45 @@ variables, and its `HOME_CARDS` entry. Roughly 160 lines; `app.js` went 713 KB �
 ## Not done in stage 1
 
 **The money signal is not wired.** `financeSource` is written and tested, but
-`app.jsx` passes no `money` into `rank()`, so it stays quiet. The blocker:
-`getPeriodRange` lives inside `WorkSection` (`app.jsx`, search for
-`function getPeriodRange`) and the signal needs it at module level.
+`app.jsx` passes no `money` into `rank()`, so it stays quiet. There are **two**
+blockers, and the second is the real one — an earlier draft of this note listed
+only the first and made the job look like twenty minutes.
+
+**Blocker 1 — the `getPeriodRange` lift. Small.** It sits inside `WorkSection`
+at `app.jsx:2082–2092`, with one call site at 2093. It closes over exactly one
+value, `payCycleDay` (line 2081), and that is not component state:
+
+```js
+const payCycleDay = Number(data.payCycleDay || 1);
+```
+
+It is derived from `data`, which is already in scope at the `jarvisCandidates`
+memo (line 3333). So: move the function to module level, take `payCycleDay` as a
+parameter, have `WorkSection` pass its existing local. `dStr` (line 260) is
+already module-level. Still check the Work tab's figures are unchanged — it is
+real money maths — but the lift itself is mechanical.
+
+**Blocker 2 — there is no `billsTotal`. Not a refactor; a decision.**
+`financeSource` gates on `billsTotal > 0`, and no such field exists anywhere in
+the data model. What exists is raw material, in `data.finance` (line ~155):
+
+```js
+monthlyBudget: 0,
+recurringTemplates: [],
+monthlyRecurringOverrides: {},
+expenses: [],
+```
+
+Deciding what counts as "bills this cycle" — recurring templates alone or plus
+one-off expenses, how `monthlyRecurringOverrides` applies, and how a **monthly**
+budget maps onto a **pay-cycle** window that deliberately does not align to
+calendar months — is Jayden's call, not an implementation detail. Ask before
+building. Getting it wrong produces a confident, wrong number about his money,
+which is worse than the current silence.
+
+The projected side is already done: `projectedEquiv` (line 2130) sums
+`shiftPay(ev.time).totalEquiv` across the period's scheduled shifts, and
+`projectedPay` (2131) applies the hourly rate.
 
 The July branch did exactly this lift — "lifted from WorkSection to top-level
 `getPayPeriodRange` (verbatim; Work tab delegates — verified identical figures)".
@@ -171,10 +207,24 @@ is why stage 1 works without it.
 
 ```bash
 cd C:\Users\Jayde\my-project\.claude\worktrees\jarvis-signals
-npm test                                    # 68 tests
-node build.js                               # app.jsx → app.js
-git diff --ignore-cr-at-eol --stat app.js   # empty = build reproduces the commit
+node --test test/jarvis-signals.test.js     # 28 tests — while iterating
+npm test                                    # all 68 — before committing
 ```
+
+The whole suite runs in ~200 ms, so the single-file loop saves almost nothing.
+Just run `npm test`.
+
+**You usually do not need to run `build.js` yourself.** `core.hooksPath` points
+at `C:\Users\Jayde\my-project\.githooks`, whose `pre-commit` hook rebuilds
+`app.js` and stages it — but **only if `app.jsx` is in the commit**. It exits
+straight away otherwise, and it does **not** run the tests. So a change confined
+to `jarvis-signals.js` needs no build at all, and nothing will stop you
+committing a red suite. Run `npm test` yourself.
+
+`build.js` is plain Babel (`@babel/standalone`, presets `react` + `env`),
+reading only `app.jsx` and writing only `app.js`. It embeds no timestamp, hash
+or version, so its output is deterministic: after a rebuild with no source
+change, `git diff --ignore-cr-at-eol --stat app.js` is genuinely empty.
 
 **Real-data check — do this after any ranking change.** It is what caught the
 bug above, and synthetic tests did not:
