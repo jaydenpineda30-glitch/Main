@@ -5,6 +5,8 @@ const HL = require('../home-layout.js');
 test('defaultLayout excludes pinned cards', () => {
   const ids = HL.defaultLayout().map(e => e.id);
   assert.ok(!ids.includes('calendar'), 'calendar is pinned and must not be in the layout');
+  assert.ok(!ids.includes('jarvis'), 'jarvis is pinned and must not be in the layout');
+  assert.ok(!ids.includes('checkin'), 'the Daily Check-in card was retired, replaced by Jarvis');
   assert.ok(ids.includes('tasks'));
 });
 
@@ -35,6 +37,21 @@ test('normalizeLayout drops unknown ids and duplicates', () => {
   assert.strictEqual(out[0].span, 1);
   assert.ok(!out.some(e => e.id === 'no-such-card'));
   assert.ok(!out.some(e => e.id === 'calendar'), 'pinned cards never enter the layout');
+});
+
+test('a saved layout from before Jarvis loses the check-in card and keeps the rest', () => {
+  // The real upgrade path: layouts already in Firestore list 'checkin'. The card
+  // is gone, so it must drop out without disturbing the arrangement around it.
+  const out = HL.normalizeLayout([
+    { id: 'tasks', span: 2 },
+    { id: 'checkin', span: 1 },
+    { id: 'goals', span: 1 },
+  ]);
+  assert.ok(!out.some(e => e.id === 'checkin'), 'retired card must not survive');
+  assert.strictEqual(out[0].id, 'tasks', 'order before the retired card is preserved');
+  assert.strictEqual(out[0].span, 2, 'spans are preserved');
+  assert.strictEqual(out[1].id, 'goals', 'the card after it closes the gap');
+  assert.strictEqual(out.length, HL.movableCards().length, 'still a complete layout');
 });
 
 test('clampSpan keeps spans between 1 and 3', () => {

@@ -338,22 +338,13 @@ function analyzeReflectionFallback(answers,history){
   return{emotionalState,dominantPattern,rootIssue,insight,recommendation,patternHistory,sentimentScore:sentScore,detectedPatterns:patterns,sentColor:sentScore>=0.1?"#69f0ae":sentScore<=-0.1?"#ff6b6b":"#ffd166",sentBg:sentScore>=0.1?"rgba(105,240,174,0.06)":sentScore<=-0.1?"rgba(255,107,107,0.06)":"rgba(255,209,102,0.06)",sentBorder:sentScore>=0.1?"rgba(105,240,174,0.25)":sentScore<=-0.1?"rgba(255,107,107,0.25)":"rgba(255,209,102,0.25)"};
 }
 
-// ── Assessment detection (module-level so generateCheckinFallback can use it) ─
-const DEFINITE_ASSESS_MARKERS=["🔴","🔵","SUPERVISED ASSESSMENT","assessment due","submission due","submit by","due date","AT1 due","AT2 due","AT3 due","AT4 due","AT5 due"];
-const ASSESS_KEYWORDS=["AT1","AT2","AT3","AT4","AT5","exam","final exam","quiz","mid-sem","midsem","submission","assignment","due","assessment","supervised","test","prac exam","lab exam"];
-function isWeeklyClass(title){return /^Wk\s*\d/i.test(title)||/^Week\s*\d/i.test(title)||/^Lecture/i.test(title)||/^Tutorial/i.test(title)||/^Lab\s/i.test(title)||/^Seminar/i.test(title)||/^Workshop/i.test(title);}
-function isAssessmentEvent(ev){
-  var title=ev.title||"";
-  if(isWeeklyClass(title))return false;
-  var desc=ev.description||"";
-  var combined=title+" "+desc;
-  var combinedLower=combined.toLowerCase();
-  // Definite markers (emoji + key phrases) — checked case-sensitively for emoji support
-  if(DEFINITE_ASSESS_MARKERS.some(function(m){return combined.includes(m);}))return true;
-  // Keyword list — checked in combined title+description
-  if(ASSESS_KEYWORDS.some(function(k){return combinedLower.includes(k.toLowerCase());}))return true;
-  return false;
-}
+// ── Assessment detection ──────────────────────────────────────────────────────
+// The implementation moved to jarvis-signals.js (loaded before app.js) when the
+// Daily Check-in was retired, so it is unit-tested and Jarvis's uni signal can
+// never disagree with what the Classes card treats as a class. Thin delegates —
+// do not reimplement here.
+function isWeeklyClass(title){return window.JarvisSignals.isWeeklyClass(title);}
+function isAssessmentEvent(ev){return window.JarvisSignals.isAssessmentEvent(ev);}
 const CLOSE_ONLY_MODALS=["task_detail","edit_necessities","day_done"];
 const UNI_KEYS=["uni","tafe","rmit","university","curtin","monash","deakin","uts","usyd","uq","uwa","anu","unsw","federation"];
 function isUniCalEv(ev){return ev.calName&&UNI_KEYS.some(function(k){return ev.calName.toLowerCase().includes(k);});}
@@ -403,63 +394,6 @@ function dedupeEvents(evs){
   for(var i=0;i<sorted.length;i++){var ev=sorted[i];var key=(ev.title||"")+"||"+(ev.date||"")+"||"+(ev.time||"");if(!seen.has(key))seen.set(key,ev);}
   return Array.from(seen.values());
 }
-// ── Rule-based check-in (fallback) ────────────────────────────────────────
-function generateCheckinFallback(data){
-  const blocks=[];
-  const overdue=data.personal.tasks.filter(function(t){return !t.done&&t.due&&daysBetween(t.due)<0;});
-  const urgent=data.personal.tasks.filter(function(t){return !t.done&&t.priority==="urgent"&&t.due&&daysBetween(t.due)>=0;});
-  const gymRot=data.gym.rotation||[];
-  const rotLen=gymRot.length>0?gymRot.length:1;
-  const nextSess=gymRot.length>0?gymRot[(data.gym.rotIdx||0)%rotLen]:null;
-
-  // Schedule block from cached Google Calendar events
-  var cachedEvs=[];try{var ce=localStorage.getItem('__gcal_events__');if(ce)cachedEvs=JSON.parse(ce);}catch(_){}
-  cachedEvs=dedupeEvents(cachedEvs);
-  // tmrFree: true if tomorrow has no timed events
-  const tmrDate=new Date(Date.now()+864e5);
-  const tmrStr=dStr(tmrDate);
-  const tmrEvs=cachedEvs.filter(function(ev){return ev.date===tmrStr&&!ev.allDay;});
-  const tmrFree=tmrEvs.length===0;
-  // soon: assessment events in the next 4 days — uses shared isAssessmentEvent (checks description too)
-  const soon=cachedEvs.filter(function(ev){var d=daysBetween(ev.date);return d>=0&&d<=4&&isAssessmentEvent(ev);});
-  const tToday=cachedEvs.filter(function(ev){return ev.date===todayStr()&&!ev.allDay;});
-  let schedLines=[];
-  if(tToday.length>0){schedLines=tToday.map(function(ev){var s=ev.title+(ev.time?" "+ev.time:"");if(ev.description)s+=" ["+ev.description.slice(0,80)+"]";return s;});}
-  else{schedLines.push("No events found in Google Calendar for today.");}
-  blocks.push({header:"Today's Schedule",items:schedLines});
-
-  // Tasks block
-  if(overdue.length>0||urgent.length>0){
-    const lines=[];
-    overdue.forEach(function(t){lines.push(t.name+" is "+Math.abs(daysBetween(t.due))+"d overdue, worth sorting today.");});
-    urgent.forEach(function(t){lines.push(t.name+" is due "+fmtDate(t.due)+", don't leave it too late.");});
-    blocks.push({header:"Tasks",items:lines});
-  }
-
-  // Suggestion block
-  if(tmrFree){
-    const pending=data.personal.tasks.filter(function(t){return !t.done;});
-    if(pending.length>0){
-      blocks.push({header:"Suggestion",items:["Tomorrow looks free, good window to knock off "+pending[0].name+(pending.length>1?" or "+pending[1].name:"")+"."+(nextSess?" Could also fit in your "+nextSess.name+"!":"")]});
-    } else {
-      blocks.push({header:"Suggestion",items:["Tomorrow is free, great chance to get ahead on study or hit the gym"+(nextSess?" ("+nextSess.name+" is up next).":".")]});
-    }
-  } else if(nextSess){
-    blocks.push({header:"Suggestion",items:["Next gym session is "+nextSess.name+" ("+nextSess.focus+"). Pre-fill your weights on the dashboard before you go."]});
-  }
-
-  // Question block
-  if(soon.length>0){
-    blocks.push({header:"Check-in",items:["What's the first assessment you're going to put time into today, Jayden?"]});
-  } else if(overdue.length>0){
-    blocks.push({header:"Check-in",items:["Which overdue task are you clearing first today?"]});
-  } else {
-    blocks.push({header:"Check-in",items:["What's the one thing you want to have done by end of day?"]});
-  }
-
-  return blocks;
-}
-
 // AI functions are provided by OllamaService (ollama-service.js)
 // which tries Gemini first, then falls back to local rule-based logic.
 
@@ -2804,6 +2738,69 @@ function HomeGridCard({span,editing,title,onSpan,onDragStart,onDragOver,isDraggi
 // cannot drift apart. `events` is the deduped Google Calendar event list.
 // evColor/evLabel are passed in because they live inside App() — evLabel
 // closes over data.uni.subjects and cannot be hoisted.
+// ── Jarvis ────────────────────────────────────────────────────────────────────
+// Leads the home page with one answer to "what should I do next", ranked across
+// every part of the dashboard by jarvis-signals.js. The runners-up fold away
+// behind "also considered" — the point is to be told what to do, but a
+// recommendation you cannot interrogate is one you stop trusting.
+//
+// Ranking is pure rules (see jarvis-signals.js). No API key is involved here.
+const JARVIS_BAND_COLOUR={
+  failing:T.danger, deadline:T.warn, approaching:T.warn,
+  decaying:T.accent, getAhead:T.accent, allClear:T.success
+};
+function JarvisCard({candidates,onOpen,cardStyle,mob}){
+  const [open,setOpen]=React.useState(false);
+  const list=candidates||[];
+  // rank() guarantees at least one candidate, so this is belt-and-braces for a
+  // caller that hands us nothing at all rather than an expected state.
+  if(!list.length)return null;
+  const lead=list[0];
+  const rest=window.JarvisSignals.top(list.slice(1),mob?2:3);
+  const accent=JARVIS_BAND_COLOUR[lead.band]||T.accent;
+
+  return(
+    <div className="card-rim jarvis-card" style={{...cardStyle,"--jarvis-accent":accent}}>
+      <div className="jarvis-lead">
+        <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:7}}>
+          <div style={{width:5,height:5,borderRadius:"50%",background:accent,boxShadow:"0 0 8px "+accent}}/>
+          <div style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:accent}}>Jarvis</div>
+        </div>
+        <div style={{fontSize:mob?15:17,fontWeight:700,letterSpacing:"-0.01em",color:"#eef3fb",lineHeight:1.3}}>
+          {lead.headline}
+        </div>
+        <div style={{fontSize:13,color:T.text2,lineHeight:1.5,marginTop:6}}>{lead.why}</div>
+        {lead.cta&&<button onClick={function(){onOpen&&onOpen(lead.cta.page);}}
+          style={{...btnGlass,marginTop:12,padding:"6px 14px",fontSize:12}}>{lead.cta.label}</button>}
+      </div>
+
+      {rest.length>0&&<div style={{marginTop:14,borderTop:"0.5px solid rgba(255,255,255,0.08)",paddingTop:10}}>
+        <button className="jarvis-toggle" onClick={function(){setOpen(function(v){return !v;});}}
+          style={{background:"none",border:"none",padding:0,cursor:"pointer",fontSize:11,color:T.text3,
+                  display:"flex",alignItems:"center",gap:5}}>
+          <span>{open?"▾":"▸"}</span>also considered ({rest.length})
+        </button>
+        {open&&<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
+          {rest.map(function(c,i){
+            const col=JARVIS_BAND_COLOUR[c.band]||T.accent;
+            return(
+              <div key={c.id} className="jarvis-alt" style={{"--i":i,display:"flex",alignItems:"flex-start",gap:9}}>
+                <div style={{width:4,height:4,borderRadius:"50%",background:col,flexShrink:0,marginTop:6}}/>
+                <div style={{minWidth:0,flex:1}}>
+                  <div style={{fontSize:12.5,color:T.text,lineHeight:1.4}}>{c.headline}</div>
+                  <div style={{fontSize:11,color:T.text3,lineHeight:1.4,marginTop:2}}>{c.why}</div>
+                </div>
+                {c.cta&&<button onClick={function(){onOpen&&onOpen(c.cta.page);}}
+                  style={{...btnGlass,padding:"2px 9px",fontSize:10,flexShrink:0}}>{c.cta.label}</button>}
+              </div>
+            );
+          })}
+        </div>}
+      </div>}
+    </div>
+  );
+}
+
 function UpcomingClassesCard({events,days,gcalConnected,evColor,evLabel,cardStyle}){
   const today=todayStr();
   const end=(function(){const d=new Date();d.setDate(d.getDate()+days);return dStr(d);})();
@@ -2850,8 +2847,6 @@ function App(){
   const [data,setData]=useState(function(){try{const s=localStorage.getItem("dash_v1");if(!s)return mergeWithDefaults({...INIT,reflections:SEED_REFL});const saved=JSON.parse(s);const fin=saved.finance||{};let out=saved;if(!fin.financeVersion||fin.financeVersion<2){out={...out,finance:INIT.finance};}return mergeWithDefaults(out);}catch(_){return mergeWithDefaults({...INIT,reflections:SEED_REFL});}});
   const [wkOff,setWkOff]=useState(0);
   const [activeDay,setActiveDay]=useState(todayStr());
-  const [checkinBlocks,setCheckinBlocks]=useState([]);
-  const [checkinOpen,setCheckinOpen]=useState(false);
   const [nxtRows,setNxtRows]=useState([{id:1,exercise:"",sets:"",reps:"",weight:""},{id:2,exercise:"",sets:"",reps:"",weight:""},{id:3,exercise:"",sets:"",reps:"",weight:""}]);
   // Pre-fill nxtRows — check for a saved draft first, then fall back to rotation template
   useEffect(function(){
@@ -2938,7 +2933,6 @@ function App(){
   function toggleNav(){setNavCollapsed(function(c){const nv=!c;try{localStorage.setItem("nav_collapsed",nv?"1":"0");}catch(_){}return nv;});}
   const rawMob=useIsMob();
   const mob=forceMob||rawMob;
-  const [checkinLoading,setCheckinLoading]=useState(false);
   const [reflAnalysisLoading,setReflAnalysisLoading]=useState(false);
 
   const [showMonitor,setShowMonitor]=useState(false);
@@ -3330,6 +3324,19 @@ function App(){
   const homeLayout=React.useMemo(function(){
     return window.HomeLayout.normalizeLayout(data.homeLayout);
   },[data.homeLayout]);
+
+  // What Jarvis is going to say. Derived state only — never written to `data`,
+  // so ranking causes no Firestore traffic and no backup churn.
+  // `money` is not wired yet: the pay-cycle maths lives inside WorkSection, and
+  // lifting it is its own change. jarvis-signals.js treats absent money as
+  // "not configured" and stays quiet about it rather than guessing.
+  const jarvisCandidates=React.useMemo(function(){
+    return window.JarvisSignals.rank({
+      data:data,
+      gcalEvents:dedupedEvents,
+      today:todayStr()
+    });
+  },[data,dedupedEvents]);
   const [layoutEditing,setLayoutEditing]=useState(false);
   const [dragId,setDragId]=useState(null);
   const [dropIdx,setDropIdx]=useState(null);
@@ -3361,94 +3368,6 @@ function App(){
     };
   },[dragId,dropIdx,homeLayout]);
 
-  function doCheckin(){
-    setCheckinLoading(true);setCheckinBlocks([]);
-    var key=(geminiKey||localStorage.getItem('__gemini_key__')||'').trim();
-    if(!key){setCheckinBlocks(generateCheckinFallback(data));setCheckinLoading(false);return;}
-
-    // ── Raw data ─────────────────────────────────────────────────────────────
-    var cachedEvs=[];try{var ce=localStorage.getItem('__gcal_events__');if(ce)cachedEvs=JSON.parse(ce);}catch(_){}
-    var td=todayStr();
-    var yday=new Date();yday.setDate(yday.getDate()-1);var ydayStr=dStr(yday);
-
-    var todayEvs=cachedEvs.filter(function(ev){return ev.date===td&&!ev.allDay;});
-    var workedYesterday=cachedEvs.some(function(ev){return ev.date===ydayStr&&isGoTabEvent(ev);});
-    var workingToday=todayEvs.some(isGoTabEvent);
-    var nonWorkEvs=todayEvs.filter(function(ev){return !isGoTabEvent(ev);});
-
-    var tasks=(data.personal&&data.personal.tasks)||[];
-    var overdueTasks=tasks.filter(function(t){return !t.done&&t.due&&t.due<td;});
-    var urgentTasks=tasks.filter(function(t){return !t.done&&t.priority==='urgent'&&(!t.due||t.due>=td);});
-
-    var in7=new Date();in7.setDate(in7.getDate()+7);var in7Str=dStr(in7);
-    var upcomingA=(data.uni&&data.uni.assessments||[]).filter(function(a){return !a.done&&a.date>=td&&a.date<=in7Str;}).sort(function(a,b){return a.date.localeCompare(b.date);});
-
-    var gymRot=(data.gym&&data.gym.rotation)||[];
-    var nextGym=gymRot.length>0?gymRot[((data.gym&&data.gym.rotIdx)||0)%gymRot.length]:null;
-    var workouts=(data.gym&&data.gym.workouts)||[];
-    var lastWkt=workouts.length>0?workouts[workouts.length-1]:null;
-    var daysSinceGym=lastWkt?Math.abs(daysBetween(lastWkt.date)):null;
-    var bwThisWeek=!!(data.gym&&data.gym.lastBWWeek===thisWeek);
-
-    var recentRefls=(data.reflections||[]).slice(-2).reverse();
-    var lastRefl=recentRefls[0]||null;
-    var an=(lastRefl&&lastRefl.analysis)||{};
-
-    var subjects=(data.uni&&data.uni.subjects||[]).map(function(s){return s.name;}).join(', ');
-
-    // ── Build context string ─────────────────────────────────────────────────
-    var ctx='WHO: Jayden, TAFE Melbourne accounting student. Subjects: '+subjects+'.\n';
-
-    if(workedYesterday) ctx+='WORK: Had a GoTab shift yesterday, energy may be lower today.\n';
-    if(workingToday)    ctx+='WORK: GoTab shift today.\n';
-
-    ctx+='\nCALENDAR TODAY:\n'+(nonWorkEvs.length>0?nonWorkEvs.map(function(ev){return'- '+ev.title+(ev.time?' at '+ev.time:'');}).join('\n'):'No events today')+'\n';
-
-    if(upcomingA.length>0){
-      ctx+='\nASSESSMENTS DUE SOON:\n';
-      upcomingA.forEach(function(a){ctx+='- '+a.subject+' '+a.name+' in '+daysBetween(a.date)+'d\n';});
-    }
-
-    if(overdueTasks.length>0){
-      ctx+='\nOVERDUE: '+overdueTasks.map(function(t){return t.name;}).join(', ')+'\n';
-    } else if(urgentTasks.length>0){
-      ctx+='\nURGENT TASKS: '+urgentTasks.slice(0,3).map(function(t){return t.name;}).join(', ')+'\n';
-    }
-
-    if(nextGym){
-      var gymLine='Next: '+nextGym.name+(nextGym.focus?' ('+nextGym.focus+')':'');
-      if(daysSinceGym===0) gymLine+=', logged today';
-      else if(daysSinceGym===1) gymLine+=', last session yesterday';
-      else if(daysSinceGym!==null) gymLine+=', '+daysSinceGym+'d since last session';
-      ctx+='\nGYM: '+gymLine+'\n';
-    }
-    if(!bwThisWeek) ctx+='GYM: Body weight not yet logged this week.\n';
-
-    if(lastRefl&&an.dominantPattern){
-      var reflDate=new Date(lastRefl.date).toLocaleDateString('en-AU',{day:'numeric',month:'short'});
-      ctx+='\nLAST REFLECTION ('+reflDate+'):\n';
-      ctx+='  Pattern identified: '+an.dominantPattern+'\n';
-      if(an.recommendation) ctx+='  Recommendation: '+an.recommendation+'\n';
-      if(recentRefls.length>=2&&an.patternHistory) ctx+='  Trend: '+an.patternHistory+'\n';
-    }
-
-    // ── Prompt ───────────────────────────────────────────────────────────────
-    var prompt='You are Jayden\'s personal coach. You know him: TAFE accounting student, works GoTab shifts, trains at the gym, does weekly reflections.\n\n'+ctx+'\nWrite a personalised morning check-in. Exactly 3 lines:\nLine 1: Acknowledge his specific day, name actual assessments, work, or events if present\nLine 2: One concrete suggestion tied to his context (if reflection data present, connect to the identified pattern or recommendation)\nLine 3: A question that feels personal to his actual situation, not generic\n\nRules: under 65 words. Use his name once. Warm and direct, not cheesy. Plain lines, no bullets or numbers.';
-
-    fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key='+key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.75}})})
-      .then(function(r){if(!r.ok)throw new Error('Gemini '+r.status);return r.json();})
-      .then(function(json){
-        var text=json.candidates[0].content.parts[0].text;
-        var lines=text.trim().split('\n').map(function(l){return l.replace(/^[\d.\-*]+\s*/,'').trim();}).filter(function(l){return l.length>0;});
-        var blocks=[];
-        if(lines[0])blocks.push({header:'Your Day Ahead',items:[lines[0]]});
-        if(lines[1])blocks.push({header:'Suggestion',items:[lines[1]]});
-        if(lines[2])blocks.push({header:'Check-in',items:[lines[2]]});
-        setCheckinBlocks(blocks.length>0?blocks:generateCheckinFallback(data));
-        setCheckinLoading(false);
-      })
-      .catch(function(e){showToast('Check-in failed: '+(e&&e.message?e.message:'unknown error'),'error');setCheckinBlocks(generateCheckinFallback(data));setCheckinLoading(false);});
-  }
   function toggleCalEv(id){trk("uni.gcal_event_toggle");setData(function(p){const ce=p.uni.completedEvents||[];const next=ce.indexOf(id)!==-1?ce.filter(function(x){return x!==id;}):ce.concat([id]);return{...p,uni:{...p.uni,completedEvents:next}};});}
   function brOpener(mode){
     if(mode==="evening"){
@@ -4245,21 +4164,6 @@ function App(){
     </React.Fragment>);
   }
 
-  function renderCheckinCard(){
-    return(
-      <div className="card-rim" style={card()}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:16,marginBottom:(checkinOpen||todayEvs.length>0)?10:0}}>
-          <div style={{fontSize:10,color:T.text3,display:"flex",alignItems:"center",gap:5}}><div style={{width:5,height:5,borderRadius:"50%",background:T.accent}}/>Daily Check-in · {new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long"})}</div>
-          {checkinOpen
-            ?<div style={{display:"flex",gap:6}}><button style={{...btn,fontSize:11}} onClick={function(){trk("checkin.generate");doCheckin();}}>Refresh</button><button style={{...btn,fontSize:11}} onClick={function(){setCheckinOpen(false);}}>Hide</button></div>
-            :<button style={{...btnP,fontSize:11,padding:"5px 12px"}} onClick={function(){setCheckinOpen(true);if(checkinBlocks.length===0&&!checkinLoading){trk("checkin.generate");doCheckin();}}}>Generate check-in</button>}
-        </div>
-        {checkinOpen&&(checkinLoading?<div style={{fontSize:12,color:T.accent,display:"flex",alignItems:"center",gap:6}}><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:T.accent,animation:"pulse 1.2s ease-in-out infinite"}}/>AI is thinking...</div>:checkinBlocks.length===0?<div style={{fontSize:12,color:T.text3}}>Generating today's check-in…</div>:checkinBlocks.map(function(block,bi){return(<div key={bi} style={{marginBottom:10}}>{block.header&&<div style={{fontSize:11,fontWeight:600,color:T.accent,marginBottom:4}}>{block.header}</div>}{block.items.map(function(item,ii){return<div key={ii} style={{fontSize:13,lineHeight:1.7,color:T.text}}>{item}</div>;})}</div>);}))}
-        {todayEvs.length>0&&<div style={{marginTop:12,paddingTop:10,borderTop:"0.5px solid "+T.border,display:"flex",gap:6,flexWrap:"wrap"}}>{todayEvs.map(function(ev){const col=evColor(ev);return(<div key={ev.id} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 9px",borderRadius:6,background:col+"18",border:"0.5px solid "+col+"40",flexShrink:0}}><div><div style={{fontSize:10,fontWeight:600,color:col}}>{evLabel(ev)}<span style={{fontWeight:400,color:T.text3}}> · {ev.time}</span></div><div style={{fontSize:9,color:T.text2}}>{ev.title.slice(0,32)}</div></div></div>);})}</div>}
-      </div>
-    );
-  }
-
   function renderGoalsCard(){
     var b=data.boardroom||{};
     if(!b.onboarded) return null;
@@ -4578,7 +4482,6 @@ function App(){
     switch(id){
       case "shopping":    return <ErrorBoundary name="ShoppingHome"><ShoppingHomeCard items={data.shopping||[]} onUpdate={updateShopping} onOpen={function(){setPage("Shopping");}} cardStyle={card()} mob={mob}/></ErrorBoundary>;
       case "weather":     return <WeatherWidget mob={mob}/>;
-      case "checkin":     return renderCheckinCard();
       case "goals":       return renderGoalsCard();       // returns null when not onboarded
       case "assessments": return renderAssessmentsCard();
       case "gym-next":    return renderGymNextCard();
@@ -4723,7 +4626,12 @@ function App(){
               </button>
             </div>}
           </div>
-          {/* Pinned: calendar always spans the full width above the grid */}
+          {/* Pinned: Jarvis leads, then the calendar, then the reorderable grid */}
+          <ErrorBoundary name="Jarvis">
+            <JarvisCard candidates={jarvisCandidates} mob={mob}
+              onOpen={function(p){setPage(p);}}
+              cardStyle={card({padding:"16px 20px",marginBottom:mob?12:GRID_GAP})}/>
+          </ErrorBoundary>
           <div className="card-rim" style={card({padding:"16px 20px",marginBottom:mob?12:GRID_GAP})}>
             {renderCalendarCard()}
           </div>

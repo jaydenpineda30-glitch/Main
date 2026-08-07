@@ -19,10 +19,14 @@
   // Order here is the default order. `pinned` cards render outside the
   // reorderable grid and never appear in a saved layout.
   var HOME_CARDS = [
+    // Jarvis leads the page and is pinned: he is the answer to "what now", so
+    // he cannot be dragged below the cards he is summarising. The retired Daily
+    // Check-in used to sit in the grid; dropping its id here is enough, because
+    // normalizeLayout silently discards ids it no longer knows.
+    { id: 'jarvis',      title: 'Jarvis',               defaultSpan: 3, pinned: true },
     { id: 'calendar',    title: 'Calendar',             defaultSpan: 3, pinned: true },
     { id: 'shopping',    title: 'Shopping',             defaultSpan: 1, pinned: false },
     { id: 'weather',     title: 'Weather',              defaultSpan: 1, pinned: false },
-    { id: 'checkin',     title: 'Daily Check-in',       defaultSpan: 1, pinned: false },
     { id: 'goals',       title: 'Goals',                defaultSpan: 1, pinned: false },
     { id: 'assessments', title: 'Upcoming assessments', defaultSpan: 1, pinned: false },
     { id: 'gym-next',    title: 'Next gym session',     defaultSpan: 1, pinned: false },

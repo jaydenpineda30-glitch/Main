@@ -976,27 +976,16 @@ function analyzeReflectionFallback(answers, history) {
   };
 }
 
-// ── Assessment detection (module-level so generateCheckinFallback can use it) ─
-var DEFINITE_ASSESS_MARKERS = ["🔴", "🔵", "SUPERVISED ASSESSMENT", "assessment due", "submission due", "submit by", "due date", "AT1 due", "AT2 due", "AT3 due", "AT4 due", "AT5 due"];
-var ASSESS_KEYWORDS = ["AT1", "AT2", "AT3", "AT4", "AT5", "exam", "final exam", "quiz", "mid-sem", "midsem", "submission", "assignment", "due", "assessment", "supervised", "test", "prac exam", "lab exam"];
+// ── Assessment detection ──────────────────────────────────────────────────────
+// The implementation moved to jarvis-signals.js (loaded before app.js) when the
+// Daily Check-in was retired, so it is unit-tested and Jarvis's uni signal can
+// never disagree with what the Classes card treats as a class. Thin delegates —
+// do not reimplement here.
 function isWeeklyClass(title) {
-  return /^Wk\s*\d/i.test(title) || /^Week\s*\d/i.test(title) || /^Lecture/i.test(title) || /^Tutorial/i.test(title) || /^Lab\s/i.test(title) || /^Seminar/i.test(title) || /^Workshop/i.test(title);
+  return window.JarvisSignals.isWeeklyClass(title);
 }
 function isAssessmentEvent(ev) {
-  var title = ev.title || "";
-  if (isWeeklyClass(title)) return false;
-  var desc = ev.description || "";
-  var combined = title + " " + desc;
-  var combinedLower = combined.toLowerCase();
-  // Definite markers (emoji + key phrases) — checked case-sensitively for emoji support
-  if (DEFINITE_ASSESS_MARKERS.some(function (m) {
-    return combined.includes(m);
-  })) return true;
-  // Keyword list — checked in combined title+description
-  if (ASSESS_KEYWORDS.some(function (k) {
-    return combinedLower.includes(k.toLowerCase());
-  })) return true;
-  return false;
+  return window.JarvisSignals.isAssessmentEvent(ev);
 }
 var CLOSE_ONLY_MODALS = ["task_detail", "edit_necessities", "day_done"];
 var UNI_KEYS = ["uni", "tafe", "rmit", "university", "curtin", "monash", "deakin", "uts", "usyd", "uq", "uwa", "anu", "unsw", "federation"];
@@ -1056,114 +1045,6 @@ function dedupeEvents(evs) {
   }
   return Array.from(seen.values());
 }
-// ── Rule-based check-in (fallback) ────────────────────────────────────────
-function generateCheckinFallback(data) {
-  var blocks = [];
-  var overdue = data.personal.tasks.filter(function (t) {
-    return !t.done && t.due && daysBetween(t.due) < 0;
-  });
-  var urgent = data.personal.tasks.filter(function (t) {
-    return !t.done && t.priority === "urgent" && t.due && daysBetween(t.due) >= 0;
-  });
-  var gymRot = data.gym.rotation || [];
-  var rotLen = gymRot.length > 0 ? gymRot.length : 1;
-  var nextSess = gymRot.length > 0 ? gymRot[(data.gym.rotIdx || 0) % rotLen] : null;
-
-  // Schedule block from cached Google Calendar events
-  var cachedEvs = [];
-  try {
-    var ce = localStorage.getItem('__gcal_events__');
-    if (ce) cachedEvs = JSON.parse(ce);
-  } catch (_) {}
-  cachedEvs = dedupeEvents(cachedEvs);
-  // tmrFree: true if tomorrow has no timed events
-  var tmrDate = new Date(Date.now() + 864e5);
-  var tmrStr = dStr(tmrDate);
-  var tmrEvs = cachedEvs.filter(function (ev) {
-    return ev.date === tmrStr && !ev.allDay;
-  });
-  var tmrFree = tmrEvs.length === 0;
-  // soon: assessment events in the next 4 days — uses shared isAssessmentEvent (checks description too)
-  var soon = cachedEvs.filter(function (ev) {
-    var d = daysBetween(ev.date);
-    return d >= 0 && d <= 4 && isAssessmentEvent(ev);
-  });
-  var tToday = cachedEvs.filter(function (ev) {
-    return ev.date === todayStr() && !ev.allDay;
-  });
-  var schedLines = [];
-  if (tToday.length > 0) {
-    schedLines = tToday.map(function (ev) {
-      var s = ev.title + (ev.time ? " " + ev.time : "");
-      if (ev.description) s += " [" + ev.description.slice(0, 80) + "]";
-      return s;
-    });
-  } else {
-    schedLines.push("No events found in Google Calendar for today.");
-  }
-  blocks.push({
-    header: "Today's Schedule",
-    items: schedLines
-  });
-
-  // Tasks block
-  if (overdue.length > 0 || urgent.length > 0) {
-    var lines = [];
-    overdue.forEach(function (t) {
-      lines.push(t.name + " is " + Math.abs(daysBetween(t.due)) + "d overdue, worth sorting today.");
-    });
-    urgent.forEach(function (t) {
-      lines.push(t.name + " is due " + fmtDate(t.due) + ", don't leave it too late.");
-    });
-    blocks.push({
-      header: "Tasks",
-      items: lines
-    });
-  }
-
-  // Suggestion block
-  if (tmrFree) {
-    var pending = data.personal.tasks.filter(function (t) {
-      return !t.done;
-    });
-    if (pending.length > 0) {
-      blocks.push({
-        header: "Suggestion",
-        items: ["Tomorrow looks free, good window to knock off " + pending[0].name + (pending.length > 1 ? " or " + pending[1].name : "") + "." + (nextSess ? " Could also fit in your " + nextSess.name + "!" : "")]
-      });
-    } else {
-      blocks.push({
-        header: "Suggestion",
-        items: ["Tomorrow is free, great chance to get ahead on study or hit the gym" + (nextSess ? " (" + nextSess.name + " is up next)." : ".")]
-      });
-    }
-  } else if (nextSess) {
-    blocks.push({
-      header: "Suggestion",
-      items: ["Next gym session is " + nextSess.name + " (" + nextSess.focus + "). Pre-fill your weights on the dashboard before you go."]
-    });
-  }
-
-  // Question block
-  if (soon.length > 0) {
-    blocks.push({
-      header: "Check-in",
-      items: ["What's the first assessment you're going to put time into today, Jayden?"]
-    });
-  } else if (overdue.length > 0) {
-    blocks.push({
-      header: "Check-in",
-      items: ["Which overdue task are you clearing first today?"]
-    });
-  } else {
-    blocks.push({
-      header: "Check-in",
-      items: ["What's the one thing you want to have done by end of day?"]
-    });
-  }
-  return blocks;
-}
-
 // AI functions are provided by OllamaService (ollama-service.js)
 // which tries Gemini first, then falls back to local rule-based logic.
 
@@ -11017,13 +10898,179 @@ function HomeGridCard(_ref7) {
 // cannot drift apart. `events` is the deduped Google Calendar event list.
 // evColor/evLabel are passed in because they live inside App() — evLabel
 // closes over data.uni.subjects and cannot be hoisted.
-function UpcomingClassesCard(_ref8) {
-  var events = _ref8.events,
-    days = _ref8.days,
-    gcalConnected = _ref8.gcalConnected,
-    evColor = _ref8.evColor,
-    evLabel = _ref8.evLabel,
-    cardStyle = _ref8.cardStyle;
+// ── Jarvis ────────────────────────────────────────────────────────────────────
+// Leads the home page with one answer to "what should I do next", ranked across
+// every part of the dashboard by jarvis-signals.js. The runners-up fold away
+// behind "also considered" — the point is to be told what to do, but a
+// recommendation you cannot interrogate is one you stop trusting.
+//
+// Ranking is pure rules (see jarvis-signals.js). No API key is involved here.
+var JARVIS_BAND_COLOUR = {
+  failing: T.danger,
+  deadline: T.warn,
+  approaching: T.warn,
+  decaying: T.accent,
+  getAhead: T.accent,
+  allClear: T.success
+};
+function JarvisCard(_ref8) {
+  var candidates = _ref8.candidates,
+    onOpen = _ref8.onOpen,
+    cardStyle = _ref8.cardStyle,
+    mob = _ref8.mob;
+  var _React$useState3 = React.useState(false),
+    _React$useState4 = _slicedToArray(_React$useState3, 2),
+    open = _React$useState4[0],
+    setOpen = _React$useState4[1];
+  var list = candidates || [];
+  // rank() guarantees at least one candidate, so this is belt-and-braces for a
+  // caller that hands us nothing at all rather than an expected state.
+  if (!list.length) return null;
+  var lead = list[0];
+  var rest = window.JarvisSignals.top(list.slice(1), mob ? 2 : 3);
+  var accent = JARVIS_BAND_COLOUR[lead.band] || T.accent;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "card-rim jarvis-card",
+    style: _objectSpread(_objectSpread({}, cardStyle), {}, {
+      "--jarvis-accent": accent
+    })
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "jarvis-lead"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 7,
+      marginBottom: 7
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 5,
+      height: 5,
+      borderRadius: "50%",
+      background: accent,
+      boxShadow: "0 0 8px " + accent
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9,
+      fontWeight: 700,
+      letterSpacing: "0.1em",
+      textTransform: "uppercase",
+      color: accent
+    }
+  }, "Jarvis")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: mob ? 15 : 17,
+      fontWeight: 700,
+      letterSpacing: "-0.01em",
+      color: "#eef3fb",
+      lineHeight: 1.3
+    }
+  }, lead.headline), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: T.text2,
+      lineHeight: 1.5,
+      marginTop: 6
+    }
+  }, lead.why), lead.cta && /*#__PURE__*/React.createElement("button", {
+    onClick: function onClick() {
+      onOpen && onOpen(lead.cta.page);
+    },
+    style: _objectSpread(_objectSpread({}, btnGlass), {}, {
+      marginTop: 12,
+      padding: "6px 14px",
+      fontSize: 12
+    })
+  }, lead.cta.label)), rest.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 14,
+      borderTop: "0.5px solid rgba(255,255,255,0.08)",
+      paddingTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "jarvis-toggle",
+    onClick: function onClick() {
+      setOpen(function (v) {
+        return !v;
+      });
+    },
+    style: {
+      background: "none",
+      border: "none",
+      padding: 0,
+      cursor: "pointer",
+      fontSize: 11,
+      color: T.text3,
+      display: "flex",
+      alignItems: "center",
+      gap: 5
+    }
+  }, /*#__PURE__*/React.createElement("span", null, open ? "▾" : "▸"), "also considered (", rest.length, ")"), open && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      display: "flex",
+      flexDirection: "column",
+      gap: 8
+    }
+  }, rest.map(function (c, i) {
+    var col = JARVIS_BAND_COLOUR[c.band] || T.accent;
+    return /*#__PURE__*/React.createElement("div", {
+      key: c.id,
+      className: "jarvis-alt",
+      style: {
+        "--i": i,
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 9
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 4,
+        height: 4,
+        borderRadius: "50%",
+        background: col,
+        flexShrink: 0,
+        marginTop: 6
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        minWidth: 0,
+        flex: 1
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: T.text,
+        lineHeight: 1.4
+      }
+    }, c.headline), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: T.text3,
+        lineHeight: 1.4,
+        marginTop: 2
+      }
+    }, c.why)), c.cta && /*#__PURE__*/React.createElement("button", {
+      onClick: function onClick() {
+        onOpen && onOpen(c.cta.page);
+      },
+      style: _objectSpread(_objectSpread({}, btnGlass), {}, {
+        padding: "2px 9px",
+        fontSize: 10,
+        flexShrink: 0
+      })
+    }, c.cta.label));
+  }))));
+}
+function UpcomingClassesCard(_ref9) {
+  var events = _ref9.events,
+    days = _ref9.days,
+    gcalConnected = _ref9.gcalConnected,
+    evColor = _ref9.evColor,
+    evLabel = _ref9.evLabel,
+    cardStyle = _ref9.cardStyle;
   var today = todayStr();
   var end = function () {
     var d = new Date();
@@ -11165,15 +11212,7 @@ function App() {
     _useState160 = _slicedToArray(_useState159, 2),
     activeDay = _useState160[0],
     setActiveDay = _useState160[1];
-  var _useState161 = useState([]),
-    _useState162 = _slicedToArray(_useState161, 2),
-    checkinBlocks = _useState162[0],
-    setCheckinBlocks = _useState162[1];
-  var _useState163 = useState(false),
-    _useState164 = _slicedToArray(_useState163, 2),
-    checkinOpen = _useState164[0],
-    setCheckinOpen = _useState164[1];
-  var _useState165 = useState([{
+  var _useState161 = useState([{
       id: 1,
       exercise: "",
       sets: "",
@@ -11192,9 +11231,9 @@ function App() {
       reps: "",
       weight: ""
     }]),
-    _useState166 = _slicedToArray(_useState165, 2),
-    nxtRows = _useState166[0],
-    setNxtRows = _useState166[1];
+    _useState162 = _slicedToArray(_useState161, 2),
+    nxtRows = _useState162[0],
+    setNxtRows = _useState162[1];
   // Pre-fill nxtRows — check for a saved draft first, then fall back to rotation template
   useEffect(function () {
     var gr = data.gym.rotation || [];
@@ -11247,229 +11286,229 @@ function App() {
       }));
     } catch (_) {}
   }, [nxtRows]);
-  var _useState167 = useState(""),
+  var _useState163 = useState(""),
+    _useState164 = _slicedToArray(_useState163, 2),
+    bwIn = _useState164[0],
+    setBwIn = _useState164[1];
+  var _useState165 = useState(todayStr()),
+    _useState166 = _slicedToArray(_useState165, 2),
+    bwDate = _useState166[0],
+    setBwDate = _useState166[1];
+  var _useState167 = useState(false),
     _useState168 = _slicedToArray(_useState167, 2),
-    bwIn = _useState168[0],
-    setBwIn = _useState168[1];
-  var _useState169 = useState(todayStr()),
+    bwEditing = _useState168[0],
+    setBwEditing = _useState168[1];
+  var _useState169 = useState(false),
     _useState170 = _slicedToArray(_useState169, 2),
-    bwDate = _useState170[0],
-    setBwDate = _useState170[1];
-  var _useState171 = useState(false),
+    showCapture = _useState170[0],
+    setShowCapture = _useState170[1];
+  var _useState171 = useState(""),
     _useState172 = _slicedToArray(_useState171, 2),
-    bwEditing = _useState172[0],
-    setBwEditing = _useState172[1];
+    captureText = _useState172[0],
+    setCaptureText = _useState172[1];
   var _useState173 = useState(false),
     _useState174 = _slicedToArray(_useState173, 2),
-    showCapture = _useState174[0],
-    setShowCapture = _useState174[1];
-  var _useState175 = useState(""),
+    captureLoading = _useState174[0],
+    setCaptureLoading = _useState174[1];
+  var _useState175 = useState(null),
     _useState176 = _slicedToArray(_useState175, 2),
-    captureText = _useState176[0],
-    setCaptureText = _useState176[1];
+    captureResult = _useState176[0],
+    setCaptureResult = _useState176[1];
   var _useState177 = useState(false),
     _useState178 = _slicedToArray(_useState177, 2),
-    captureLoading = _useState178[0],
-    setCaptureLoading = _useState178[1];
-  var _useState179 = useState(null),
+    showBoardroom = _useState178[0],
+    setShowBoardroom = _useState178[1];
+  var _useState179 = useState([]),
     _useState180 = _slicedToArray(_useState179, 2),
-    captureResult = _useState180[0],
-    setCaptureResult = _useState180[1];
-  var _useState181 = useState(false),
+    brMessages = _useState180[0],
+    setBrMessages = _useState180[1];
+  var _useState181 = useState(""),
     _useState182 = _slicedToArray(_useState181, 2),
-    showBoardroom = _useState182[0],
-    setShowBoardroom = _useState182[1];
-  var _useState183 = useState([]),
+    brInput = _useState182[0],
+    setBrInput = _useState182[1];
+  var _useState183 = useState(false),
     _useState184 = _slicedToArray(_useState183, 2),
-    brMessages = _useState184[0],
-    setBrMessages = _useState184[1];
-  var _useState185 = useState(""),
+    brLoading = _useState184[0],
+    setBrLoading = _useState184[1];
+  var _useState185 = useState(null),
     _useState186 = _slicedToArray(_useState185, 2),
-    brInput = _useState186[0],
-    setBrInput = _useState186[1];
-  var _useState187 = useState(false),
+    brLastSpeaker = _useState186[0],
+    setBrLastSpeaker = _useState186[1]; // kept for Firestore compat only
+  var _useState187 = useState([]),
     _useState188 = _slicedToArray(_useState187, 2),
-    brLoading = _useState188[0],
-    setBrLoading = _useState188[1];
-  var _useState189 = useState(null),
+    brGoalProposals = _useState188[0],
+    setBrGoalProposals = _useState188[1];
+  var _useState189 = useState([]),
     _useState190 = _slicedToArray(_useState189, 2),
-    brLastSpeaker = _useState190[0],
-    setBrLastSpeaker = _useState190[1]; // kept for Firestore compat only
-  var _useState191 = useState([]),
+    brTaskProposals = _useState190[0],
+    setBrTaskProposals = _useState190[1]; // commitments from the last session, addable as real tasks
+  var _useState191 = useState(false),
     _useState192 = _slicedToArray(_useState191, 2),
-    brGoalProposals = _useState192[0],
-    setBrGoalProposals = _useState192[1];
-  var _useState193 = useState([]),
+    brClosing = _useState192[0],
+    setBrClosing = _useState192[1];
+  var _useState193 = useState(null),
     _useState194 = _slicedToArray(_useState193, 2),
-    brTaskProposals = _useState194[0],
-    setBrTaskProposals = _useState194[1]; // commitments from the last session, addable as real tasks
-  var _useState195 = useState(false),
+    brIntentMode = _useState194[0],
+    setBrIntentMode = _useState194[1]; // 'howto' | 'direction' — for header badge / loading copy
+  var _useState195 = useState(null),
     _useState196 = _slicedToArray(_useState195, 2),
-    brClosing = _useState196[0],
-    setBrClosing = _useState196[1];
-  var _useState197 = useState(null),
+    brPendingIntent = _useState196[0],
+    setBrPendingIntent = _useState196[1]; // {text, reconfirmed} awaiting a one-tap mode choice
+  var _useState197 = useState(false),
     _useState198 = _slicedToArray(_useState197, 2),
-    brIntentMode = _useState198[0],
-    setBrIntentMode = _useState198[1]; // 'howto' | 'direction' — for header badge / loading copy
-  var _useState199 = useState(null),
+    brShowProjCtx = _useState198[0],
+    setBrShowProjCtx = _useState198[1]; // project-context panel open/closed
+  var brMigrationRef = React.useRef(false);
+  var _useState199 = useState([]),
     _useState200 = _slicedToArray(_useState199, 2),
-    brPendingIntent = _useState200[0],
-    setBrPendingIntent = _useState200[1]; // {text, reconfirmed} awaiting a one-tap mode choice
+    capturesData = _useState200[0],
+    setCapturesData = _useState200[1];
   var _useState201 = useState(false),
     _useState202 = _slicedToArray(_useState201, 2),
-    brShowProjCtx = _useState202[0],
-    setBrShowProjCtx = _useState202[1]; // project-context panel open/closed
-  var brMigrationRef = React.useRef(false);
-  var _useState203 = useState([]),
+    capturesLoading = _useState202[0],
+    setCapturesLoading = _useState202[1];
+  var _useState203 = useState("all"),
     _useState204 = _slicedToArray(_useState203, 2),
-    capturesData = _useState204[0],
-    setCapturesData = _useState204[1];
-  var _useState205 = useState(false),
+    capturesFilter = _useState204[0],
+    setCapturesFilter = _useState204[1];
+  var _useState205 = useState("captures"),
     _useState206 = _slicedToArray(_useState205, 2),
-    capturesLoading = _useState206[0],
-    setCapturesLoading = _useState206[1];
-  var _useState207 = useState("all"),
+    journalTab = _useState206[0],
+    setJournalTab = _useState206[1];
+  var _useState207 = useState(""),
     _useState208 = _slicedToArray(_useState207, 2),
-    capturesFilter = _useState208[0],
-    setCapturesFilter = _useState208[1];
-  var _useState209 = useState("captures"),
+    capturesSearch = _useState208[0],
+    setCapturesSearch = _useState208[1];
+  var _useState209 = useState(null),
     _useState210 = _slicedToArray(_useState209, 2),
-    journalTab = _useState210[0],
-    setJournalTab = _useState210[1];
-  var _useState211 = useState(""),
+    expandedCapture = _useState210[0],
+    setExpandedCapture = _useState210[1];
+  var _useState211 = useState(null),
     _useState212 = _slicedToArray(_useState211, 2),
-    capturesSearch = _useState212[0],
-    setCapturesSearch = _useState212[1];
+    expandedRefl = _useState212[0],
+    setExpandedRefl = _useState212[1];
   var _useState213 = useState(null),
     _useState214 = _slicedToArray(_useState213, 2),
-    expandedCapture = _useState214[0],
-    setExpandedCapture = _useState214[1];
-  var _useState215 = useState(null),
+    editCaptureData = _useState214[0],
+    setEditCaptureData = _useState214[1];
+  var _useState215 = useState(""),
     _useState216 = _slicedToArray(_useState215, 2),
-    expandedRefl = _useState216[0],
-    setExpandedRefl = _useState216[1];
+    editCaptureTagStr = _useState216[0],
+    setEditCaptureTagStr = _useState216[1];
   var _useState217 = useState(null),
     _useState218 = _slicedToArray(_useState217, 2),
-    editCaptureData = _useState218[0],
-    setEditCaptureData = _useState218[1];
-  var _useState219 = useState(""),
+    appVersion = _useState218[0],
+    setAppVersion = _useState218[1];
+  var _useState219 = useState(null),
     _useState220 = _slicedToArray(_useState219, 2),
-    editCaptureTagStr = _useState220[0],
-    setEditCaptureTagStr = _useState220[1];
-  var _useState221 = useState(null),
+    editTaskId = _useState220[0],
+    setEditTaskId = _useState220[1];
+  var _useState221 = useState({}),
     _useState222 = _slicedToArray(_useState221, 2),
-    appVersion = _useState222[0],
-    setAppVersion = _useState222[1];
-  var _useState223 = useState(null),
+    editTaskForm = _useState222[0],
+    setEditTaskForm = _useState222[1];
+  var _useState223 = useState(false),
     _useState224 = _slicedToArray(_useState223, 2),
-    editTaskId = _useState224[0],
-    setEditTaskId = _useState224[1];
-  var _useState225 = useState({}),
+    gymDraftBanner = _useState224[0],
+    setGymDraftBanner = _useState224[1];
+  var _useState225 = useState(null),
     _useState226 = _slicedToArray(_useState225, 2),
-    editTaskForm = _useState226[0],
-    setEditTaskForm = _useState226[1];
-  var _useState227 = useState(false),
+    scheduleTaskId = _useState226[0],
+    setScheduleTaskId = _useState226[1];
+  var _useState227 = useState(null),
     _useState228 = _slicedToArray(_useState227, 2),
-    gymDraftBanner = _useState228[0],
-    setGymDraftBanner = _useState228[1];
+    catFilter = _useState228[0],
+    setCatFilter = _useState228[1];
   var _useState229 = useState(null),
     _useState230 = _slicedToArray(_useState229, 2),
-    scheduleTaskId = _useState230[0],
-    setScheduleTaskId = _useState230[1];
-  var _useState231 = useState(null),
+    scheduleForDay = _useState230[0],
+    setScheduleForDay = _useState230[1];
+  var _useState231 = useState("09:00"),
     _useState232 = _slicedToArray(_useState231, 2),
-    catFilter = _useState232[0],
-    setCatFilter = _useState232[1];
-  var _useState233 = useState(null),
+    scheduleTime = _useState232[0],
+    setScheduleTime = _useState232[1];
+  var _useState233 = useState(60),
     _useState234 = _slicedToArray(_useState233, 2),
-    scheduleForDay = _useState234[0],
-    setScheduleForDay = _useState234[1];
-  var _useState235 = useState("09:00"),
+    scheduleDuration = _useState234[0],
+    setScheduleDuration = _useState234[1];
+  var _useState235 = useState(false),
     _useState236 = _slicedToArray(_useState235, 2),
-    scheduleTime = _useState236[0],
-    setScheduleTime = _useState236[1];
-  var _useState237 = useState(60),
+    showTimePicker = _useState236[0],
+    setShowTimePicker = _useState236[1];
+  var _useState237 = useState(false),
     _useState238 = _slicedToArray(_useState237, 2),
-    scheduleDuration = _useState238[0],
-    setScheduleDuration = _useState238[1];
-  var _useState239 = useState(false),
+    showArch = _useState238[0],
+    setShowArch = _useState238[1];
+  var _useState239 = useState(0),
     _useState240 = _slicedToArray(_useState239, 2),
-    showTimePicker = _useState240[0],
-    setShowTimePicker = _useState240[1];
-  var _useState241 = useState(false),
+    reflStep = _useState240[0],
+    setReflStep = _useState240[1];
+  var _useState241 = useState([]),
     _useState242 = _slicedToArray(_useState241, 2),
-    showArch = _useState242[0],
-    setShowArch = _useState242[1];
-  var _useState243 = useState(0),
+    reflAns = _useState242[0],
+    setReflAns = _useState242[1];
+  var _useState243 = useState(""),
     _useState244 = _slicedToArray(_useState243, 2),
-    reflStep = _useState244[0],
-    setReflStep = _useState244[1];
-  var _useState245 = useState([]),
+    reflIn = _useState244[0],
+    setReflIn = _useState244[1];
+  var _useState245 = useState(null),
     _useState246 = _slicedToArray(_useState245, 2),
-    reflAns = _useState246[0],
-    setReflAns = _useState246[1];
-  var _useState247 = useState(""),
+    reflAnalysis = _useState246[0],
+    setReflAnalysis = _useState246[1];
+  var _useState247 = useState(null),
     _useState248 = _slicedToArray(_useState247, 2),
-    reflIn = _useState248[0],
-    setReflIn = _useState248[1];
-  var _useState249 = useState(null),
-    _useState250 = _slicedToArray(_useState249, 2),
-    reflAnalysis = _useState250[0],
-    setReflAnalysis = _useState250[1];
-  var _useState251 = useState(null),
-    _useState252 = _slicedToArray(_useState251, 2),
-    modal = _useState252[0],
-    setModal = _useState252[1];
+    modal = _useState248[0],
+    setModal = _useState248[1];
   // Modals that own their whole body: they render their own heading and their own
   // Close, and get neither the generic title bar nor the generic Save/Cancel. Save
   // would fall through to saveModal()'s default branch and toast "Saved!" over a no-op.
   var closeOnlyModal = CLOSE_ONLY_MODALS.indexOf(modal) >= 0;
-  var _useState253 = useState({}),
+  var _useState249 = useState({}),
+    _useState250 = _slicedToArray(_useState249, 2),
+    mForm = _useState250[0],
+    setMForm = _useState250[1];
+  var _useState251 = useState("loading"),
+    _useState252 = _slicedToArray(_useState251, 2),
+    syncStatus = _useState252[0],
+    setSyncStatus = _useState252[1];
+  var _useState253 = useState("idle"),
     _useState254 = _slicedToArray(_useState253, 2),
-    mForm = _useState254[0],
-    setMForm = _useState254[1];
-  var _useState255 = useState("loading"),
+    obsExportStatus = _useState254[0],
+    setObsExportStatus = _useState254[1]; // idle | running | done | error
+  var _useState255 = useState(null),
     _useState256 = _slicedToArray(_useState255, 2),
-    syncStatus = _useState256[0],
-    setSyncStatus = _useState256[1];
-  var _useState257 = useState("idle"),
+    authUser = _useState256[0],
+    setAuthUser = _useState256[1];
+  var _useState257 = useState(true),
     _useState258 = _slicedToArray(_useState257, 2),
-    obsExportStatus = _useState258[0],
-    setObsExportStatus = _useState258[1]; // idle | running | done | error
-  var _useState259 = useState(null),
-    _useState260 = _slicedToArray(_useState259, 2),
-    authUser = _useState260[0],
-    setAuthUser = _useState260[1];
-  var _useState261 = useState(true),
-    _useState262 = _slicedToArray(_useState261, 2),
-    authLoading = _useState262[0],
-    setAuthLoading = _useState262[1];
+    authLoading = _useState258[0],
+    setAuthLoading = _useState258[1];
   var _fbReady = useRef(false);
   var _dataLoaded = useRef(false); // only true after we've confirmed Firebase state
   var _saveTimer = useRef(null);
   var _flushNow = useRef(false); // set to skip the 2s debounce for discrete saves (e.g. shift logs)
-  var _useState263 = useState({
+  var _useState259 = useState({
       title: "",
       tags: "",
       content: ""
     }),
-    _useState264 = _slicedToArray(_useState263, 2),
-    docIn = _useState264[0],
-    setDocIn = _useState264[1];
-  var _useState265 = useState(false),
-    _useState266 = _slicedToArray(_useState265, 2),
-    forceMob = _useState266[0],
-    setForceMob = _useState266[1];
-  var _useState267 = useState(function () {
+    _useState260 = _slicedToArray(_useState259, 2),
+    docIn = _useState260[0],
+    setDocIn = _useState260[1];
+  var _useState261 = useState(false),
+    _useState262 = _slicedToArray(_useState261, 2),
+    forceMob = _useState262[0],
+    setForceMob = _useState262[1];
+  var _useState263 = useState(function () {
       try {
         return localStorage.getItem("nav_collapsed") === "1";
       } catch (_) {
         return false;
       }
     }),
-    _useState268 = _slicedToArray(_useState267, 2),
-    navCollapsed = _useState268[0],
-    setNavCollapsed = _useState268[1];
+    _useState264 = _slicedToArray(_useState263, 2),
+    navCollapsed = _useState264[0],
+    setNavCollapsed = _useState264[1];
   function toggleNav() {
     setNavCollapsed(function (c) {
       var nv = !c;
@@ -11481,32 +11520,28 @@ function App() {
   }
   var rawMob = useIsMob();
   var mob = forceMob || rawMob;
-  var _useState269 = useState(false),
+  var _useState265 = useState(false),
+    _useState266 = _slicedToArray(_useState265, 2),
+    reflAnalysisLoading = _useState266[0],
+    setReflAnalysisLoading = _useState266[1];
+  var _useState267 = useState(false),
+    _useState268 = _slicedToArray(_useState267, 2),
+    showMonitor = _useState268[0],
+    setShowMonitor = _useState268[1];
+  var _useState269 = useState(null),
     _useState270 = _slicedToArray(_useState269, 2),
-    checkinLoading = _useState270[0],
-    setCheckinLoading = _useState270[1];
-  var _useState271 = useState(false),
+    toast = _useState270[0],
+    setToast = _useState270[1]; // {msg,type:'error'|'success'|'warn'}
+  var _useState271 = useState([]),
     _useState272 = _slicedToArray(_useState271, 2),
-    reflAnalysisLoading = _useState272[0],
-    setReflAnalysisLoading = _useState272[1];
+    errLog = _useState272[0],
+    setErrLog = _useState272[1];
   var _useState273 = useState(false),
     _useState274 = _slicedToArray(_useState273, 2),
-    showMonitor = _useState274[0],
-    setShowMonitor = _useState274[1];
-  var _useState275 = useState(null),
-    _useState276 = _slicedToArray(_useState275, 2),
-    toast = _useState276[0],
-    setToast = _useState276[1]; // {msg,type:'error'|'success'|'warn'}
-  var _useState277 = useState([]),
-    _useState278 = _slicedToArray(_useState277, 2),
-    errLog = _useState278[0],
-    setErrLog = _useState278[1];
-  var _useState279 = useState(false),
-    _useState280 = _slicedToArray(_useState279, 2),
-    showErrPanel = _useState280[0],
-    setShowErrPanel = _useState280[1];
+    showErrPanel = _useState274[0],
+    setShowErrPanel = _useState274[1];
   // Google Calendar sync state
-  var _useState281 = useState(function () {
+  var _useState275 = useState(function () {
       try {
         var c = localStorage.getItem('__gcal_events__');
         return c ? JSON.parse(c) : [];
@@ -11514,18 +11549,18 @@ function App() {
         return [];
       }
     }),
-    _useState282 = _slicedToArray(_useState281, 2),
-    gcalEvents = _useState282[0],
-    setGcalEvents = _useState282[1];
-  var _useState283 = useState(false),
-    _useState284 = _slicedToArray(_useState283, 2),
-    gcalConnected = _useState284[0],
-    setGcalConnected = _useState284[1];
-  var _useState285 = useState([]),
-    _useState286 = _slicedToArray(_useState285, 2),
-    gcalCalendars = _useState286[0],
-    setGcalCalendars = _useState286[1];
-  var _useState287 = useState(function () {
+    _useState276 = _slicedToArray(_useState275, 2),
+    gcalEvents = _useState276[0],
+    setGcalEvents = _useState276[1];
+  var _useState277 = useState(false),
+    _useState278 = _slicedToArray(_useState277, 2),
+    gcalConnected = _useState278[0],
+    setGcalConnected = _useState278[1];
+  var _useState279 = useState([]),
+    _useState280 = _slicedToArray(_useState279, 2),
+    gcalCalendars = _useState280[0],
+    setGcalCalendars = _useState280[1];
+  var _useState281 = useState(function () {
       try {
         var s = localStorage.getItem('__gcal_selected__');
         return s ? JSON.parse(s) : [];
@@ -11533,72 +11568,72 @@ function App() {
         return [];
       }
     }),
-    _useState288 = _slicedToArray(_useState287, 2),
-    gcalSelectedIds = _useState288[0],
-    setGcalSelectedIds = _useState288[1];
-  var _useState289 = useState(false),
-    _useState290 = _slicedToArray(_useState289, 2),
-    gcalReady = _useState290[0],
-    setGcalReady = _useState290[1];
-  var _useState291 = useState(false),
-    _useState292 = _slicedToArray(_useState291, 2),
-    showCalPicker = _useState292[0],
-    setShowCalPicker = _useState292[1];
+    _useState282 = _slicedToArray(_useState281, 2),
+    gcalSelectedIds = _useState282[0],
+    setGcalSelectedIds = _useState282[1];
+  var _useState283 = useState(false),
+    _useState284 = _slicedToArray(_useState283, 2),
+    gcalReady = _useState284[0],
+    setGcalReady = _useState284[1];
+  var _useState285 = useState(false),
+    _useState286 = _slicedToArray(_useState285, 2),
+    showCalPicker = _useState286[0],
+    setShowCalPicker = _useState286[1];
   // Syllabus / assessment hub state
-  var _useState293 = useState(false),
-    _useState294 = _slicedToArray(_useState293, 2),
-    showSyllabusImport = _useState294[0],
-    setShowSyllabusImport = _useState294[1];
-  var _useState295 = useState(""),
-    _useState296 = _slicedToArray(_useState295, 2),
-    syllabusText = _useState296[0],
-    setSyllabusText = _useState296[1];
-  var _useState297 = useState(""),
-    _useState298 = _slicedToArray(_useState297, 2),
-    syllabusStart = _useState298[0],
-    setSyllabusStart = _useState298[1];
-  var _useState299 = useState(function () {
+  var _useState287 = useState(false),
+    _useState288 = _slicedToArray(_useState287, 2),
+    showSyllabusImport = _useState288[0],
+    setShowSyllabusImport = _useState288[1];
+  var _useState289 = useState(""),
+    _useState290 = _slicedToArray(_useState289, 2),
+    syllabusText = _useState290[0],
+    setSyllabusText = _useState290[1];
+  var _useState291 = useState(""),
+    _useState292 = _slicedToArray(_useState291, 2),
+    syllabusStart = _useState292[0],
+    setSyllabusStart = _useState292[1];
+  var _useState293 = useState(function () {
       try {
         return localStorage.getItem('__gemini_key__') || "";
       } catch (_) {
         return "";
       }
     }),
-    _useState300 = _slicedToArray(_useState299, 2),
-    geminiKey = _useState300[0],
-    setGeminiKey = _useState300[1];
-  var _useState301 = useState(function () {
+    _useState294 = _slicedToArray(_useState293, 2),
+    geminiKey = _useState294[0],
+    setGeminiKey = _useState294[1];
+  var _useState295 = useState(function () {
       try {
         return localStorage.getItem('__groq_key__') || "";
       } catch (_) {
         return "";
       }
     }),
+    _useState296 = _slicedToArray(_useState295, 2),
+    groqKey = _useState296[0],
+    setGroqKey = _useState296[1];
+  var _useState297 = useState(false),
+    _useState298 = _slicedToArray(_useState297, 2),
+    geminiLoading = _useState298[0],
+    setGeminiLoading = _useState298[1];
+  var _useState299 = useState(null),
+    _useState300 = _slicedToArray(_useState299, 2),
+    geminiPreview = _useState300[0],
+    setGeminiPreview = _useState300[1];
+  var _useState301 = useState(false),
     _useState302 = _slicedToArray(_useState301, 2),
-    groqKey = _useState302[0],
-    setGroqKey = _useState302[1];
-  var _useState303 = useState(false),
-    _useState304 = _slicedToArray(_useState303, 2),
-    geminiLoading = _useState304[0],
-    setGeminiLoading = _useState304[1];
-  var _useState305 = useState(null),
-    _useState306 = _slicedToArray(_useState305, 2),
-    geminiPreview = _useState306[0],
-    setGeminiPreview = _useState306[1];
-  var _useState307 = useState(false),
-    _useState308 = _slicedToArray(_useState307, 2),
-    showAddAssess = _useState308[0],
-    setShowAddAssess = _useState308[1];
-  var _useState309 = useState({
+    showAddAssess = _useState302[0],
+    setShowAddAssess = _useState302[1];
+  var _useState303 = useState({
       subject: data.uni.subjects && data.uni.subjects[0] && data.uni.subjects[0].name || "",
       name: "",
       type: "SUBMISSION",
       date: todayStr()
     }),
-    _useState310 = _slicedToArray(_useState309, 2),
-    addAssessForm = _useState310[0],
-    setAddAssessForm = _useState310[1];
-  var _useState311 = useState(function () {
+    _useState304 = _slicedToArray(_useState303, 2),
+    addAssessForm = _useState304[0],
+    setAddAssessForm = _useState304[1];
+  var _useState305 = useState(function () {
       try {
         var x = localStorage.getItem('__gcal_excluded__');
         return x ? JSON.parse(x) : [];
@@ -11606,9 +11641,9 @@ function App() {
         return [];
       }
     }),
-    _useState312 = _slicedToArray(_useState311, 2),
-    gcalExcludedIds = _useState312[0],
-    setGcalExcludedIds = _useState312[1];
+    _useState306 = _slicedToArray(_useState305, 2),
+    gcalExcludedIds = _useState306[0],
+    setGcalExcludedIds = _useState306[1];
 
   // Call this anywhere in App to show a brief auto-dismissing notification.
   // Child components can call window.showToast() which is wired up below.
@@ -12178,18 +12213,31 @@ function App() {
   var homeLayout = React.useMemo(function () {
     return window.HomeLayout.normalizeLayout(data.homeLayout);
   }, [data.homeLayout]);
-  var _useState313 = useState(false),
-    _useState314 = _slicedToArray(_useState313, 2),
-    layoutEditing = _useState314[0],
-    setLayoutEditing = _useState314[1];
-  var _useState315 = useState(null),
-    _useState316 = _slicedToArray(_useState315, 2),
-    dragId = _useState316[0],
-    setDragId = _useState316[1];
-  var _useState317 = useState(null),
-    _useState318 = _slicedToArray(_useState317, 2),
-    dropIdx = _useState318[0],
-    setDropIdx = _useState318[1];
+
+  // What Jarvis is going to say. Derived state only — never written to `data`,
+  // so ranking causes no Firestore traffic and no backup churn.
+  // `money` is not wired yet: the pay-cycle maths lives inside WorkSection, and
+  // lifting it is its own change. jarvis-signals.js treats absent money as
+  // "not configured" and stays quiet about it rather than guessing.
+  var jarvisCandidates = React.useMemo(function () {
+    return window.JarvisSignals.rank({
+      data: data,
+      gcalEvents: dedupedEvents,
+      today: todayStr()
+    });
+  }, [data, dedupedEvents]);
+  var _useState307 = useState(false),
+    _useState308 = _slicedToArray(_useState307, 2),
+    layoutEditing = _useState308[0],
+    setLayoutEditing = _useState308[1];
+  var _useState309 = useState(null),
+    _useState310 = _slicedToArray(_useState309, 2),
+    dragId = _useState310[0],
+    setDragId = _useState310[1];
+  var _useState311 = useState(null),
+    _useState312 = _slicedToArray(_useState311, 2),
+    dropIdx = _useState312[0],
+    setDropIdx = _useState312[1];
   function saveLayout(next) {
     trk("home.layout_save");
     setData(function (p) {
@@ -12227,151 +12275,6 @@ function App() {
       window.removeEventListener("blur", clear);
     };
   }, [dragId, dropIdx, homeLayout]);
-  function doCheckin() {
-    setCheckinLoading(true);
-    setCheckinBlocks([]);
-    var key = (geminiKey || localStorage.getItem('__gemini_key__') || '').trim();
-    if (!key) {
-      setCheckinBlocks(generateCheckinFallback(data));
-      setCheckinLoading(false);
-      return;
-    }
-
-    // ── Raw data ─────────────────────────────────────────────────────────────
-    var cachedEvs = [];
-    try {
-      var ce = localStorage.getItem('__gcal_events__');
-      if (ce) cachedEvs = JSON.parse(ce);
-    } catch (_) {}
-    var td = todayStr();
-    var yday = new Date();
-    yday.setDate(yday.getDate() - 1);
-    var ydayStr = dStr(yday);
-    var todayEvs = cachedEvs.filter(function (ev) {
-      return ev.date === td && !ev.allDay;
-    });
-    var workedYesterday = cachedEvs.some(function (ev) {
-      return ev.date === ydayStr && isGoTabEvent(ev);
-    });
-    var workingToday = todayEvs.some(isGoTabEvent);
-    var nonWorkEvs = todayEvs.filter(function (ev) {
-      return !isGoTabEvent(ev);
-    });
-    var tasks = data.personal && data.personal.tasks || [];
-    var overdueTasks = tasks.filter(function (t) {
-      return !t.done && t.due && t.due < td;
-    });
-    var urgentTasks = tasks.filter(function (t) {
-      return !t.done && t.priority === 'urgent' && (!t.due || t.due >= td);
-    });
-    var in7 = new Date();
-    in7.setDate(in7.getDate() + 7);
-    var in7Str = dStr(in7);
-    var upcomingA = (data.uni && data.uni.assessments || []).filter(function (a) {
-      return !a.done && a.date >= td && a.date <= in7Str;
-    }).sort(function (a, b) {
-      return a.date.localeCompare(b.date);
-    });
-    var gymRot = data.gym && data.gym.rotation || [];
-    var nextGym = gymRot.length > 0 ? gymRot[(data.gym && data.gym.rotIdx || 0) % gymRot.length] : null;
-    var workouts = data.gym && data.gym.workouts || [];
-    var lastWkt = workouts.length > 0 ? workouts[workouts.length - 1] : null;
-    var daysSinceGym = lastWkt ? Math.abs(daysBetween(lastWkt.date)) : null;
-    var bwThisWeek = !!(data.gym && data.gym.lastBWWeek === thisWeek);
-    var recentRefls = (data.reflections || []).slice(-2).reverse();
-    var lastRefl = recentRefls[0] || null;
-    var an = lastRefl && lastRefl.analysis || {};
-    var subjects = (data.uni && data.uni.subjects || []).map(function (s) {
-      return s.name;
-    }).join(', ');
-
-    // ── Build context string ─────────────────────────────────────────────────
-    var ctx = 'WHO: Jayden, TAFE Melbourne accounting student. Subjects: ' + subjects + '.\n';
-    if (workedYesterday) ctx += 'WORK: Had a GoTab shift yesterday, energy may be lower today.\n';
-    if (workingToday) ctx += 'WORK: GoTab shift today.\n';
-    ctx += '\nCALENDAR TODAY:\n' + (nonWorkEvs.length > 0 ? nonWorkEvs.map(function (ev) {
-      return '- ' + ev.title + (ev.time ? ' at ' + ev.time : '');
-    }).join('\n') : 'No events today') + '\n';
-    if (upcomingA.length > 0) {
-      ctx += '\nASSESSMENTS DUE SOON:\n';
-      upcomingA.forEach(function (a) {
-        ctx += '- ' + a.subject + ' ' + a.name + ' in ' + daysBetween(a.date) + 'd\n';
-      });
-    }
-    if (overdueTasks.length > 0) {
-      ctx += '\nOVERDUE: ' + overdueTasks.map(function (t) {
-        return t.name;
-      }).join(', ') + '\n';
-    } else if (urgentTasks.length > 0) {
-      ctx += '\nURGENT TASKS: ' + urgentTasks.slice(0, 3).map(function (t) {
-        return t.name;
-      }).join(', ') + '\n';
-    }
-    if (nextGym) {
-      var gymLine = 'Next: ' + nextGym.name + (nextGym.focus ? ' (' + nextGym.focus + ')' : '');
-      if (daysSinceGym === 0) gymLine += ', logged today';else if (daysSinceGym === 1) gymLine += ', last session yesterday';else if (daysSinceGym !== null) gymLine += ', ' + daysSinceGym + 'd since last session';
-      ctx += '\nGYM: ' + gymLine + '\n';
-    }
-    if (!bwThisWeek) ctx += 'GYM: Body weight not yet logged this week.\n';
-    if (lastRefl && an.dominantPattern) {
-      var reflDate = new Date(lastRefl.date).toLocaleDateString('en-AU', {
-        day: 'numeric',
-        month: 'short'
-      });
-      ctx += '\nLAST REFLECTION (' + reflDate + '):\n';
-      ctx += '  Pattern identified: ' + an.dominantPattern + '\n';
-      if (an.recommendation) ctx += '  Recommendation: ' + an.recommendation + '\n';
-      if (recentRefls.length >= 2 && an.patternHistory) ctx += '  Trend: ' + an.patternHistory + '\n';
-    }
-
-    // ── Prompt ───────────────────────────────────────────────────────────────
-    var prompt = 'You are Jayden\'s personal coach. You know him: TAFE accounting student, works GoTab shifts, trains at the gym, does weekly reflections.\n\n' + ctx + '\nWrite a personalised morning check-in. Exactly 3 lines:\nLine 1: Acknowledge his specific day, name actual assessments, work, or events if present\nLine 2: One concrete suggestion tied to his context (if reflection data present, connect to the identified pattern or recommendation)\nLine 3: A question that feels personal to his actual situation, not generic\n\nRules: under 65 words. Use his name once. Warm and direct, not cheesy. Plain lines, no bullets or numbers.';
-    fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + key, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: prompt
-          }]
-        }],
-        generationConfig: {
-          temperature: 0.75
-        }
-      })
-    }).then(function (r) {
-      if (!r.ok) throw new Error('Gemini ' + r.status);
-      return r.json();
-    }).then(function (json) {
-      var text = json.candidates[0].content.parts[0].text;
-      var lines = text.trim().split('\n').map(function (l) {
-        return l.replace(/^[\d.\-*]+\s*/, '').trim();
-      }).filter(function (l) {
-        return l.length > 0;
-      });
-      var blocks = [];
-      if (lines[0]) blocks.push({
-        header: 'Your Day Ahead',
-        items: [lines[0]]
-      });
-      if (lines[1]) blocks.push({
-        header: 'Suggestion',
-        items: [lines[1]]
-      });
-      if (lines[2]) blocks.push({
-        header: 'Check-in',
-        items: [lines[2]]
-      });
-      setCheckinBlocks(blocks.length > 0 ? blocks : generateCheckinFallback(data));
-      setCheckinLoading(false);
-    })["catch"](function (e) {
-      showToast('Check-in failed: ' + (e && e.message ? e.message : 'unknown error'), 'error');
-      setCheckinBlocks(generateCheckinFallback(data));
-      setCheckinLoading(false);
-    });
-  }
   function toggleCalEv(id) {
     trk("uni.gcal_event_toggle");
     setData(function (p) {
@@ -14744,156 +14647,6 @@ function App() {
       }, cal.summary));
     })));
   }
-  function renderCheckinCard() {
-    return /*#__PURE__*/React.createElement("div", {
-      className: "card-rim",
-      style: card()
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        gap: 16,
-        marginBottom: checkinOpen || todayEvs.length > 0 ? 10 : 0
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 10,
-        color: T.text3,
-        display: "flex",
-        alignItems: "center",
-        gap: 5
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        width: 5,
-        height: 5,
-        borderRadius: "50%",
-        background: T.accent
-      }
-    }), "Daily Check-in \xB7 ", new Date().toLocaleDateString("en-AU", {
-      weekday: "long",
-      day: "numeric",
-      month: "long"
-    })), checkinOpen ? /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        gap: 6
-      }
-    }, /*#__PURE__*/React.createElement("button", {
-      style: _objectSpread(_objectSpread({}, btn), {}, {
-        fontSize: 11
-      }),
-      onClick: function onClick() {
-        trk("checkin.generate");
-        doCheckin();
-      }
-    }, "Refresh"), /*#__PURE__*/React.createElement("button", {
-      style: _objectSpread(_objectSpread({}, btn), {}, {
-        fontSize: 11
-      }),
-      onClick: function onClick() {
-        setCheckinOpen(false);
-      }
-    }, "Hide")) : /*#__PURE__*/React.createElement("button", {
-      style: _objectSpread(_objectSpread({}, btnP), {}, {
-        fontSize: 11,
-        padding: "5px 12px"
-      }),
-      onClick: function onClick() {
-        setCheckinOpen(true);
-        if (checkinBlocks.length === 0 && !checkinLoading) {
-          trk("checkin.generate");
-          doCheckin();
-        }
-      }
-    }, "Generate check-in")), checkinOpen && (checkinLoading ? /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        color: T.accent,
-        display: "flex",
-        alignItems: "center",
-        gap: 6
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        display: "inline-block",
-        width: 8,
-        height: 8,
-        borderRadius: "50%",
-        background: T.accent,
-        animation: "pulse 1.2s ease-in-out infinite"
-      }
-    }), "AI is thinking...") : checkinBlocks.length === 0 ? /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        color: T.text3
-      }
-    }, "Generating today's check-in\u2026") : checkinBlocks.map(function (block, bi) {
-      return /*#__PURE__*/React.createElement("div", {
-        key: bi,
-        style: {
-          marginBottom: 10
-        }
-      }, block.header && /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 11,
-          fontWeight: 600,
-          color: T.accent,
-          marginBottom: 4
-        }
-      }, block.header), block.items.map(function (item, ii) {
-        return /*#__PURE__*/React.createElement("div", {
-          key: ii,
-          style: {
-            fontSize: 13,
-            lineHeight: 1.7,
-            color: T.text
-          }
-        }, item);
-      }));
-    })), todayEvs.length > 0 && /*#__PURE__*/React.createElement("div", {
-      style: {
-        marginTop: 12,
-        paddingTop: 10,
-        borderTop: "0.5px solid " + T.border,
-        display: "flex",
-        gap: 6,
-        flexWrap: "wrap"
-      }
-    }, todayEvs.map(function (ev) {
-      var col = evColor(ev);
-      return /*#__PURE__*/React.createElement("div", {
-        key: ev.id,
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: 5,
-          padding: "4px 9px",
-          borderRadius: 6,
-          background: col + "18",
-          border: "0.5px solid " + col + "40",
-          flexShrink: 0
-        }
-      }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 10,
-          fontWeight: 600,
-          color: col
-        }
-      }, evLabel(ev), /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontWeight: 400,
-          color: T.text3
-        }
-      }, " \xB7 ", ev.time)), /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 9,
-          color: T.text2
-        }
-      }, ev.title.slice(0, 32))));
-    })));
-  }
   function renderGoalsCard() {
     var b = data.boardroom || {};
     if (!b.onboarded) return null;
@@ -15973,8 +15726,6 @@ function App() {
         return /*#__PURE__*/React.createElement(WeatherWidget, {
           mob: mob
         });
-      case "checkin":
-        return renderCheckinCard();
       case "goals":
         return renderGoalsCard();
       // returns null when not onboarded
@@ -16763,7 +16514,19 @@ function App() {
         return !v;
       });
     }
-  }, layoutEditing ? "Done" : "Edit layout"))), /*#__PURE__*/React.createElement("div", {
+  }, layoutEditing ? "Done" : "Edit layout"))), /*#__PURE__*/React.createElement(ErrorBoundary, {
+    name: "Jarvis"
+  }, /*#__PURE__*/React.createElement(JarvisCard, {
+    candidates: jarvisCandidates,
+    mob: mob,
+    onOpen: function onOpen(p) {
+      setPage(p);
+    },
+    cardStyle: card({
+      padding: "16px 20px",
+      marginBottom: mob ? 12 : GRID_GAP
+    })
+  })), /*#__PURE__*/React.createElement("div", {
     className: "card-rim",
     style: card({
       padding: "16px 20px",

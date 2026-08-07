@@ -147,6 +147,23 @@ button:active:not([disabled]){transform:scale(0.97);}
   .tick-circle.is-done svg{animation:none;}
 }
 
+/* --- Jarvis --- */
+/* The answer settles in first; the runners-up stagger in behind it via --i, the
+   same index-delay pattern the rest of the dashboard uses. Deliberately gentle:
+   this sits at the top of every page load, and a flashy entrance you see several
+   times a day stops reading as considered and starts reading as noise. */
+@keyframes jarvis-in{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+.jarvis-lead{animation:jarvis-in 420ms var(--ease-out) both;}
+.jarvis-alt{animation:jarvis-in 380ms var(--ease-out) both;animation-delay:calc(90ms + var(--i) * 55ms);}
+.jarvis-toggle{transition:color .15s,opacity .15s;}
+.jarvis-toggle:hover{color:#cdd5e2;}
+/* The band accent is a left rule, not a fill — Jarvis states a priority, he is
+   not a warning banner. */
+.jarvis-card{border-left:3px solid var(--jarvis-accent,rgba(91,140,255,0.9));}
+@media (prefers-reduced-motion: reduce){
+  .jarvis-lead,.jarvis-alt{animation:none;}
+}
+
 /* --- Task row controls --- */
 /* Reveal the per-row buttons on hover for mouse users. Touch devices have no hover,
    so the media query leaves them permanently visible there. */
