@@ -63,6 +63,9 @@
   function arr(v) { return Array.isArray(v) ? v : []; }
   function plural(n, one, many) { return n === 1 ? one : many; }
   function trim(s, n) { return String(s || '').trim().slice(0, n || 48); }
+  // Whole dollars with thousands separators, matching how the Finance tab
+  // renders them — "$1,024", not "$1024".
+  function money(n) { return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
 
   function candidate(o) {
     o.band = bandOf(o.score);
@@ -103,61 +106,58 @@
   // Each takes the context and returns zero or more candidates. Adding a rule
   // here is all it takes — ranking, the card and the phrasing pick it up.
 
-  // What Jayden owes each cycle. A bill is something he cannot choose not to
-  // pay — electricity, internet, and the two subscriptions. The rest of
-  // recurringTemplates is ordinary spending he keeps a lid on himself, and
-  // counting it would invent a shortfall that is not real.
+  // Money. app.jsx computes every figure here and hands it in already worked
+  // out; this module never recomputes it. That is deliberate — the Finance tab
+  // and Jarvis must never be able to disagree about Jayden's money, and the one
+  // way to guarantee that is for there to be a single calculation.
   //
-  // The `Bills` category is the marker, so he re-tags an item in the app rather
-  // than waiting on a code change. Anything tagged Bills is treated as due.
-  function billsTotal(data) {
-    if (!data || typeof data !== 'object') return 0;
-    var templates = arr(data.finance && data.finance.recurringTemplates);
-    return templates.reduce(function (sum, t) {
-      if (!t) return sum;
-      if (String(t.cat || '').trim().toLowerCase() !== 'bills') return sum;
-      var amount = Number(t.amount);
-      // Blank, non-numeric and negative amounts contribute nothing rather than
-      // corrupting the total — a wrong bills figure is worse than a low one.
-      if (!isFinite(amount) || amount <= 0) return sum;
-      return sum + amount;
-    }, 0);
-  }
-
-  // Money. app.jsx owns the pay-cycle maths (getPayPeriodRange / shiftPay /
-  // isWorkEventCounted) and hands the result in already computed, so this module
-  // stays pure and the two can never disagree about what a shift pays.
+  // The question is DISPOSABLE, not bills coverage. In August 2026 his income
+  // was $1,251 against $227 of bills — a $1,024 surplus that a bills-coverage
+  // signal would have called comfortable, while his actual disposable was minus
+  // $202 once one-offs and his savings goal were counted. Congratulating him in
+  // that situation is exactly the failure the floor rule exists to prevent.
   function financeSource(ctx) {
     var m = ctx.money;
-    if (!m || !(Number(m.billsTotal) > 0)) return [];   // not configured → stay quiet
-    var bills = Math.round(Number(m.billsTotal));
-    var projected = Math.round(Number(m.projected) || 0);
-    var buffer = projected - bills;
-    var shifts = Number(m.shifts) || 0;
-    var facts = { billsTotal: bills, projected: projected, buffer: buffer, shifts: shifts };
+    if (!m) return [];
+    var income = Math.round(Number(m.income) || 0);
+    if (income <= 0) return [];       // finance tab not set up → stay quiet
+    var bills = Math.round(Number(m.bills) || 0);
+    var oneOffs = Math.round(Number(m.oneOffs) || 0);
+    var savings = Math.round(Number(m.savings) || 0);
+    var disposable = Math.round(Number(m.disposable) || 0);
+    var facts = {
+      income: income, bills: bills, oneOffs: oneOffs,
+      savings: savings, disposable: disposable
+    };
+    // Names only what is actually there, so the sentence never cites a $0 item.
+    var parts = [];
+    if (bills > 0) parts.push('$' + money(bills) + ' of bills');
+    if (oneOffs > 0) parts.push('$' + money(oneOffs) + ' of one-offs');
+    if (savings > 0) parts.push('$' + money(savings) + ' set aside for savings');
+    var breakdown = parts.length ? parts.join(', ') : 'your committed spending';
 
-    if (buffer < 0) {
+    if (disposable < 0) {
       return [candidate({
-        id: 'finance.billsCoverage', domain: 'finance', score: 92,
-        headline: 'Bills are $' + Math.abs(buffer) + ' short this cycle',
-        why: '$' + projected + ' projected from ' + shifts + ' ' + plural(shifts, 'shift', 'shifts') +
-             ' against $' + bills + ' of bills. Everything else can wait behind this.',
-        cta: { label: 'Work', page: 'Work' }, view: 'money', facts: facts
+        id: 'finance.disposable', domain: 'finance', score: 92,
+        headline: '$' + money(Math.abs(disposable)) + ' short this month',
+        why: '$' + money(income) + ' coming in against ' + breakdown +
+             '. Everything else on this list can wait behind it.',
+        cta: { label: 'Finance', page: 'Finance' }, view: 'money', facts: facts
       })];
     }
-    if (buffer < bills * 0.3) {
+    if (disposable < income * 0.1) {
       return [candidate({
-        id: 'finance.billsCoverage', domain: 'finance', score: 60,
-        headline: 'Bills are covered, but only just',
-        why: '$' + buffer + ' spare after $' + bills + ' of bills. Worth picking up a shift ' +
-             'before something unexpected lands.',
-        cta: { label: 'Work', page: 'Work' }, view: 'money', facts: facts
+        id: 'finance.disposable', domain: 'finance', score: 55,
+        headline: 'Only $' + money(disposable) + ' left over this month',
+        why: 'After ' + breakdown + ' there is almost no room. One unexpected ' +
+             'expense puts you under.',
+        cta: { label: 'Finance', page: 'Finance' }, view: 'money', facts: facts
       })];
     }
     return [candidate({
-      id: 'finance.billsCoverage', domain: 'finance', score: 22, floorOnly: true,
-      headline: 'Bills covered with $' + buffer + ' spare',
-      why: 'Nothing to do here — worth knowing before you plan the rest.',
+      id: 'finance.disposable', domain: 'finance', score: 22, floorOnly: true,
+      headline: '$' + money(disposable) + ' spare this month',
+      why: 'After ' + breakdown + '. Worth knowing before you plan the rest.',
       cta: { label: 'Finance', page: 'Finance' }, view: 'money', facts: facts
     })];
   }
@@ -396,7 +396,6 @@
     daysApart: daysApart,
     isWeeklyClass: isWeeklyClass,
     isAssessmentEvent: isAssessmentEvent,
-    billsTotal: billsTotal,
     rank: rank,
     top: top
   };

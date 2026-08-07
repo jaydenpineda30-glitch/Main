@@ -123,53 +123,84 @@ test('not being able to cover bills outranks everything else', () => {
       uni: { assessments: [assess({ date: '2026-08-08' })] },   // due tomorrow
       personal: { tasks: [task({ due: '2026-07-01' })] }        // long overdue
     },
-    money: { billsTotal: 900, projected: 700, shifts: 3 }
+    money: { income: 700, bills: 900, oneOffs: 0, savings: 0, disposable: -200 }
   }));
   assert.strictEqual(out[0].domain, 'finance');
   assert.strictEqual(out[0].band, 'failing');
 });
 
-// ── What counts as a bill ────────────────────────────────────────────────────
-// Jayden's call, 2026-08-07: a bill is something he cannot choose not to pay.
-// Everything else in recurringTemplates is ordinary spending he keeps a lid on
-// himself, and Jarvis must not treat it as an obligation. The marker is the
-// `Bills` category, so he stays in control of it from the app without a code
-// change. Getting this wrong states a false shortfall about real money.
+// ── Money: disposable, not bills coverage ────────────────────────────────────
+// Jayden's real August 2026: $1,251 income, $227 bills — a $1,024 surplus, and
+// a disposable of MINUS $202 once one-offs and his savings goal are counted.
+// A signal built on bills coverage would have congratulated him while he was
+// $202 short. Disposable is the number the Finance tab already shows him, so
+// Jarvis and that tab cannot disagree.
+//
+// app.jsx computes all of this and hands it in. This module never recomputes
+// money — that is how the two are kept from drifting.
 
-test('billsTotal counts only templates tagged Bills', () => {
-  const data = { finance: { recurringTemplates: [
-    { name: 'electricity', cat: 'Bills', amount: 80 },
-    { name: 'internet', cat: 'Bills', amount: 87 },
-    { name: 'Trees', cat: 'Other', amount: 280 },
-    { name: 'Vape', cat: 'Other', amount: 120 }
-  ] } };
-  assert.strictEqual(JS.billsTotal(data), 167);
+// Read off his Finance tab, 2026-08-07. Expenses showed "4 fixed · 0 variable",
+// so one-offs are genuinely nil and the savings commitment is what consumes the
+// $1,024 surplus: 1251 − 227 − 0 − 1226 = −202.
+const AUGUST = { income: 1251, bills: 227, oneOffs: 0, savings: 1226, disposable: -202 };
+
+test('a negative disposable outranks everything else', () => {
+  const out = JS.rank(ctx({
+    data: {
+      uni: { assessments: [assess({ date: '2026-08-08' })] },   // due tomorrow
+      personal: { tasks: [task({ due: '2026-07-01' })] }        // long overdue
+    },
+    money: AUGUST
+  }));
+  assert.strictEqual(out[0].domain, 'finance');
+  assert.strictEqual(out[0].band, 'failing');
+  assert.ok(/202/.test(out[0].headline), 'the shortfall should name the amount: ' + out[0].headline);
 });
 
-test('billsTotal is 0 when finance data is missing entirely', () => {
-  assert.strictEqual(JS.billsTotal({}), 0);
-  assert.strictEqual(JS.billsTotal({ finance: {} }), 0);
-  assert.strictEqual(JS.billsTotal(null), 0);
+test('a surplus on paper does not count as covered when disposable is negative', () => {
+  // The exact trap: income far exceeds bills, so "bills covered" reads as fine.
+  const out = JS.rank(ctx({ money: AUGUST }));
+  assert.strictEqual(out[0].band, 'failing');
+  assert.ok(!/covered|spare/i.test(out[0].headline + ' ' + out[0].why),
+    'must not describe a negative disposable as covered: ' + out[0].headline);
 });
 
-test('billsTotal ignores entries with no usable amount', () => {
-  const data = { finance: { recurringTemplates: [
-    { name: 'good', cat: 'Bills', amount: 25 },
-    { name: 'blank', cat: 'Bills' },
-    { name: 'text', cat: 'Bills', amount: 'twenty' },
-    { name: 'negative', cat: 'Bills', amount: -10 },
-    null
-  ] } };
-  assert.strictEqual(JS.billsTotal(data), 25);
+test('a thin disposable warns without claiming a shortfall', () => {
+  const out = JS.rank(ctx({
+    money: { income: 1251, bills: 227, oneOffs: 900, savings: 100, disposable: 24 }
+  }));
+  assert.strictEqual(out[0].domain, 'finance');
+  assert.strictEqual(out[0].band, 'approaching');
+  assert.ok(!/short/i.test(out[0].headline), 'nothing is short yet: ' + out[0].headline);
 });
 
-test('billsTotal matches the category case-insensitively and ignores stray spaces', () => {
-  // Real data has names like " spotify " — the category is typed too.
-  const data = { finance: { recurringTemplates: [
-    { name: 'spotify', cat: ' bills ', amount: 25 },
-    { name: 'claude', cat: 'BILLS', amount: 35 }
-  ] } };
-  assert.strictEqual(JS.billsTotal(data), 60);
+test('a healthy disposable is floor-only, so it never crowds real work', () => {
+  const healthy = { income: 1251, bills: 227, oneOffs: 100, savings: 0, disposable: 924 };
+  const alone = JS.rank(ctx({ money: healthy }));
+  assert.strictEqual(alone[0].domain, 'finance');
+  assert.ok(alone[0].floorOnly, 'a comfortable month is a floor-only observation');
+
+  const busy = JS.rank(ctx({
+    data: { personal: { tasks: [task({ due: '2026-07-01' })] } },
+    money: healthy
+  }));
+  assert.ok(!busy.some((c) => c.domain === 'finance'),
+    'a comfortable month should not appear beside overdue work');
+});
+
+test('finance stays silent when the dashboard has no income configured', () => {
+  const out = JS.rank(ctx({ money: { income: 0, bills: 0, oneOffs: 0, savings: 0, disposable: 0 } }));
+  assert.ok(!out.some((c) => c.domain === 'finance'),
+    'an unconfigured finance tab must not produce a money signal');
+});
+
+test('the shortfall says what is eating the surplus, not just that it is gone', () => {
+  const out = JS.rank(ctx({ money: AUGUST }));
+  const text = out[0].why;
+  assert.ok(/227/.test(text), 'should name the bills figure: ' + text);
+  assert.ok(/1,?226/.test(text), 'should name the savings commitment: ' + text);
+  assert.ok(!/one-off/.test(text),
+    'must not cite a $0 one-offs figure — only name what is actually there: ' + text);
 });
 
 test('results are sorted by score, highest first', () => {
@@ -325,7 +356,7 @@ test('every candidate carries the fields the UI renders', () => {
       uni: { assessments: [assess({ date: '2026-08-09' })] },
       gym: { workouts: [{ date: '2026-07-01' }] }
     },
-    money: { billsTotal: 900, projected: 700, shifts: 3 }
+    money: { income: 700, bills: 900, oneOffs: 0, savings: 0, disposable: -200 }
   }));
   assert.ok(out.length >= 4, 'expected candidates from several domains');
   out.forEach((c) => {
@@ -360,7 +391,7 @@ test('a cta, when present, names a real dashboard page', () => {
       uni: { assessments: [assess({ date: '2026-08-09' })] },
       gym: { workouts: [{ date: '2026-07-01' }] }
     },
-    money: { billsTotal: 900, projected: 700, shifts: 3 }
+    money: { income: 700, bills: 900, oneOffs: 0, savings: 0, disposable: -200 }
   }));
   out.forEach((c) => {
     if (c.cta) {
