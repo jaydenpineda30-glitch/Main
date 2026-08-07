@@ -296,9 +296,34 @@ agent can load it. Jayden has to check it himself, and the honest risks are:
   cause of the "horrible to use" complaint. Note Opus 5 **rejects `temperature`**
   (400) — `gemini-service.js` sets it; do not copy that across.
 
-## Open questions for Jayden — decide before stage 2
+## Answered by Jayden, 2026-08-07
 
-1. **How bossy?** One firm answer, top 3 ranked, or one-plus-expandable. Built as
-   one-plus-expandable so far.
-2. **Tone.** JARVIS is dry and a little sardonic. How far to go?
-3. **Which views after the first four** (`next-step`, `task-list`, `money`, `week`).
+1. **How bossy? — top three, ranked.** Not one firm answer. Stage 1 currently
+   renders one lead plus "also considered"; stage 2 should show three.
+2. **Tone — a bit sardonic.** Dry, in the JARVIS register. It still may not
+   assert anything it does not know (see the floor rule); dryness is a matter of
+   wording, never of claiming more than the facts support.
+3. **Views — still open**, but grounded in what his data actually holds:
+
+| Candidate view | Why | Data |
+|---|---|---|
+| **Work diary** | 22 written shift notes, read by nothing. His record of his own competence, currently invisible. Biggest piece of dead data in Athena. | `work.shiftLogs` |
+| **Semester shape** | 34 open assessments over 8 subjects; Jarvis sees only the nearest. Shows where subjects collide, so work moves *before* it is overdue. | `uni.assessments` |
+| **What he drops** | 49 archived vs 10 open. Pattern he cannot see from inside, and the natural home for the sardonic register. | `personal.archived` |
+| **Alignment** | A North Star exists and appears nowhere. Holds today's three against it. | `boardroom.northStar` |
+
+Rejected: a body-weight view. 12 entries over four months is too sparse to say
+anything honest with.
+
+## Task assistance — two jobs, not one
+
+Jayden asked for Jarvis to "help through" a task and do research. These are
+different in kind and must not be shipped as one feature:
+
+- **Breakdown** — turn a task into `stages → steps`, the shape Projects already
+  uses. Safe, and it is stage 3's confirm-before-write path. Build this first.
+- **Research** — ⚠️ the dashboard has **no retrieval**. A model with no search
+  cannot look up his unit's assessment brief; it will produce fluent, unsourced,
+  plausible text. For an accounting assessment that is actively harmful. Do not
+  ship "research" until a real search tool is wired in, and do not let the
+  breakdown feature quietly grow into it.
