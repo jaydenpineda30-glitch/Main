@@ -165,29 +165,33 @@ parameter, have `WorkSection` pass its existing local. `dStr` (line 260) is
 already module-level. Still check the Work tab's figures are unchanged — it is
 real money maths — but the lift itself is mechanical.
 
-**Blocker 2 — RESOLVED 2026-08-07.** `JarvisSignals.billsTotal(data)` now exists,
-pure and tested: it sums `recurringTemplates` tagged `Bills`. Jayden's rule is
-that a bill is something he cannot choose not to pay — electricity $80,
-internet $87, Spotify $25, Claude $35 = **$227**. Trees, Vape and Food are
-ordinary spending he keeps a lid on himself; the $312 fine is a one-off he is
-paying down.
+**Blocker 2 — RESOLVED 2026-08-07, but not the way this note first proposed.**
 
-⚠️ **His data still tags Food and Fine as `Bills`**, so `billsTotal` reads **$819**
-until he re-tags those two to `Other` in the app. Do not wire the money signal
-in before that — it would announce a shortfall that is not real. Check it:
+The first attempt added `JarvisSignals.billsTotal(data)`, recomputing bills from
+`recurringTemplates`. That was wrong twice over and has been removed:
 
-```bash
-node -e "const JS=require('./jarvis-signals.js'),fs=require('fs');
-const r=JSON.parse(fs.readFileSync('<backup>.json','utf8'));
-console.log(JS.billsTotal(r.dashData||r.data||r));"   # want 227, not 819
-```
+1. It ignored `monthlyRecurringOverrides`, so it would have disagreed with the
+   Finance tab in any month Jayden skipped or adjusted a bill.
+2. **Bills coverage is the wrong question.** His August 2026: $1,251 income
+   against $227 of bills — a $1,024 surplus a bills-coverage signal would call
+   comfortable. His actual disposable was **minus $202**, because a
+   $1,225/month savings commitment consumes it. Congratulating him there is the
+   same failure as the floor-rule bug: true in isolation, false in context.
 
-**Blocker 3 — gross vs net. Undecided, and it is Jayden's call.**
-`projectedPay` (`app.jsx:2131`) is `projectedEquiv * hrRate` — **before tax**.
-Comparing that against bills would tell him he is covered when he is not, at
-$41.58/hr. `estimateTax` exists (inside `WorkSection`, just below) and would
-need lifting too. Ask which he wants before building: gross is what the Work
-tab already shows, net is what actually lands in his account.
+What exists now: `financeSummary(data, work, gcalEvents, month)` at module level
+in `app.jsx` — the Finance tab's own maths, lifted verbatim, with the tab
+destructuring from it. `jarvisMoney(dash, gcalEvents)` feeds `rank()`.
+`financeSource` ranks on **disposable** and names only the components that are
+non-zero.
+
+**There is exactly one copy of the money maths. Keep it that way.** Never
+recompute money inside `jarvis-signals.js`.
+
+**Blocker 3 — gross vs net. Effectively settled by consistency, worth revisiting.**
+`totalIncome` folds in `calcGoTabIncome`, which is hours × rate — **gross**. So
+Jarvis is gross because the Finance tab is gross, and the two agree, which was
+the higher priority. If Jayden later wants net, change it in `financeSummary`
+and both move together. `estimateTax` already exists inside `WorkSection`.
 
 The original framing of this blocker, kept because it explains the data model:
 `financeSource` gates on `billsTotal > 0`, and no such field exists anywhere in
