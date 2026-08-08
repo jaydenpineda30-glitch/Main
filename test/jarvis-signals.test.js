@@ -765,3 +765,103 @@ test('a shiftLogs object shaped wrongly does not break the strip', () => {
     assert.ok(out.length > 0, 'rank went empty for shiftLogs=' + JSON.stringify(shiftLogs));
   });
 });
+
+// ── Naming the things, not just counting them ────────────────────────────────
+// "3 assessments due in the same 2-day stretch" is the right headline and a
+// dead end: he has to go and find out which three. Every multi-item candidate
+// now carries the items it is talking about, as plain data — the card renders
+// them, so nothing here composes markup and there is no injection surface.
+
+const ITEM_CAP = 5;
+
+test('the pile-up names the assessments it is counting', () => {
+  const out = JS.rank(ctx({
+    data: { uni: { assessments: [
+      assess({ id: 'n', subject: 'Ethics', name: 'A1', date: '2026-08-12' }),
+      assess({ id: 'c1', subject: 'Tax', name: 'Assessment 1', date: '2026-09-05' }),
+      assess({ id: 'c2', subject: 'Budget', name: 'Assignment 2', date: '2026-09-05' }),
+      assess({ id: 'c3', subject: 'AIS', name: 'Assessment 1', date: '2026-09-06' })
+    ] } }
+  }));
+  const items = byId(out, 'uni.crunch').items;
+  assert.strictEqual(items.length, 3);
+  assert.ok(/Tax/.test(items[0].label), 'got: ' + items[0].label);
+  assert.ok(items.every((i) => i.sub), 'every item needs its date');
+  assert.deepStrictEqual(items.map((i) => i.id), ['c1', 'c2', 'c3']);
+});
+
+test('the overdue-assessment backlog names what is in it, oldest first', () => {
+  const out = JS.rank(ctx({
+    data: { uni: { assessments: [
+      assess({ id: 'a', subject: 'Spreadsheets', name: 'AT1', date: '2026-07-01' }),
+      assess({ id: 'b', subject: 'WIA', name: 'A1', date: '2026-07-20' })
+    ] } }
+  }));
+  const items = byId(out, 'uni.overdue').items;
+  assert.deepStrictEqual(items.map((i) => i.id), ['a', 'b']);
+});
+
+test('overdue tasks name themselves', () => {
+  const out = JS.rank(ctx({
+    data: { personal: { tasks: [
+      task({ id: 1, name: 'Chapter review questions', due: '2026-08-01' }),
+      task({ id: 2, name: 'Email teachers', due: '2026-08-03' }),
+      task({ id: 3, name: 'not due', due: null })
+    ] } }
+  }));
+  const items = byId(out, 'tasks.attention').items;
+  assert.ok(items.length >= 2, 'expected the overdue tasks listed, got ' + items.length);
+  assert.ok(items.every((i) => !/not due/.test(i.label)), 'undated task must not be listed');
+});
+
+test('unsaved shift notes show the date and a glimpse of the text', () => {
+  const out = JS.rank(ctx({
+    data: { work: { shiftLogs: {
+      a: { date: '2026-06-20', time: '16:00–22:00', notes: '',
+           draftNotes: 'Configured the whole onboarding process via manager dashboard' }
+    } } } }
+  ));
+  const items = byId(out, 'work.unsavedNotes').items;
+  assert.strictEqual(items.length, 1);
+  assert.ok(/20 June/.test(items[0].label), 'got: ' + items[0].label);
+  assert.ok(/Configured the whole onboarding/.test(items[0].sub), 'got: ' + items[0].sub);
+});
+
+test('item lists are capped so one bad semester cannot flood the card', () => {
+  const many = [];
+  for (let i = 0; i < 30; i++) {
+    many.push(assess({ id: 'x' + i, subject: 'S' + i, name: 'A', date: '2026-07-01' }));
+  }
+  const out = JS.rank(ctx({ data: { uni: { assessments: many } } }));
+  assert.ok(byId(out, 'uni.overdue').items.length <= ITEM_CAP,
+    'got ' + byId(out, 'uni.overdue').items.length);
+});
+
+test('every item is plain, trimmed, renderable data', () => {
+  const out = JS.rank(ctx({
+    data: {
+      uni: { assessments: [assess({ id: 'a', date: '2026-07-01' })] },
+      personal: { tasks: [task({ id: 1, name: '  <b>padded</b>  ', due: '2026-08-01' })] },
+      work: { shiftLogs: { s: { date: '2026-06-20', notes: '', draftNotes: 'x' } } }
+    }
+  }));
+  out.forEach((c) => {
+    if (!c.items) return;
+    c.items.forEach((i) => {
+      assert.ok(typeof i.label === 'string' && i.label.length, c.id + ' item has no label');
+      assert.strictEqual(i.label, i.label.trim(), c.id + ' item label is untrimmed');
+      assert.ok(typeof i.sub === 'string', c.id + ' item sub must be a string');
+      assert.ok(!/[<>]/.test(i.label + i.sub), c.id + ' item carries markup: ' + i.label);
+    });
+  });
+});
+
+test('single-subject candidates carry no item list', () => {
+  // gym and the money signal describe one thing. A one-item list is noise.
+  const out = JS.rank(ctx({
+    data: { gym: { workouts: [{ date: '2026-06-01' }] } },
+    money: AUGUST
+  }));
+  assert.strictEqual(byId(out, 'gym.idle').items, undefined);
+  assert.strictEqual(byId(out, 'finance.disposable').items, undefined);
+});

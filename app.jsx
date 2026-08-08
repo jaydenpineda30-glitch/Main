@@ -2785,6 +2785,16 @@ function JarvisCard({candidates,onOpen,cardStyle,mob}){
   const lead=list[0];
   const rest=window.JarvisSignals.top(list.slice(1),mob?2:3);
   const accent=JARVIS_BAND_COLOUR[lead.band]||T.accent;
+  // The things behind the headline. "3 assessments due in the same 2-day stretch"
+  // is a dead end without them — you have to go and find out which three.
+  //
+  // Runners-up get them too, shorter. The first cut showed them on the lead only,
+  // and on Jayden's real page that made the whole feature invisible: his lead is
+  // usually a single assessment, which has no list, while the item-rich cards —
+  // the pile-up, the overdue backlog — sit in "also considered". Those are behind
+  // a click he chose to make, so the length is his call, not a surprise.
+  const leadItems=(lead.items||[]).slice(0,mob?3:5);
+  const altItems=function(c){return (c.items||[]).slice(0,mob?2:3);};
 
   return(
     <div className="card-rim jarvis-card" style={{...cardStyle,"--jarvis-accent":accent}}>
@@ -2797,6 +2807,20 @@ function JarvisCard({candidates,onOpen,cardStyle,mob}){
           {lead.headline}
         </div>
         <div style={{fontSize:13,color:T.text2,lineHeight:1.5,marginTop:6}}>{lead.why}</div>
+        {leadItems.length>0&&<div className="jarvis-items" style={{marginTop:10,display:"flex",flexDirection:"column",gap:5,
+            borderLeft:"1.5px solid "+accent+"55",paddingLeft:10}}>
+          {leadItems.map(function(it,i){
+            return(
+              <div key={(it.id==null?i:it.id)+"-"+i} style={{"--i":i,display:"flex",gap:8,alignItems:"baseline",minWidth:0}}>
+                <div style={{fontSize:12,color:T.text,lineHeight:1.35,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{it.label}</div>
+                {it.sub&&<div style={{fontSize:10.5,color:T.text3,flexShrink:0,whiteSpace:"nowrap"}}>{it.sub}</div>}
+              </div>
+            );
+          })}
+          {(lead.items||[]).length>leadItems.length&&<div style={{fontSize:10.5,color:T.text3}}>
+            +{(lead.items||[]).length-leadItems.length} more
+          </div>}
+        </div>}
         {lead.cta&&<button onClick={function(){onOpen&&onOpen(lead.cta.page);}}
           style={{...btnGlass,marginTop:12,padding:"6px 14px",fontSize:12}}>{lead.cta.label}</button>}
       </div>
@@ -2816,6 +2840,22 @@ function JarvisCard({candidates,onOpen,cardStyle,mob}){
                 <div style={{minWidth:0,flex:1}}>
                   <div style={{fontSize:12.5,color:T.text,lineHeight:1.4}}>{c.headline}</div>
                   <div style={{fontSize:11,color:T.text3,lineHeight:1.4,marginTop:2}}>{c.why}</div>
+                  {altItems(c).length>0&&<div style={{marginTop:5,display:"flex",flexDirection:"column",gap:3,
+                      borderLeft:"1.5px solid "+col+"44",paddingLeft:8}}>
+                    {altItems(c).map(function(it,j){
+                      return(
+                        <div key={(it.id==null?j:it.id)+"-"+j} style={{display:"flex",gap:7,alignItems:"baseline",minWidth:0}}>
+                          <div style={{fontSize:11,color:T.text2,lineHeight:1.3,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{it.label}</div>
+                          {it.sub&&<div style={{fontSize:10,color:T.text3,flexShrink:0,whiteSpace:"nowrap"}}>{it.sub}</div>}
+                        </div>
+                      );
+                    })}
+                    {/* The headline states a count; showing fewer rows than that
+                        without saying so reads as a contradiction. */}
+                    {(c.items||[]).length>altItems(c).length&&<div style={{fontSize:10,color:T.text3}}>
+                      +{(c.items||[]).length-altItems(c).length} more
+                    </div>}
+                  </div>}
                 </div>
                 {c.cta&&<button onClick={function(){onOpen&&onOpen(c.cta.page);}}
                   style={{...btnGlass,padding:"2px 9px",fontSize:10,flexShrink:0}}>{c.cta.label}</button>}

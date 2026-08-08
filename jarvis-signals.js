@@ -73,6 +73,27 @@
     return o;
   }
 
+  // ── Items ──────────────────────────────────────────────────────────────────
+  // A headline counts things; `items` names them. "3 assessments due in the same
+  // 2-day stretch" is the right sentence and a dead end without this — he has to
+  // go and work out which three.
+  //
+  // Plain data only: {id, label, sub}. The card renders it, nothing here composes
+  // markup, so there is no injection surface even once a model is in the loop.
+  // Candidates about a single thing carry no list; a one-item list is noise.
+
+  var ITEM_CAP = 5;   // one bad semester must not push the rest of the card away
+
+  // Angle brackets stripped for the same reason jarvis-view.js strips them: this
+  // is rendered as text, and a task named "<b>x</b>" should read as itself.
+  function label(s, n) {
+    return trim(String(s == null ? '' : s).replace(/[<>]/g, ' ').replace(/\s+/g, ' '), n || 60);
+  }
+
+  function items(list, fn) {
+    return arr(list).slice(0, ITEM_CAP).map(fn).filter(function (i) { return i && i.label; });
+  }
+
   // ── Assessment detection ───────────────────────────────────────────────────
   // Lifted from the retired Daily Check-in (app.jsx:341–405). Tells a real
   // assessment apart from a weekly lecture in the Google Calendar feed, which
@@ -255,7 +276,13 @@
              'Overdue assessments do not get cheaper. Whatever can still be ' +
              'salvaged is worth salvaging today.',
         cta: uniCta, view: 'uni',
-        facts: { overdue: overdue.length, worstOverdueDays: worstDays, name: worstName, date: overdue[0].a.date }
+        facts: { overdue: overdue.length, worstOverdueDays: worstDays, name: worstName, date: overdue[0].a.date },
+        items: items(overdue, function (x) {
+          return {
+            id: x.a.id, label: label(assessName(x.a)),
+            sub: Math.abs(x.inDays) + ' ' + plural(Math.abs(x.inDays), 'day', 'days') + ' ago'
+          };
+        })
       }));
     }
 
@@ -283,7 +310,10 @@
         facts: {
           count: cluster.count, subjects: cluster.subjects,
           inDays: cluster.inDays, span: cluster.span, date: cluster.items[0].a.date
-        }
+        },
+        items: items(cluster.items, function (x) {
+          return { id: x.a.id, label: label(assessName(x.a)), sub: niceDate(x.a.date) };
+        })
       }));
     }
 
@@ -353,13 +383,28 @@
     };
     var base = { id: 'tasks.attention', domain: 'tasks', cta: { label: 'Tasks', page: 'Personal' }, view: 'tasks', facts: facts };
     var name = function (t) { return trim(t && t.name, 40); };
+    // Each branch describes a different set, so each lists its own — the urgent
+    // branch must not show the untouched pile and call it urgent.
+    var taskItems = function (list) {
+      return items(list, function (t) {
+        var d = t && t.due ? daysApart(ctx.today, t.due) : null;
+        return {
+          id: t && t.id, label: label(t && t.name, 50),
+          sub: d == null ? 'no due date'
+            : d > 0 ? d + ' ' + plural(d, 'day', 'days') + ' overdue'
+            : d === 0 ? 'due today'
+            : 'due in ' + Math.abs(d) + ' ' + plural(Math.abs(d), 'day', 'days')
+        };
+      });
+    };
 
     if (overdue.length >= 3 || worst > 3) {
       return [candidate(Object.assign({}, base, {
         score: 90,
         headline: overdue.length + ' ' + plural(overdue.length, 'task is', 'tasks are') + ' overdue',
         why: 'Oldest is ' + worst + ' ' + plural(worst, 'day', 'days') + ' past due — "' + name(overdue[0]) +
-             '". This has stopped being a list and started being a backlog.'
+             '". This has stopped being a list and started being a backlog.',
+        items: taskItems(overdue)
       }))];
     }
     if (overdue.length) {
@@ -369,27 +414,31 @@
         // Describes only this task's own trajectory. It cannot say "the paragraph
         // above", because as a runner-up there is no such paragraph.
         why: 'Still small at ' + worst + ' ' + plural(worst, 'day', 'days') +
-             '. Clearing it today is the difference between one late task and a backlog.'
+             '. Clearing it today is the difference between one late task and a backlog.',
+        items: taskItems(overdue)
       }))];
     }
     if (dueSoon.length) {
       return [candidate(Object.assign({}, base, {
         score: 70,
         headline: dueSoon.length + ' ' + plural(dueSoon.length, 'task', 'tasks') + ' due within two days',
-        why: 'Next up is "' + name(dueSoon[0]) + '".'
+        why: 'Next up is "' + name(dueSoon[0]) + '".',
+        items: taskItems(dueSoon)
       }))];
     }
     if (urgent.length) {
       return [candidate(Object.assign({}, base, {
         score: 55, headline: 'Urgent task open: "' + name(urgent[0]) + '"',
-        why: 'Flagged urgent with no due date, so nothing will chase it but you.'
+        why: 'Flagged urgent with no due date, so nothing will chase it but you.',
+        items: taskItems(urgent)
       }))];
     }
     if (untouched.length) {
       return [candidate(Object.assign({}, base, {
         score: 35,
         headline: untouched.length + ' ' + plural(untouched.length, 'task has', 'tasks have') + " not moved in a week",
-        why: 'Starting with "' + name(untouched[0]) + '". Either do it, park it, or drop it.'
+        why: 'Starting with "' + name(untouched[0]) + '". Either do it, park it, or drop it.',
+        items: taskItems(untouched)
       }))];
     }
     return [];
@@ -473,7 +522,16 @@
            ' when the row closed' + (oldest ? ', the oldest on ' + niceDate(oldest) : '') +
            '. The text comes back when you reopen the shift.',
       cta: { label: 'Work', page: 'Work' }, view: 'work',
-      facts: { drafts: n, oldest: oldest }
+      facts: { drafts: n, oldest: oldest },
+      // The glimpse of his own words is the point: "Configured the whole
+      // onboarding process" is what makes it worth going back for.
+      items: items(drafts, function (e) {
+        return {
+          id: e.date || null,
+          label: niceDate(e.date) + (e.time ? ' · ' + label(e.time, 16) : ''),
+          sub: label(e.draftNotes, 70)
+        };
+      })
     })];
   }
 

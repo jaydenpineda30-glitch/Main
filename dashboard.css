@@ -155,13 +155,17 @@ button:active:not([disabled]){transform:scale(0.97);}
 @keyframes jarvis-in{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
 .jarvis-lead{animation:jarvis-in 420ms var(--ease-out) both;}
 .jarvis-alt{animation:jarvis-in 380ms var(--ease-out) both;animation-delay:calc(90ms + var(--i) * 55ms);}
+/* The items behind the lead headline stagger in after it, using the same --i
+   pattern, so naming the three assessments reads as part of the same statement
+   rather than a second card arriving. */
+.jarvis-items > *{animation:jarvis-in 340ms var(--ease-out) both;animation-delay:calc(150ms + var(--i) * 45ms);}
 .jarvis-toggle{transition:color .15s,opacity .15s;}
 .jarvis-toggle:hover{color:#cdd5e2;}
 /* The band accent is a left rule, not a fill — Jarvis states a priority, he is
    not a warning banner. */
 .jarvis-card{border-left:3px solid var(--jarvis-accent,rgba(91,140,255,0.9));}
 @media (prefers-reduced-motion: reduce){
-  .jarvis-lead,.jarvis-alt{animation:none;}
+  .jarvis-lead,.jarvis-alt,.jarvis-items > *{animation:none;}
 }
 
 /* --- Task row controls --- */

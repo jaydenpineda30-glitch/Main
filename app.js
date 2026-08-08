@@ -11006,6 +11006,18 @@ function JarvisCard(_ref8) {
   var lead = list[0];
   var rest = window.JarvisSignals.top(list.slice(1), mob ? 2 : 3);
   var accent = JARVIS_BAND_COLOUR[lead.band] || T.accent;
+  // The things behind the headline. "3 assessments due in the same 2-day stretch"
+  // is a dead end without them — you have to go and find out which three.
+  //
+  // Runners-up get them too, shorter. The first cut showed them on the lead only,
+  // and on Jayden's real page that made the whole feature invisible: his lead is
+  // usually a single assessment, which has no list, while the item-rich cards —
+  // the pile-up, the overdue backlog — sit in "also considered". Those are behind
+  // a click he chose to make, so the length is his call, not a surprise.
+  var leadItems = (lead.items || []).slice(0, mob ? 3 : 5);
+  var altItems = function altItems(c) {
+    return (c.items || []).slice(0, mob ? 2 : 3);
+  };
   return /*#__PURE__*/React.createElement("div", {
     className: "card-rim jarvis-card",
     style: _objectSpread(_objectSpread({}, cardStyle), {}, {
@@ -11051,7 +11063,51 @@ function JarvisCard(_ref8) {
       lineHeight: 1.5,
       marginTop: 6
     }
-  }, lead.why), lead.cta && /*#__PURE__*/React.createElement("button", {
+  }, lead.why), leadItems.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "jarvis-items",
+    style: {
+      marginTop: 10,
+      display: "flex",
+      flexDirection: "column",
+      gap: 5,
+      borderLeft: "1.5px solid " + accent + "55",
+      paddingLeft: 10
+    }
+  }, leadItems.map(function (it, i) {
+    return /*#__PURE__*/React.createElement("div", {
+      key: (it.id == null ? i : it.id) + "-" + i,
+      style: {
+        "--i": i,
+        display: "flex",
+        gap: 8,
+        alignItems: "baseline",
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: T.text,
+        lineHeight: 1.35,
+        minWidth: 0,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        flex: 1
+      }
+    }, it.label), it.sub && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10.5,
+        color: T.text3,
+        flexShrink: 0,
+        whiteSpace: "nowrap"
+      }
+    }, it.sub));
+  }), (lead.items || []).length > leadItems.length && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: T.text3
+    }
+  }, "+", (lead.items || []).length - leadItems.length, " more")), lead.cta && /*#__PURE__*/React.createElement("button", {
     onClick: function onClick() {
       onOpen && onOpen(lead.cta.page);
     },
@@ -11129,7 +11185,49 @@ function JarvisCard(_ref8) {
         lineHeight: 1.4,
         marginTop: 2
       }
-    }, c.why)), c.cta && /*#__PURE__*/React.createElement("button", {
+    }, c.why), altItems(c).length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 5,
+        display: "flex",
+        flexDirection: "column",
+        gap: 3,
+        borderLeft: "1.5px solid " + col + "44",
+        paddingLeft: 8
+      }
+    }, altItems(c).map(function (it, j) {
+      return /*#__PURE__*/React.createElement("div", {
+        key: (it.id == null ? j : it.id) + "-" + j,
+        style: {
+          display: "flex",
+          gap: 7,
+          alignItems: "baseline",
+          minWidth: 0
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11,
+          color: T.text2,
+          lineHeight: 1.3,
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          flex: 1
+        }
+      }, it.label), it.sub && /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 10,
+          color: T.text3,
+          flexShrink: 0,
+          whiteSpace: "nowrap"
+        }
+      }, it.sub));
+    }), (c.items || []).length > altItems(c).length && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: T.text3
+      }
+    }, "+", (c.items || []).length - altItems(c).length, " more"))), c.cta && /*#__PURE__*/React.createElement("button", {
       onClick: function onClick() {
         onOpen && onOpen(c.cta.page);
       },
