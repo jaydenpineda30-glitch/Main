@@ -2826,6 +2826,12 @@ function JarvisCard({candidates,onOpen,cardStyle,mob,geminiKey,data,onRunProposa
   // a click he chose to make, so the length is his call, not a surprise.
   const leadItems=(lead.items||[]).slice(0,mob?3:5);
   const altItems=function(c){return (c.items||[]).slice(0,mob?2:3);};
+  // Every id the candidate named, so the destination page can scroll to them.
+  // Not just the ones shown: the list is trimmed for space, but "+1 more" is
+  // still something he was told about and should still be marked when he lands.
+  const idsOf=function(c){
+    return (c.items||[]).map(function(it){return it.id;}).filter(function(v){return v!=null;});
+  };
 
   return(
     <div className="card-rim jarvis-card" style={{...cardStyle,"--jarvis-accent":accent}}>
@@ -2852,7 +2858,7 @@ function JarvisCard({candidates,onOpen,cardStyle,mob,geminiKey,data,onRunProposa
             +{(lead.items||[]).length-leadItems.length} more
           </div>}
         </div>}
-        {lead.cta&&<button onClick={function(){onOpen&&onOpen(lead.cta.page);}}
+        {lead.cta&&<button onClick={function(){onOpen&&onOpen(lead.cta.page,idsOf(lead));}}
           style={{...btnGlass,marginTop:12,padding:"6px 14px",fontSize:12}}>{lead.cta.label}</button>}
       </div>
 
@@ -2888,7 +2894,7 @@ function JarvisCard({candidates,onOpen,cardStyle,mob,geminiKey,data,onRunProposa
                     </div>}
                   </div>}
                 </div>
-                {c.cta&&<button onClick={function(){onOpen&&onOpen(c.cta.page);}}
+                {c.cta&&<button onClick={function(){onOpen&&onOpen(c.cta.page,idsOf(c));}}
                   style={{...btnGlass,padding:"2px 9px",fontSize:10,flexShrink:0}}>{c.cta.label}</button>}
               </div>
             );
@@ -2941,7 +2947,7 @@ function JarvisCard({candidates,onOpen,cardStyle,mob,geminiKey,data,onRunProposa
                 {answer.done==="done"&&<div style={{fontSize:11.5,color:T.text3,marginTop:8}}>Done.</div>}
                 {answer.done==="cancelled"&&<div style={{fontSize:11.5,color:T.text3,marginTop:8}}>Left alone.</div>}
                 {answer.done==="failed"&&<div style={{fontSize:11.5,color:T.warn,marginTop:8}}>That did not go through. Nothing changed.</div>}
-                {answer.cta&&!answer.done&&<button onClick={function(){onOpen&&onOpen(answer.cta.page);}}
+                {answer.cta&&!answer.done&&<button onClick={function(){onOpen&&onOpen(answer.cta.page,(answer.show&&answer.show.ids)||[]);}}
                   style={{...btnGlass,marginTop:9,padding:"5px 12px",fontSize:11}}>{answer.cta.label}</button>}
               </div>}
         </div>}
@@ -3086,6 +3092,13 @@ function App(){
 
   const [showMonitor,setShowMonitor]=useState(false);
   const [toast,setToast]=useState(null); // {msg,type:'error'|'success'|'warn'}
+  // Stage 4. Jarvis names specific things — "3 assessments due in the same 2-day
+  // stretch" — and sending you to the Uni page to go and find them yourself
+  // undoes most of the point. This carries the ids across the navigation so the
+  // page can scroll to them and mark them, which is what "the cards are the
+  // detail underneath" has to mean in practice.
+  // `at` is a timestamp so asking for the same rows twice still re-triggers.
+  const [jarvisFocus,setJarvisFocus]=useState(null); // {ids:[], at:number}
   const [errLog,setErrLog]=useState([]);
   const [showErrPanel,setShowErrPanel]=useState(false);
   // Google Calendar sync state
@@ -3109,6 +3122,44 @@ function App(){
 
   // Call this anywhere in App to show a brief auto-dismissing notification.
   // Child components can call window.showToast() which is wired up below.
+  // Runs after the destination page has rendered. Scrolls the first named row
+  // into view and flashes all of them, then clears itself so a later unrelated
+  // render cannot re-trigger the highlight.
+  useEffect(function(){
+    if(!jarvisFocus||!jarvisFocus.ids||!jarvisFocus.ids.length)return undefined;
+    // Keep looking for a short while, then stop. Silence is the right failure
+    // here: a hand-off that points nowhere should point nowhere quietly.
+    //
+    // setTimeout rather than requestAnimationFrame, deliberately. rAF does not
+    // fire in a hidden tab, so clicking a Jarvis button and switching away meant
+    // the highlight never landed and the retry never advanced — you would come
+    // back to the right page with nothing marked. Found while debugging this in
+    // a background tab, which is also why the first version appeared broken when
+    // it was not.
+    var timer=0,cancelled=false,waited=0;
+    var DEADLINE=1500,STEP=50;
+    var look=function(){
+      if(cancelled)return;
+      var found=[];
+      jarvisFocus.ids.forEach(function(id){
+        var el=document.querySelector('[data-jid="'+String(id).replace(/["\\]/g,"")+'"]');
+        if(el)found.push(el);
+      });
+      if(!found.length){
+        waited+=STEP;
+        if(waited<DEADLINE)timer=setTimeout(look,STEP);
+        return;
+      }
+      found[0].scrollIntoView({behavior:"smooth",block:"center"});
+      found.forEach(function(el){el.classList.add("jarvis-focus");});
+      setTimeout(function(){
+        found.forEach(function(el){el.classList.remove("jarvis-focus");});
+      },2600);
+    };
+    timer=setTimeout(look,0);
+    return function(){cancelled=true;clearTimeout(timer);};
+  },[jarvisFocus,page]);
+
   function showToast(msg,type){
     setToast({msg:msg,type:type||"error"});
     clearTimeout(window._toastTimer);
@@ -4852,7 +4903,10 @@ function App(){
           {/* Pinned: Jarvis leads, then the calendar, then the reorderable grid */}
           <ErrorBoundary name="Jarvis">
             <JarvisCard candidates={jarvisCandidates} mob={mob}
-              onOpen={function(p){setPage(p);}}
+              onOpen={function(p,ids){
+                setPage(p);
+                setJarvisFocus(ids&&ids.length?{ids:ids,at:Date.now()}:null);
+              }}
               geminiKey={geminiKey} data={data}
               onRunProposal={function(r){
                 const ok=runJarvisProposal(r);
@@ -4934,7 +4988,7 @@ function App(){
                       const dotCol=a.done?"#69f0ae":isPast?"#ff6b6b":isUrg?"#ffd166":"#5b8cff";
                       const dotGlow=a.done?"0 0 6px #69f0ae":isPast?"0 0 6px #ff6b6b":isUrg?"0 0 5px #ffd166":"0 0 6px #5b8cff";
                       const barCol=isPast?T.danger:a.done?"#69f0ae":"#5b8cff";
-                      return(<div key={a.id} style={{position:"relative",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",paddingLeft:14,borderRadius:8,background:T.bg3,border:"0.5px solid "+(isPast&&!a.done?"rgba(255,107,107,0.2)":T.border),marginBottom:5,opacity:a.done?0.5:1,overflow:"hidden",transition:"all 0.15s"}}>
+                      return(<div key={a.id} data-jid={a.id} style={{position:"relative",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",paddingLeft:14,borderRadius:8,background:T.bg3,border:"0.5px solid "+(isPast&&!a.done?"rgba(255,107,107,0.2)":T.border),marginBottom:5,opacity:a.done?0.5:1,overflow:"hidden",transition:"all 0.15s"}}>
                         <div style={{position:"absolute",left:0,top:5,bottom:5,width:2,borderRadius:1,background:barCol,opacity:a.done?0.35:isPast?1:0.7}}/>
                         <div style={{width:18,height:18,borderRadius:5,border:"1.5px solid "+(a.done?"#69f0ae":T.border2),background:a.done?"#69f0ae":"transparent",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={function(){toggleAssessmentDone(a.id);}}>
                           {a.done&&<span style={{fontSize:10,color:"#05071a",fontWeight:700}}>✓</span>}
@@ -5003,7 +5057,7 @@ function App(){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={sT}>Tasks</div><div style={{display:"flex",gap:6}}>{doneTasks.length>0&&<button style={{...btn,color:T.success,borderColor:T.success+"50"}} onClick={archiveDone}>Archive done</button>}<button style={btn} onClick={function(){setModal("add_task");setMForm({priority:"normal",cat:"Errands"});}}>+ Task</button></div></div>
             {editTaskId&&<div style={{marginBottom:14,padding:"10px 12px",background:T.bg3,borderRadius:8,border:"0.5px solid "+T.accent+"40"}}><div style={{fontSize:11,color:T.accent,marginBottom:8,fontWeight:500}}>Editing task</div><div style={{display:"flex",flexDirection:"column",gap:6}}><input style={inp} value={editTaskForm.name||""} onChange={function(ev){setEditTaskForm(function(f){return{...f,name:ev.target.value};});}} placeholder="Task name"/><div style={{display:"grid",gridTemplateColumns:mob?"1fr":"1fr 1fr 1fr",gap:6}}><select style={inp} value={editTaskForm.cat||"Errands"} onChange={function(ev){setEditTaskForm(function(f){return{...f,cat:ev.target.value};});}}>{TASK_CATS.map(function(c){return<option key={c}>{c}</option>;})}</select><select style={inp} value={editTaskForm.priority||"normal"} onChange={function(ev){setEditTaskForm(function(f){return{...f,priority:ev.target.value};});}}><option value="normal">Normal</option><option value="urgent">Urgent</option></select><input type="date" style={inp} value={editTaskForm.due||""} onChange={function(ev){setEditTaskForm(function(f){return{...f,due:ev.target.value};});}}/></div><div style={{display:"flex",gap:6,justifyContent:"flex-end"}}><button style={btn} onClick={function(){setEditTaskId(null);}}>Cancel</button><button style={btnP} onClick={saveEditTask}>Save</button></div></div></div>}
             {data.personal.tasks.length===0&&<div style={{fontSize:12,color:T.text2}}>No tasks yet.</div>}
-            {["urgent","normal"].map(function(pri){const tasks=data.personal.tasks.filter(function(t){return t.priority===pri&&!t.done;}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});if(tasks.length===0)return null;return(<div key={pri} style={{marginBottom:14}}><div style={{fontSize:9,fontWeight:700,color:pri==="urgent"?T.danger:T.text3,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>{pri}</div>{tasks.map(function(t){const urg=taskUrg(t);const col=TUC[urg];return(<div key={t.id} style={{display:"flex",alignItems:"flex-start",gap:9,marginBottom:8,padding:"11px 13px",borderRadius:12,background:"rgba(225,234,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",boxShadow:"inset 10px 0 9px -8px "+col}}><span style={{marginTop:1,display:"flex"}}><TickCircle done={!!t.done} size={18} onClick={function(){toggleTask(t.id);}}/></span><div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:10,color:col,marginTop:1}}>{t.cat} · {taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:T.text3,flexShrink:0,opacity:0.5,display:"flex"}} title="Mark done on a different day" onClick={function(){openBackdateModal(t.id);}}><UIcon name="clock" size={13}/></button><button onClick={function(){setEditTaskId(t.id);setEditTaskForm({name:t.name,cat:t.cat,priority:t.priority,due:t.due});}} style={{...btn,fontSize:10,padding:"2px 7px"}}>Edit</button></div>);})}</div>);})}
+            {["urgent","normal"].map(function(pri){const tasks=data.personal.tasks.filter(function(t){return t.priority===pri&&!t.done;}).sort(function(a,b){return new Date(a.due||"9999")-new Date(b.due||"9999");});if(tasks.length===0)return null;return(<div key={pri} style={{marginBottom:14}}><div style={{fontSize:9,fontWeight:700,color:pri==="urgent"?T.danger:T.text3,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>{pri}</div>{tasks.map(function(t){const urg=taskUrg(t);const col=TUC[urg];return(<div key={t.id} data-jid={t.id} style={{display:"flex",alignItems:"flex-start",gap:9,marginBottom:8,padding:"11px 13px",borderRadius:12,background:"rgba(225,234,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",boxShadow:"inset 10px 0 9px -8px "+col}}><span style={{marginTop:1,display:"flex"}}><TickCircle done={!!t.done} size={18} onClick={function(){toggleTask(t.id);}}/></span><div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500,color:T.text,textDecoration:t.done?"line-through":"none"}}>{t.name}</div><div style={{fontSize:10,color:col,marginTop:1}}>{t.cat} · {taskLabel(t)}</div></div><button style={{background:"none",border:"none",padding:"2px 4px",cursor:"pointer",color:T.text3,flexShrink:0,opacity:0.5,display:"flex"}} title="Mark done on a different day" onClick={function(){openBackdateModal(t.id);}}><UIcon name="clock" size={13}/></button><button onClick={function(){setEditTaskId(t.id);setEditTaskForm({name:t.name,cat:t.cat,priority:t.priority,due:t.due});}} style={{...btn,fontSize:10,padding:"2px 7px"}}>Edit</button></div>);})}</div>);})}
             {(function(){const doneP=data.personal.tasks.filter(function(t){return t.done;});if(doneP.length===0)return null;return(<div style={{marginBottom:14}}><div style={{fontSize:9,fontWeight:700,color:T.text3,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>Done</div>{doneP.map(function(t){return(<div key={t.id} style={{display:"flex",alignItems:"center",gap:9,marginBottom:6,padding:"9px 13px",borderRadius:12,background:"rgba(225,234,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",opacity:0.55}}><TickCircle done={true} size={18} onClick={function(){toggleTask(t.id);}}/><div style={{flex:1,minWidth:0,fontSize:12,color:T.text3,textDecoration:"line-through"}}>{t.name}</div>{t.completedAt&&<div style={{fontSize:10,color:T.text3,flexShrink:0}}>{fmtDate(t.completedAt)}{t.completedTime?" · "+fmtTime12(t.completedTime):""}</div>}</div>);})}</div>);})()}
           </div>
           {(data.personal.archived||[]).length>0&&<div className="card-rim" style={card()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:12,fontWeight:500,color:T.text3}}>Archived ({(data.personal.archived||[]).length})</div><button style={btn} onClick={function(){setShowArch(function(a){return !a;});}}>{showArch?"Hide":"Show"}</button></div>{showArch&&(data.personal.archived||[]).slice().reverse().map(function(t){return(<div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"6px 0",borderBottom:"0.5px solid "+T.border}}><div><span style={{color:T.text3,textDecoration:"line-through"}}>{t.name}</span><span style={{fontSize:10,color:T.text3,marginLeft:8}}>{fmtDate(t.archivedAt)}</span></div><button onClick={function(){restoreTask(t.id);}} style={{...btn,fontSize:10,padding:"2px 8px",color:T.accent,borderColor:T.accent+"50"}}>Restore</button></div>);})}</div>}

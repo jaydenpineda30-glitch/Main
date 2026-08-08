@@ -159,6 +159,15 @@ button:active:not([disabled]){transform:scale(0.97);}
    pattern, so naming the three assessments reads as part of the same statement
    rather than a second card arriving. */
 .jarvis-items > *{animation:jarvis-in 340ms var(--ease-out) both;animation-delay:calc(150ms + var(--i) * 45ms);}
+/* Landing from a Jarvis hand-off. He named specific rows, so they are marked on
+   arrival rather than leaving you to find them. It fades out on its own: a
+   permanent highlight would still be there tomorrow, meaning nothing. */
+@keyframes jarvis-focus-fade{
+  0%{box-shadow:0 0 0 0 var(--jarvis-accent,#5b8cff);background-color:rgba(91,140,255,0.16);}
+  20%{box-shadow:0 0 0 2px var(--jarvis-accent,#5b8cff);background-color:rgba(91,140,255,0.16);}
+  100%{box-shadow:0 0 0 0 rgba(91,140,255,0);background-color:rgba(91,140,255,0);}
+}
+.jarvis-focus{animation:jarvis-focus-fade 2600ms var(--ease-out) both;border-radius:12px;}
 .jarvis-toggle{transition:color .15s,opacity .15s;}
 .jarvis-toggle:hover{color:#cdd5e2;}
 /* The band accent is a left rule, not a fill — Jarvis states a priority, he is
@@ -166,6 +175,9 @@ button:active:not([disabled]){transform:scale(0.97);}
 .jarvis-card{border-left:3px solid var(--jarvis-accent,rgba(91,140,255,0.9));}
 @media (prefers-reduced-motion: reduce){
   .jarvis-lead,.jarvis-alt,.jarvis-items > *{animation:none;}
+  /* The highlight still has to be visible without motion, so it is kept and
+     simply not animated — otherwise the hand-off arrives pointing at nothing. */
+  .jarvis-focus{animation:none;box-shadow:0 0 0 2px var(--jarvis-accent,#5b8cff);}
 }
 
 /* --- Task row controls --- */

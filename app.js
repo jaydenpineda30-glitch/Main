@@ -11072,6 +11072,16 @@ function JarvisCard(_ref8) {
   var altItems = function altItems(c) {
     return (c.items || []).slice(0, mob ? 2 : 3);
   };
+  // Every id the candidate named, so the destination page can scroll to them.
+  // Not just the ones shown: the list is trimmed for space, but "+1 more" is
+  // still something he was told about and should still be marked when he lands.
+  var idsOf = function idsOf(c) {
+    return (c.items || []).map(function (it) {
+      return it.id;
+    }).filter(function (v) {
+      return v != null;
+    });
+  };
   return /*#__PURE__*/React.createElement("div", {
     className: "card-rim jarvis-card",
     style: _objectSpread(_objectSpread({}, cardStyle), {}, {
@@ -11163,7 +11173,7 @@ function JarvisCard(_ref8) {
     }
   }, "+", (lead.items || []).length - leadItems.length, " more")), lead.cta && /*#__PURE__*/React.createElement("button", {
     onClick: function onClick() {
-      onOpen && onOpen(lead.cta.page);
+      onOpen && onOpen(lead.cta.page, idsOf(lead));
     },
     style: _objectSpread(_objectSpread({}, btnGlass), {}, {
       marginTop: 12,
@@ -11283,7 +11293,7 @@ function JarvisCard(_ref8) {
       }
     }, "+", (c.items || []).length - altItems(c).length, " more"))), c.cta && /*#__PURE__*/React.createElement("button", {
       onClick: function onClick() {
-        onOpen && onOpen(c.cta.page);
+        onOpen && onOpen(c.cta.page, idsOf(c));
       },
       style: _objectSpread(_objectSpread({}, btnGlass), {}, {
         padding: "2px 9px",
@@ -11428,7 +11438,7 @@ function JarvisCard(_ref8) {
     }
   }, "That did not go through. Nothing changed."), answer.cta && !answer.done && /*#__PURE__*/React.createElement("button", {
     onClick: function onClick() {
-      onOpen && onOpen(answer.cta.page);
+      onOpen && onOpen(answer.cta.page, answer.show && answer.show.ids || []);
     },
     style: _objectSpread(_objectSpread({}, btnGlass), {}, {
       marginTop: 9,
@@ -11905,16 +11915,26 @@ function App() {
     _useState270 = _slicedToArray(_useState269, 2),
     toast = _useState270[0],
     setToast = _useState270[1]; // {msg,type:'error'|'success'|'warn'}
-  var _useState271 = useState([]),
+  // Stage 4. Jarvis names specific things — "3 assessments due in the same 2-day
+  // stretch" — and sending you to the Uni page to go and find them yourself
+  // undoes most of the point. This carries the ids across the navigation so the
+  // page can scroll to them and mark them, which is what "the cards are the
+  // detail underneath" has to mean in practice.
+  // `at` is a timestamp so asking for the same rows twice still re-triggers.
+  var _useState271 = useState(null),
     _useState272 = _slicedToArray(_useState271, 2),
-    errLog = _useState272[0],
-    setErrLog = _useState272[1];
-  var _useState273 = useState(false),
+    jarvisFocus = _useState272[0],
+    setJarvisFocus = _useState272[1]; // {ids:[], at:number}
+  var _useState273 = useState([]),
     _useState274 = _slicedToArray(_useState273, 2),
-    showErrPanel = _useState274[0],
-    setShowErrPanel = _useState274[1];
+    errLog = _useState274[0],
+    setErrLog = _useState274[1];
+  var _useState275 = useState(false),
+    _useState276 = _slicedToArray(_useState275, 2),
+    showErrPanel = _useState276[0],
+    setShowErrPanel = _useState276[1];
   // Google Calendar sync state
-  var _useState275 = useState(function () {
+  var _useState277 = useState(function () {
       try {
         var c = localStorage.getItem('__gcal_events__');
         return c ? JSON.parse(c) : [];
@@ -11922,18 +11942,18 @@ function App() {
         return [];
       }
     }),
-    _useState276 = _slicedToArray(_useState275, 2),
-    gcalEvents = _useState276[0],
-    setGcalEvents = _useState276[1];
-  var _useState277 = useState(false),
     _useState278 = _slicedToArray(_useState277, 2),
-    gcalConnected = _useState278[0],
-    setGcalConnected = _useState278[1];
-  var _useState279 = useState([]),
+    gcalEvents = _useState278[0],
+    setGcalEvents = _useState278[1];
+  var _useState279 = useState(false),
     _useState280 = _slicedToArray(_useState279, 2),
-    gcalCalendars = _useState280[0],
-    setGcalCalendars = _useState280[1];
-  var _useState281 = useState(function () {
+    gcalConnected = _useState280[0],
+    setGcalConnected = _useState280[1];
+  var _useState281 = useState([]),
+    _useState282 = _slicedToArray(_useState281, 2),
+    gcalCalendars = _useState282[0],
+    setGcalCalendars = _useState282[1];
+  var _useState283 = useState(function () {
       try {
         var s = localStorage.getItem('__gcal_selected__');
         return s ? JSON.parse(s) : [];
@@ -11941,72 +11961,72 @@ function App() {
         return [];
       }
     }),
-    _useState282 = _slicedToArray(_useState281, 2),
-    gcalSelectedIds = _useState282[0],
-    setGcalSelectedIds = _useState282[1];
-  var _useState283 = useState(false),
     _useState284 = _slicedToArray(_useState283, 2),
-    gcalReady = _useState284[0],
-    setGcalReady = _useState284[1];
+    gcalSelectedIds = _useState284[0],
+    setGcalSelectedIds = _useState284[1];
   var _useState285 = useState(false),
     _useState286 = _slicedToArray(_useState285, 2),
-    showCalPicker = _useState286[0],
-    setShowCalPicker = _useState286[1];
-  // Syllabus / assessment hub state
+    gcalReady = _useState286[0],
+    setGcalReady = _useState286[1];
   var _useState287 = useState(false),
     _useState288 = _slicedToArray(_useState287, 2),
-    showSyllabusImport = _useState288[0],
-    setShowSyllabusImport = _useState288[1];
-  var _useState289 = useState(""),
+    showCalPicker = _useState288[0],
+    setShowCalPicker = _useState288[1];
+  // Syllabus / assessment hub state
+  var _useState289 = useState(false),
     _useState290 = _slicedToArray(_useState289, 2),
-    syllabusText = _useState290[0],
-    setSyllabusText = _useState290[1];
+    showSyllabusImport = _useState290[0],
+    setShowSyllabusImport = _useState290[1];
   var _useState291 = useState(""),
     _useState292 = _slicedToArray(_useState291, 2),
-    syllabusStart = _useState292[0],
-    setSyllabusStart = _useState292[1];
-  var _useState293 = useState(function () {
+    syllabusText = _useState292[0],
+    setSyllabusText = _useState292[1];
+  var _useState293 = useState(""),
+    _useState294 = _slicedToArray(_useState293, 2),
+    syllabusStart = _useState294[0],
+    setSyllabusStart = _useState294[1];
+  var _useState295 = useState(function () {
       try {
         return localStorage.getItem('__gemini_key__') || "";
       } catch (_) {
         return "";
       }
     }),
-    _useState294 = _slicedToArray(_useState293, 2),
-    geminiKey = _useState294[0],
-    setGeminiKey = _useState294[1];
-  var _useState295 = useState(function () {
+    _useState296 = _slicedToArray(_useState295, 2),
+    geminiKey = _useState296[0],
+    setGeminiKey = _useState296[1];
+  var _useState297 = useState(function () {
       try {
         return localStorage.getItem('__groq_key__') || "";
       } catch (_) {
         return "";
       }
     }),
-    _useState296 = _slicedToArray(_useState295, 2),
-    groqKey = _useState296[0],
-    setGroqKey = _useState296[1];
-  var _useState297 = useState(false),
     _useState298 = _slicedToArray(_useState297, 2),
-    geminiLoading = _useState298[0],
-    setGeminiLoading = _useState298[1];
-  var _useState299 = useState(null),
+    groqKey = _useState298[0],
+    setGroqKey = _useState298[1];
+  var _useState299 = useState(false),
     _useState300 = _slicedToArray(_useState299, 2),
-    geminiPreview = _useState300[0],
-    setGeminiPreview = _useState300[1];
-  var _useState301 = useState(false),
+    geminiLoading = _useState300[0],
+    setGeminiLoading = _useState300[1];
+  var _useState301 = useState(null),
     _useState302 = _slicedToArray(_useState301, 2),
-    showAddAssess = _useState302[0],
-    setShowAddAssess = _useState302[1];
-  var _useState303 = useState({
+    geminiPreview = _useState302[0],
+    setGeminiPreview = _useState302[1];
+  var _useState303 = useState(false),
+    _useState304 = _slicedToArray(_useState303, 2),
+    showAddAssess = _useState304[0],
+    setShowAddAssess = _useState304[1];
+  var _useState305 = useState({
       subject: data.uni.subjects && data.uni.subjects[0] && data.uni.subjects[0].name || "",
       name: "",
       type: "SUBMISSION",
       date: todayStr()
     }),
-    _useState304 = _slicedToArray(_useState303, 2),
-    addAssessForm = _useState304[0],
-    setAddAssessForm = _useState304[1];
-  var _useState305 = useState(function () {
+    _useState306 = _slicedToArray(_useState305, 2),
+    addAssessForm = _useState306[0],
+    setAddAssessForm = _useState306[1];
+  var _useState307 = useState(function () {
       try {
         var x = localStorage.getItem('__gcal_excluded__');
         return x ? JSON.parse(x) : [];
@@ -12014,12 +12034,62 @@ function App() {
         return [];
       }
     }),
-    _useState306 = _slicedToArray(_useState305, 2),
-    gcalExcludedIds = _useState306[0],
-    setGcalExcludedIds = _useState306[1];
+    _useState308 = _slicedToArray(_useState307, 2),
+    gcalExcludedIds = _useState308[0],
+    setGcalExcludedIds = _useState308[1];
 
   // Call this anywhere in App to show a brief auto-dismissing notification.
   // Child components can call window.showToast() which is wired up below.
+  // Runs after the destination page has rendered. Scrolls the first named row
+  // into view and flashes all of them, then clears itself so a later unrelated
+  // render cannot re-trigger the highlight.
+  useEffect(function () {
+    if (!jarvisFocus || !jarvisFocus.ids || !jarvisFocus.ids.length) return undefined;
+    // Keep looking for a short while, then stop. Silence is the right failure
+    // here: a hand-off that points nowhere should point nowhere quietly.
+    //
+    // setTimeout rather than requestAnimationFrame, deliberately. rAF does not
+    // fire in a hidden tab, so clicking a Jarvis button and switching away meant
+    // the highlight never landed and the retry never advanced — you would come
+    // back to the right page with nothing marked. Found while debugging this in
+    // a background tab, which is also why the first version appeared broken when
+    // it was not.
+    var timer = 0,
+      cancelled = false,
+      waited = 0;
+    var DEADLINE = 1500,
+      STEP = 50;
+    var look = function look() {
+      if (cancelled) return;
+      var found = [];
+      jarvisFocus.ids.forEach(function (id) {
+        var el = document.querySelector('[data-jid="' + String(id).replace(/["\\]/g, "") + '"]');
+        if (el) found.push(el);
+      });
+      if (!found.length) {
+        waited += STEP;
+        if (waited < DEADLINE) timer = setTimeout(look, STEP);
+        return;
+      }
+      found[0].scrollIntoView({
+        behavior: "smooth",
+        block: "center"
+      });
+      found.forEach(function (el) {
+        el.classList.add("jarvis-focus");
+      });
+      setTimeout(function () {
+        found.forEach(function (el) {
+          el.classList.remove("jarvis-focus");
+        });
+      }, 2600);
+    };
+    timer = setTimeout(look, 0);
+    return function () {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [jarvisFocus, page]);
   function showToast(msg, type) {
     setToast({
       msg: msg,
@@ -12602,18 +12672,18 @@ function App() {
       money: jarvisMoney(data, dedupedEvents)
     });
   }, [data, dedupedEvents]);
-  var _useState307 = useState(false),
-    _useState308 = _slicedToArray(_useState307, 2),
-    layoutEditing = _useState308[0],
-    setLayoutEditing = _useState308[1];
-  var _useState309 = useState(null),
+  var _useState309 = useState(false),
     _useState310 = _slicedToArray(_useState309, 2),
-    dragId = _useState310[0],
-    setDragId = _useState310[1];
+    layoutEditing = _useState310[0],
+    setLayoutEditing = _useState310[1];
   var _useState311 = useState(null),
     _useState312 = _slicedToArray(_useState311, 2),
-    dropIdx = _useState312[0],
-    setDropIdx = _useState312[1];
+    dragId = _useState312[0],
+    setDragId = _useState312[1];
+  var _useState313 = useState(null),
+    _useState314 = _slicedToArray(_useState313, 2),
+    dropIdx = _useState314[0],
+    setDropIdx = _useState314[1];
   function saveLayout(next) {
     trk("home.layout_save");
     setData(function (p) {
@@ -17023,8 +17093,12 @@ function App() {
   }, /*#__PURE__*/React.createElement(JarvisCard, {
     candidates: jarvisCandidates,
     mob: mob,
-    onOpen: function onOpen(p) {
+    onOpen: function onOpen(p, ids) {
       setPage(p);
+      setJarvisFocus(ids && ids.length ? {
+        ids: ids,
+        at: Date.now()
+      } : null);
     },
     geminiKey: geminiKey,
     data: data,
@@ -17222,6 +17296,7 @@ function App() {
         var barCol = isPast ? T.danger : a.done ? "#69f0ae" : "#5b8cff";
         return /*#__PURE__*/React.createElement("div", {
           key: a.id,
+          "data-jid": a.id,
           style: {
             position: "relative",
             display: "flex",
@@ -17719,6 +17794,7 @@ function App() {
       var col = TUC[urg];
       return /*#__PURE__*/React.createElement("div", {
         key: t.id,
+        "data-jid": t.id,
         style: {
           display: "flex",
           alignItems: "flex-start",
