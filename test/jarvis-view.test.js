@@ -15,11 +15,11 @@ const JV = require('../jarvis-view.js');
 test('a clean reply survives intact', () => {
   const out = JV.parseViewSpec(JSON.stringify({
     say: 'The SPREADSHEETS assessment is the one that matters today.',
-    show: { view: 'task-list', ids: [1722308451234] },
+    show: { view: 'tasks', ids: [1722308451234] },
     cta: { label: 'Open Uni', page: 'Uni' }
   }));
   assert.strictEqual(out.say, 'The SPREADSHEETS assessment is the one that matters today.');
-  assert.strictEqual(out.show.view, 'task-list');
+  assert.strictEqual(out.show.view, 'tasks');
   assert.deepStrictEqual(out.show.ids, [1722308451234]);
   assert.deepStrictEqual(out.cta, { label: 'Open Uni', page: 'Uni' });
 });
@@ -27,10 +27,10 @@ test('a clean reply survives intact', () => {
 test('JSON wrapped in prose and code fences is still read', () => {
   // Every model does this eventually, whatever the response format asks for.
   const out = JV.parseViewSpec(
-    'Sure! Here is the view:\n```json\n{"say":"Two are overdue.","show":{"view":"task-list"}}\n```\nHope that helps.'
+    'Sure! Here is the view:\n```json\n{"say":"Two are overdue.","show":{"view":"tasks"}}\n```\nHope that helps.'
   );
   assert.strictEqual(out.say, 'Two are overdue.');
-  assert.strictEqual(out.show.view, 'task-list');
+  assert.strictEqual(out.show.view, 'tasks');
 });
 
 test('an unknown view is dropped but the sentence is kept', () => {
@@ -96,7 +96,7 @@ test('nothing usable returns null so the caller can fall back to the rules', () 
 test('ids are coerced to a clean list and junk entries are dropped', () => {
   const out = JV.parseViewSpec(JSON.stringify({
     say: 'These three.',
-    show: { view: 'task-list', ids: [1, '2', null, {}, 'abc', 4] }
+    show: { view: 'tasks', ids: [1, '2', null, {}, 'abc', 4] }
   }));
   assert.deepStrictEqual(out.show.ids, [1, '2', 'abc', 4]);
 });
@@ -118,7 +118,10 @@ test('markup in say is neutralised, because it is rendered as text', () => {
   assert.ok(!/[<>]/.test(out.say), 'angle brackets should not survive: ' + out.say);
 });
 
-test('the known views are exactly the four stage 2 ships', () => {
+test('the known views are exactly the ones the ranker can ask for', () => {
+  // Kept deliberately literal: if this list changes, the cross-module contract
+  // test in jarvis-contract.test.js should be the thing that told you to change
+  // it. See the comment on VIEWS in jarvis-view.js.
   assert.deepStrictEqual(JV.VIEWS.slice().sort(),
-    ['money', 'next-step', 'task-list', 'week']);
+    ['gym', 'money', 'tasks', 'uni', 'week']);
 });

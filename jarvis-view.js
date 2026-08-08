@@ -27,7 +27,17 @@
   // The vocabulary grows one component at a time — Jarvis cannot show what
   // nobody has wired up. Adding a name here without building the component
   // means a blank panel, so this list and renderView() move together.
-  var VIEWS = ['next-step', 'task-list', 'money', 'week'];
+  //
+  // These are exactly the view names `jarvis-signals.js` tags its candidates
+  // with. That is not a coincidence and must not become one: the ranker decides
+  // which view illustrates a candidate, and this list decides what a model is
+  // allowed to put on screen. If they diverge, the model's answer gets silently
+  // dropped. `test/jarvis-contract.test.js` fails the moment they do.
+  //
+  // The first draft of this list read ['next-step', 'task-list', 'money', 'week']
+  // — two of which named nothing that existed anywhere, while `uni`, `tasks` and
+  // `gym`, which the ranker emits constantly, were absent.
+  var VIEWS = ['money', 'uni', 'tasks', 'gym', 'week'];
 
   // Real pages in Athena's nav. A cta pointing anywhere else is a dead button.
   var PAGES = ['Home', 'Personal', 'Uni', 'Work', 'Finance', 'Gym', 'Journal', 'Projects'];

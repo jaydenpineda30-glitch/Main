@@ -466,7 +466,10 @@
       // text may only describe its own facts.
       why: 'Nothing overdue, no deadline close, nothing asking for attention. ' +
            'Genuinely a free day — spend it on whatever you actually feel like.',
-      cta: null, view: 'none', facts: { today: ctx.today }
+      // null, not 'none' — there is genuinely nothing to show, and that is the
+      // same statement `cta: null` makes. A magic string would have to be
+      // whitelisted, and then a model could ask to display it.
+      cta: null, view: null, facts: { today: ctx.today }
     });
   }
 
