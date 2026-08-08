@@ -314,8 +314,20 @@ confirm, and survives a reload.
 ### Stage 4 — Front door
 
 - Jarvis leads the home page; cards become the detail underneath
-- Boardroom tab and `boardroom-service.js` removed
+- ~~Boardroom tab and `boardroom-service.js` removed~~ — **deferred, 2026-08-09**
 - `docs/` and `HANDOFF.md` updated
+
+> **Boardroom stays, for now.** Jayden's call on 2026-08-09, reversing the
+> decision recorded under "Decisions taken 2026-08-07". Do not remove it as a
+> side effect of finishing stage 4, and do not treat it as an oversight — it was
+> asked for explicitly.
+>
+> Two things to know while it stays. It is **not currently working**: it calls
+> Groq's `openai/gpt-oss-120b` with a `__groq_key__` that does not exist in his
+> settings, so it fails on every use. And `boardroom-service.js` is on the
+> request shape Google retired on 8 June 2026, so the Gemini path inside it is
+> stale too. Keeping the tab is not the same as it working, and reviving it is a
+> separate piece of work from Jarvis.
 
 ---
 

@@ -414,6 +414,10 @@ agent can load it. Jayden has to check it himself, and the honest risks are:
   that matter, and its design is inverted — it goes *silent* when things are
   fine. Read it for reference only. Its `jarvis-service.js` is worth lifting as a
   file in stage 2 (new file, no conflict).
+- ⚠️ **Boardroom removal deferred, 2026-08-09** — Jayden's call, reversing the
+  line below. The Daily Check-in is still gone and the Projects flow is still
+  replaced; only the Boardroom tab stays. It does not currently work (no
+  `__groq_key__`), so keeping it is not the same as it working.
 - **Jarvis replaces Boardroom, the Daily Check-in, and the Projects paste-from-
   Claude flow.** All three failed the same way: they made Jayden come to them.
 - **Claude Opus 5 (`claude-opus-5`) for stage 2**, above Gemini in the existing
