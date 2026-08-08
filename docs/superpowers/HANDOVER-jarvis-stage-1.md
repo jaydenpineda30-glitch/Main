@@ -327,6 +327,25 @@ Note if it is built: Opus 5 **rejects `temperature`** (400). Every existing
 service sets one — `gemini-service.js:40` (0.4), `boardroom-service.js:76` (0.6),
 `app.jsx:3713` (0.1). Do not copy that across.
 
+### ⚠️ Deferred, on Jayden's instruction — secrets in exported backups
+
+Raised 2026-08-08, **deferred by him until Jarvis is finished**: "just leave a
+note and deal with it after the project". Do not action it as a side effect of
+Jarvis work. Raise it again when this project wraps.
+
+Confirmed by reading `Dashboard/Backups/dashboard-2026-08-07.json`:
+`settings.githubPAT` is in it in plain text, 93 characters. `exportData()`
+serialises the whole `data` object, and those backups sync via OneDrive to his
+Mac and to Microsoft's servers. Old exports going back to July contain it too,
+so **rotating the token matters more than changing the storage** — old copies
+cannot be un-copied.
+
+**Why this blocks the Gemini decision above.** The Gemini key saves into the same
+`settings` object (`app.jsx:3331`), so adding one widens the same leak. Fix the
+storage, then add keys — not the other way round. He currently has **no AI key at
+all**: `settings` contains `githubPAT` and nothing else, which also means the
+Boardroom AI, the syllabus import and the Invest AI summaries are silently dead.
+
 ### What stage 2 got instead
 
 Everything that does not need a model, which is more than expected:
