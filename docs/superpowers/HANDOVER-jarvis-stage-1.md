@@ -1,12 +1,30 @@
-# Handover — Jarvis stage 1
+# Handover — Jarvis
 
-**Written:** 2026-08-07, end of session
-**Branch:** `worktree-jarvis-signals`, commit `eb21ca3`
+**Started:** 2026-08-07 · **Last updated:** 2026-08-09
+**Branch:** `worktree-jarvis-signals`
 **Worktree:** `C:\Users\Jayde\my-project\.claude\worktrees\jarvis-signals`
-**State:** stage 1 built, committed and pushed. **115 tests, all passing.**
-Stage 2: vocabulary reconciled and the shift diary is read; the model path is
-blocked on a Claude key that does not exist. See "Stage 2 — the real state".
-Read "The uni source, rebuilt" for the most recent changes.
+
+**State: all four stages built. 191 tests, all passing. Not merged, not live.**
+
+| Stage | | Notes |
+|---|---|---|
+| 1 — He speaks | ✅ | Ranked card. Four defects fixed 2026-08-08; see "The uni source, rebuilt" |
+| 2 — You ask | ✅ | Jayden added a Gemini key 2026-08-09. Built on `gemini-3.5-flash` — **not** Claude; see below |
+| 3 — He acts | ✅ | Propose → reconcile → confirm → write. Verified on real data |
+| 4 — Front door | ✅ | Click a card, land on the exact row. Boardroom removal **deferred by Jayden** |
+
+**The model decision changed.** The spec chose Claude Opus 5. No Anthropic
+integration or key exists in this repo, and Jayden supplied a Gemini key instead,
+so stage 2 is built on Gemini. The provider is isolated in `jarvis-service.js`
+and `temperature` is deliberately never sent, so swapping is a small job.
+
+**Merging is deploying.** GitHub Pages serves from `main`, so there is no
+separate gate. Verified 2026-08-09: fast-forward, no conflicts, no new top-level
+data fields, no automatic writes on load, and the two Firestore protections
+(`isLikelySeedState`, `mergeWithDefaults`) are untouched by the diff.
+
+Read "The uni source, rebuilt" for the ranking work, and "Stage 2 — the real
+state" for what was found by checking rather than reading.
 
 ---
 
@@ -43,7 +61,7 @@ To work on it: `cd C:\Users\Jayde\my-project\.claude\worktrees\jarvis-signals`.
 ## The floor rule, as built
 
 ```
-npm test        # 115 tests, all passing
+npm test        # 191 tests, all passing
 ```
 
 ### The bug this fixed
@@ -152,7 +170,7 @@ produced anything, including when the Finance tab is empty, so it never had
 grounds for that. Same rule as the floor candidates, applied to the one card that
 had been exempt from it.
 
-115 tests (was 88). No app.jsx change needed — the card reads candidates
+At the time of this change: 115 tests, up from 88. No app.jsx change needed — the card reads candidates
 generically, so new signals appear on their own.
 
 ---
