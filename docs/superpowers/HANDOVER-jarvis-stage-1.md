@@ -132,12 +132,25 @@ Two things it took a second reading to get right:
 When the pile-up *is* the next thing due, `uni.crunch` is suppressed and
 `uni.next` carries it in its `why` instead — otherwise it is the same news twice.
 
+**The horizon limits the card, not the sentence.** Second reading of the calm-day
+path caught this: with everything before 20 October cleared, the nearest thing due
+is one of the seven landing on 25–26 October, and Jarvis said only "78 days out
+and nothing is pressing" — omitting the one fact that makes starting it worthwhile.
+`runFrom()` describes whatever lands alongside a given assessment at *any*
+distance and feeds `uni.next`; `findCluster()` stays horizon-limited and feeds
+`uni.crunch`. A candidate describing its own facts is always allowed; only the
+extra *card* risks crying wolf. The calm day now reads:
+
+> Good day to get ahead on FinStmts NRE Assessment 3
+> It is 78 days out and nothing is pressing, so this is the best use of the time.
+> **8 assessments across 8 subjects land within 2 days, this one first.**
+
 **The all-clear stopped claiming "bills covered".** It fires when *no* source
 produced anything, including when the Finance tab is empty, so it never had
 grounds for that. Same rule as the floor candidates, applied to the one card that
 had been exempt from it.
 
-99 tests (was 88). No app.jsx change needed — the card reads candidates
+102 tests (was 88). No app.jsx change needed — the card reads candidates
 generically, so new signals appear on their own.
 
 ---
