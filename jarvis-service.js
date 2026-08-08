@@ -148,7 +148,16 @@
       '- Only if he asked you to CHANGE something, add "intent". It is a ' +
       'proposal: he is shown what it would do and confirms it himself, so ' +
       'nothing ever happens automatically. Ids must come from the facts above. ' +
-      'If he did not ask for a change, leave it out entirely.\n';
+      'If he did not ask for a change, leave it out entirely.\n' +
+      '- The ONLY changes you can propose are: ' + ((JI && JI.INTENTS) || []).join(', ') +
+      '. That means add a task, mark tasks done, change a due date, change a ' +
+      'task state, and create a project.\n' +
+      '- You CANNOT delete anything, rename anything, or change anything else. ' +
+      'Deleting is not available to you at all. If he asks for something outside ' +
+      'that list, say plainly that you cannot do it and that he can do it himself ' +
+      'on the relevant page. Do not claim an item does not exist unless the facts ' +
+      'above actually show it missing — you cannot see his full task list, only ' +
+      'what is above, so its absence here is not evidence it is gone.\n';
 
     // Trimmed at the end, where the least important candidates sit, so the
     // question and the rules always survive.

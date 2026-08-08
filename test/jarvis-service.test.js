@@ -299,3 +299,23 @@ test('the prompt tells it to propose rather than assume', () => {
   assert.ok(/propose|confirm|will be asked|never happens automatically/i.test(prompt),
     'the model must know a change is a proposal, not an action');
 });
+
+test('the prompt names what Jarvis can change, and forbids the wrong excuse', () => {
+  // Found in real use. Asked to delete a task, Jarvis said "I cannot find any
+  // task named 'TEST 1' to delete" — plausible, and false. It cannot delete
+  // ANYTHING; `task.delete` is deliberately not on the whitelist because
+  // deleting is irreversible. Explaining a capability limit as a missing item
+  // leaves him believing his data is wrong when it is fine.
+  const prompt = SVC.buildPrompt({ question: 'delete the test task', candidates: CANDIDATES, today: TODAY });
+  assert.ok(/cannot delete|can not delete|deleting/i.test(prompt),
+    'the prompt must state that deleting is not possible');
+  assert.ok(/do not claim|never claim|does not exist/i.test(prompt),
+    'the prompt must forbid explaining a capability gap as a missing item');
+});
+
+test('the prompt lists every change it is allowed to propose', () => {
+  const prompt = SVC.buildPrompt({ question: 'q', candidates: CANDIDATES, today: TODAY });
+  require('../jarvis-intent.js').INTENTS.forEach((name) => {
+    assert.ok(prompt.indexOf(name) !== -1, 'intent "' + name + '" is not offered in the prompt');
+  });
+});
