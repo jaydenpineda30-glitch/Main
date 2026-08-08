@@ -252,8 +252,117 @@
     };
   }
 
+  // ── Reconciling against what actually exists ───────────────────────────────
+  // `parseIntent` checks shape. It cannot know which tasks are real, so on its
+  // own it would let a confirm dialog say "Move 3 tasks" when one of the three
+  // ids does not exist — and Jayden would click yes and get one. Same class of
+  // bug as an id no task could ever have: the dialog promises a change that
+  // cannot happen.
+  //
+  // The spec is explicit that bulk operations show exactly what will change
+  // before it changes, so the dialog is built from the dashboard, not from what
+  // the model claimed. Read-only: it never touches `data`.
+
+  var NAME_LIST_MAX = 3;   // beyond this, a count reads better than a list
+
+  function taskList(data) {
+    return (data && data.personal && Array.isArray(data.personal.tasks)) ? data.personal.tasks : [];
+  }
+
+  function nameThem(targets) {
+    var names = targets.map(function (t) { return '"' + t.name + '"'; });
+    if (names.length === 1) return names[0];
+    return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  }
+
+  function describe(verb, targets, tail) {
+    var n = targets.length;
+    var who = n <= NAME_LIST_MAX ? nameThem(targets)
+      : n + ' ' + plural(n, 'task', 'tasks');
+    return verb + ' ' + who + (tail || '') + '.';
+  }
+
+  /**
+   * Check a proposal against the real dashboard.
+   *
+   * @param {object|null} proposal  output of parseIntent
+   * @param {object} data           the dashboard document (never modified)
+   * @returns {{ok:boolean, intent:string|null, args:object|null, targets:Array,
+   *            missing:Array, truncated:boolean, summary:string}}
+   *
+   * `ok: false` means there is nothing left to confirm. The caller must not
+   * offer a confirm button in that case — a button that changes nothing is a
+   * worse outcome than no button.
+   */
+  function resolve(proposal, data) {
+    var no = function (summary) {
+      return { ok: false, intent: proposal ? proposal.intent : null, args: null,
+        targets: [], missing: [], truncated: false, summary: summary };
+    };
+    if (!proposal || !proposal.intent) return no('Nothing to do.');
+
+    // These create something new, so there is nothing to reconcile them against.
+    if (proposal.intent === 'task.add' || proposal.intent === 'project.create') {
+      return {
+        ok: true, intent: proposal.intent, args: proposal.args, targets: [],
+        missing: [], truncated: !!proposal.truncated, summary: proposal.summary
+      };
+    }
+
+    var ids = (proposal.args && proposal.args.ids) || [];
+    var tasks = taskList(data);
+    var targets = [];
+    var missing = [];
+
+    ids.forEach(function (id) {
+      var found = null;
+      for (var i = 0; i < tasks.length; i++) {
+        if (tasks[i] && tasks[i].id === id) { found = tasks[i]; break; }
+      }
+      if (!found) { missing.push(id); return; }
+
+      // Already in the requested state is not a change. Counting it would
+      // inflate the number in the dialog and promise work that will not happen.
+      if (proposal.intent === 'task.complete' && found.done) return;
+      if (proposal.intent === 'task.setState' &&
+          (found.state || 'todo') === proposal.args.state) return;
+
+      targets.push({ id: id, name: clean(found.name, 50) || 'a task' });
+    });
+
+    if (!targets.length) {
+      return no(missing.length
+        ? 'Could not find those tasks any more — nothing to change.'
+        : 'Nothing to change; that is already how they are.');
+    }
+
+    var summary;
+    if (proposal.intent === 'task.complete') {
+      summary = describe('Mark', targets, ' done');
+    } else if (proposal.intent === 'task.reschedule') {
+      summary = proposal.args.due
+        ? describe('Move', targets, ' to ' + proposal.args.due)
+        : describe('Clear the due date on', targets);
+    } else {
+      summary = describe('Set', targets, ' to "' + proposal.args.state + '"');
+    }
+    if (missing.length) {
+      summary += ' (' + missing.length + ' ' + plural(missing.length, 'was', 'were') +
+        ' not found and will be skipped.)';
+    }
+
+    return {
+      ok: true, intent: proposal.intent,
+      // Only the ids that survived. The executor must never see the rest.
+      args: Object.assign({}, proposal.args, { ids: targets.map(function (t) { return t.id; }) }),
+      targets: targets, missing: missing,
+      truncated: !!proposal.truncated, summary: summary
+    };
+  }
+
   var api = {
     INTENTS: INTENTS,
+    resolve: resolve,
     STATES: STATES,
     PRIORITIES: PRIORITIES,
     BULK_CAP: BULK_CAP,

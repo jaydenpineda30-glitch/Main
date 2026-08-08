@@ -251,3 +251,97 @@ test('an id that could never be a real task is not counted in the summary', () =
   assert.deepStrictEqual(mixed.args.ids, [1722308451234]);
   assert.ok(/1 task/.test(mixed.summary), 'summary must count only what survives: ' + mixed.summary);
 });
+
+// ── Reconciling a proposal against what actually exists ──────────────────────
+// parseIntent checks shape. It cannot know which tasks are real, so on its own
+// it would let a confirm dialog say "Move 3 tasks" when only one of the three
+// ids exists — the same class of bug as the negative-id case above. The spec is
+// explicit: bulk operations show exactly what will change, before it changes.
+// So the dialog describes reality, not the model's claim.
+
+const DATA = {
+  personal: { tasks: [
+    { id: 1722308451234, name: 'Chapter review questions', due: '2026-08-05', done: false },
+    { id: 1722308451235, name: 'Email the teachers', due: null, done: false },
+    { id: 1722308451236, name: 'Already finished', due: null, done: true }
+  ] }
+};
+
+test('a proposal is resolved to the real tasks it will touch', () => {
+  const p = parse({ intent: 'task.reschedule', args: { ids: [1722308451234, 1722308451235], due: '2026-08-15' } });
+  const r = JI.resolve(p, DATA);
+  assert.deepStrictEqual(r.targets.map((t) => t.name), ['Chapter review questions', 'Email the teachers']);
+  assert.deepStrictEqual(r.missing, []);
+});
+
+test('ids that match no task are dropped and reported', () => {
+  const p = parse({ intent: 'task.complete', args: { ids: [1722308451234, 9999999999999] } });
+  const r = JI.resolve(p, DATA);
+  assert.strictEqual(r.targets.length, 1);
+  assert.deepStrictEqual(r.missing, [9999999999999]);
+});
+
+test('the resolved summary counts what will really change, not what was asked', () => {
+  const p = parse({ intent: 'task.reschedule', args: { ids: [1722308451234, 9999999999999, 8888888888888], due: '2026-08-15' } });
+  assert.ok(/3 tasks/.test(p.summary), 'setup: the unresolved summary claims three');
+  const r = JI.resolve(p, DATA);
+  assert.ok(!/3 tasks/.test(r.summary), 'the model\'s count must not survive: ' + r.summary);
+  assert.ok(/Chapter review questions/.test(r.summary), 'name what really changes: ' + r.summary);
+  assert.ok(/2 were not found/.test(r.summary), 'and account for what does not: ' + r.summary);
+});
+
+test('the resolved summary names the tasks when there are few enough to name', () => {
+  const p = parse({ intent: 'task.complete', args: { ids: [1722308451234] } });
+  const r = JI.resolve(p, DATA);
+  assert.ok(/Chapter review questions/.test(r.summary), 'got: ' + r.summary);
+});
+
+test('a proposal that resolves to nothing is refused outright', () => {
+  const p = parse({ intent: 'task.complete', args: { ids: [9999999999999] } });
+  const r = JI.resolve(p, DATA);
+  assert.strictEqual(r.ok, false, 'nothing to change must not be confirmable');
+  assert.ok(/nothing|no longer|could not find/i.test(r.summary), 'got: ' + r.summary);
+});
+
+test('completing an already-done task is not counted as a change', () => {
+  const p = parse({ intent: 'task.complete', args: { ids: [1722308451236] } });
+  const r = JI.resolve(p, DATA);
+  assert.strictEqual(r.ok, false, 'it is already done; there is nothing to do');
+});
+
+test('setting a task to the state it is already in is not a change', () => {
+  const data = { personal: { tasks: [{ id: 1, name: 'x', state: 'doing', done: false }] } };
+  const p = parse({ intent: 'task.setState', args: { ids: [1], state: 'doing' } });
+  assert.strictEqual(JI.resolve(p, data).ok, false);
+});
+
+test('task.add needs no reconciling and stays confirmable', () => {
+  const p = parse({ intent: 'task.add', args: { name: 'Save the June 20 shift note' } });
+  const r = JI.resolve(p, DATA);
+  assert.strictEqual(r.ok, true);
+  assert.ok(/Save the June 20 shift note/.test(r.summary));
+});
+
+test('project.create needs no reconciling and stays confirmable', () => {
+  const p = parse({ intent: 'project.create', args: { title: 'Tax assignment', stages: [{ title: 'Read', steps: [{ title: 'Brief' }] }] } });
+  assert.strictEqual(JI.resolve(p, DATA).ok, true);
+});
+
+test('resolve tolerates a dashboard with no tasks at all', () => {
+  const p = parse({ intent: 'task.complete', args: { ids: [1] } });
+  [{}, { personal: {} }, { personal: { tasks: null } }, null].forEach((data) => {
+    const r = JI.resolve(p, data);
+    assert.strictEqual(r.ok, false, 'expected refusal for ' + JSON.stringify(data));
+  });
+});
+
+test('resolve never mutates the data it is given', () => {
+  const before = JSON.stringify(DATA);
+  JI.resolve(parse({ intent: 'task.complete', args: { ids: [1722308451234] } }), DATA);
+  assert.strictEqual(JSON.stringify(DATA), before, 'resolve touched the dashboard');
+});
+
+test('resolving a null proposal is safe', () => {
+  const r = JI.resolve(null, DATA);
+  assert.strictEqual(r.ok, false);
+});
