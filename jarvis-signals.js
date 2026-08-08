@@ -182,34 +182,42 @@
     return trim((a.subject ? a.subject + ' ' : '') + (a.name || 'assessment'));
   }
 
-  // The first run of CLUSTER_MIN or more assessments falling within CLUSTER_SPAN
-  // days of each other.
+  // Everything falling within CLUSTER_SPAN days of future[i], described.
+  function runFrom(future, i) {
+    var run = [];
+    for (var j = i; j < future.length; j++) {
+      if (future[j].inDays - future[i].inDays > CLUSTER_SPAN) break;
+      run.push(future[j]);
+    }
+    var subjects = {};
+    run.forEach(function (x) { subjects[x.a.subject || x.a.name || '?'] = true; });
+    return {
+      items: run,
+      count: run.length,
+      subjects: Object.keys(subjects).length,
+      inDays: run[0].inDays,
+      span: run[run.length - 1].inDays - run[0].inDays + 1
+    };
+  }
+
+  // The first run of CLUSTER_MIN or more assessments close enough together to be
+  // worth a card of its own.
   //
   // Nearest wins, not biggest. His real semester has three colliding 9 days out
   // and five colliding 30 days out; warning about the five first is no use,
   // because the three have to be survived to reach them — and by then the far
   // pile-up is the near one and gets its own warning.
+  //
+  // CLUSTER_HORIZON limits THIS card only — it is what stops the pile-up crying
+  // wolf about something two months away. It does not stop `uni.next` naming the
+  // company its own assessment keeps, at any distance; see below.
   function findCluster(future) {
-    var best = null;
-    for (var i = 0; i < future.length && !best; i++) {
-      if (future[i].inDays > CLUSTER_HORIZON) break;
-      var run = [];
-      for (var j = i; j < future.length; j++) {
-        if (future[j].inDays - future[i].inDays > CLUSTER_SPAN) break;
-        run.push(future[j]);
-      }
-      if (run.length >= CLUSTER_MIN) best = run;
+    for (var i = 0; i < future.length; i++) {
+      if (future[i].inDays > CLUSTER_HORIZON) return null;
+      var run = runFrom(future, i);
+      if (run.count >= CLUSTER_MIN) return run;
     }
-    if (!best) return null;
-    var subjects = {};
-    best.forEach(function (x) { subjects[x.a.subject || x.a.name || '?'] = true; });
-    return {
-      items: best,
-      count: best.length,
-      subjects: Object.keys(subjects).length,
-      inDays: best[0].inDays,
-      span: best[best.length - 1].inDays - best[0].inDays + 1
-    };
+    return null;
   }
 
   function clusterSentence(c) {
@@ -249,6 +257,10 @@
 
     // The pile-up. Worth its own candidate only when it is not simply the next
     // thing due — otherwise it is the same news twice, so uni.next carries it.
+    // Two different questions. `nextRun` is what the NEXT assessment is landing
+    // alongside — its own fact, true at any distance. `cluster` is whether a
+    // pile-up deserves a card of its own, which is horizon-limited.
+    var nextRun = future.length ? runFrom(future, 0) : null;
     var cluster = findCluster(future);
     var clusterIsNext = !!(cluster && future.length && cluster.items[0] === future[0]);
     if (cluster && !clusterIsNext) {
@@ -276,10 +288,16 @@
     if (future.length) {
       var d = future[0].inDays;
       var name = assessName(future[0].a);
-      var company = clusterIsNext ? ' ' + clusterSentence(cluster) + ', this one first.' : '';
+      // Named whenever this assessment has company, near or far — it describes
+      // only itself, so it is true wherever the candidate ends up ranking.
+      var crowded = nextRun.count >= CLUSTER_MIN;
+      var company = crowded ? ' ' + clusterSentence(nextRun) + ', this one first.' : '';
       var base = {
         id: 'uni.next', domain: 'uni', cta: uniCta, view: 'uni',
-        facts: { inDays: d, name: name, date: future[0].a.date, total: future.length }
+        facts: {
+          inDays: d, name: name, date: future[0].a.date, total: future.length,
+          clusterCount: nextRun.count
+        }
       };
       if (d === 0) {
         out.push(candidate(Object.assign({}, base, {
@@ -305,7 +323,10 @@
         out.push(candidate(Object.assign({}, base, {
           score: 20, floorOnly: true,
           headline: 'Good day to get ahead on ' + name,
-          why: 'It is ' + d + ' days out and nothing is pressing, so this is the best use of the time.'
+          // The company matters most here, not least. A calm day is exactly when
+          // a distant pile-up is worth knowing about, because it is the only
+          // time there is room to do anything about it.
+          why: 'It is ' + d + ' days out and nothing is pressing, so this is the best use of the time.' + company
         })));
       }
     }

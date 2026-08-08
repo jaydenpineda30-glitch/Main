@@ -575,3 +575,47 @@ test('a pile-up still never reads as a deadline of its own', () => {
   assert.ok(byId(out, 'uni.crunch').score < JS.BANDS.approaching,
     'a pile-up is an early warning, not a date');
 });
+
+// ── A far-off assessment still says what it is walking into ──────────────────
+// Seven of his assessments land on 25-26 October. On a calm day in August the
+// nearest thing due IS one of those seven, and Jarvis said only "78 days out,
+// nothing is pressing" — hiding the single most useful fact about it. The 35-day
+// horizon exists to stop the pile-up card crying wolf; it should not stop the
+// assessment itself describing the company it keeps.
+
+test('a get-ahead assessment names the pile-up it belongs to, however far off', () => {
+  const out = JS.rank(ctx({
+    data: { uni: { assessments: [
+      assess({ id: 'a', subject: 'FinStmts', date: '2026-10-25' }),
+      assess({ id: 'b', subject: 'MGMT', date: '2026-10-25' }),
+      assess({ id: 'c', subject: 'WIA', date: '2026-10-25' }),
+      assess({ id: 'd', subject: 'AIS', date: '2026-10-26' })
+    ] } }
+  }));
+  const next = byId(out, 'uni.next');
+  assert.strictEqual(next.band, 'getAhead', 'still a calm-day suggestion');
+  assert.ok(/4 /.test(next.why), 'should name the four landing together, got: ' + next.why);
+  assert.strictEqual(next.facts.clusterCount, 4);
+});
+
+test('a lone far-off assessment does not invent company', () => {
+  const out = JS.rank(ctx({
+    data: { uni: { assessments: [assess({ id: 'a', date: '2026-10-25' })] } }
+  }));
+  const next = byId(out, 'uni.next');
+  assert.strictEqual(next.facts.clusterCount, 1);
+  assert.ok(!/land|assessments across/.test(next.why), 'got: ' + next.why);
+});
+
+test('a distant pile-up still gets no card of its own', () => {
+  // Naming it inside uni.next is enough. A separate warning 78 days out is the
+  // crying-wolf case the horizon exists to prevent.
+  const out = JS.rank(ctx({
+    data: { uni: { assessments: [
+      assess({ id: 'a', subject: 'FinStmts', date: '2026-10-25' }),
+      assess({ id: 'b', subject: 'MGMT', date: '2026-10-25' }),
+      assess({ id: 'c', subject: 'AIS', date: '2026-10-26' })
+    ] } }
+  }));
+  assert.strictEqual(byId(out, 'uni.crunch'), undefined);
+});
