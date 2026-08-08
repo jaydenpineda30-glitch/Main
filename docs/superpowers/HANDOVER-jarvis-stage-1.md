@@ -3,8 +3,9 @@
 **Written:** 2026-08-07, end of session
 **Branch:** `worktree-jarvis-signals`, commit `eb21ca3`
 **Worktree:** `C:\Users\Jayde\my-project\.claude\worktrees\jarvis-signals`
-**State:** stage 1 built, committed and pushed. **102 tests, all passing.**
-Stage 2 has its foundation (`jarvis-view.js`) only — nothing user-visible yet.
+**State:** stage 1 built, committed and pushed. **115 tests, all passing.**
+Stage 2: vocabulary reconciled and the shift diary is read; the model path is
+blocked on a Claude key that does not exist. See "Stage 2 — the real state".
 Read "The uni source, rebuilt" for the most recent changes.
 
 ---
@@ -42,7 +43,7 @@ To work on it: `cd C:\Users\Jayde\my-project\.claude\worktrees\jarvis-signals`.
 ## The floor rule, as built
 
 ```
-npm test        # 102 tests, all passing
+npm test        # 115 tests, all passing
 ```
 
 ### The bug this fixed
@@ -151,7 +152,7 @@ produced anything, including when the Finance tab is empty, so it never had
 grounds for that. Same rule as the floor candidates, applied to the one card that
 had been exempt from it.
 
-102 tests (was 88). No app.jsx change needed — the card reads candidates
+115 tests (was 88). No app.jsx change needed — the card reads candidates
 generically, so new signals appear on their own.
 
 ---
@@ -281,6 +282,58 @@ and stays silent, which is why stage 1 works before the Finance tab is set up.
 > adjusted — and bills coverage turned out to be the wrong question anyway. If
 > you find `billsTotal` referenced anywhere, it is stale documentation, not a
 > missing feature.
+
+---
+
+## Stage 2 — the real state, 2026-08-08
+
+Earlier notes said "stage 2 foundation laid". That was true of the repository and
+false of the app. Three things were found by checking rather than reading:
+
+**1. `jarvis-view.js` is not loaded.** It is not in `dashboard.html`, and
+`window.JarvisView` evaluates to `undefined` in the running page (verified in the
+browser console, not by grep). It is a complete, tested, committed orphan. It has
+no consumer, which is why it was left unloaded rather than given a script tag —
+a script tag would only have hidden the fact.
+
+**2. The candidate `view` field was dead data.** Every candidate carries one and
+nothing read it: `grep -n "\.view\b" app.jsx` returns nothing. It is still not
+rendered — the vocabulary is now correct, but no component mounts it.
+
+**3. The two halves disagreed, and no test crossed them.** Fixed; see
+`test/jarvis-contract.test.js`. That test also had a hole on its first version —
+it can only judge views it actually triggers, so `view: 'work'` sailed through
+unwhitelisted until a work context was added to the sweep. **Adding a source means
+adding a context there.**
+
+### The blocker: there is no Claude key
+
+The recorded decision is Claude Opus 5 for stage 2's phrasing. There is **no
+Anthropic integration anywhere in this repo** — `grep -rn "anthropic\|claude-\|
+x-api-key"` returns nothing. What exists:
+
+| Provider | Model | Key location |
+|---|---|---|
+| Gemini | `gemini-2.5-flash` | `localStorage.__gemini_key__`, mirrored to `settings.geminiKey` |
+| Groq | `openai/gpt-oss-120b` | `localStorage.__groq_key__`, mirrored to `settings.groqKey` |
+
+So stage 2's model path cannot be built as decided without Jayden obtaining an
+Anthropic key. **This is his decision, not an implementation detail**, because the
+alternative — building the phrasing layer on the Gemini service that already has a
+key — contradicts a recorded decision and has a running cost. It was deliberately
+not done unilaterally. Ask.
+
+Note if it is built: Opus 5 **rejects `temperature`** (400). Every existing
+service sets one — `gemini-service.js:40` (0.4), `boardroom-service.js:76` (0.6),
+`app.jsx:3713` (0.1). Do not copy that across.
+
+### What stage 2 got instead
+
+Everything that does not need a model, which is more than expected:
+
+- The view vocabulary is now one vocabulary, guarded by a cross-module test.
+- `workSource` — the shift diary is being read for the first time.
+- The whole strip still works with no API key, which was always the design.
 
 ---
 
