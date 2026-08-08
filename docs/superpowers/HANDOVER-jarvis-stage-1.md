@@ -92,6 +92,56 @@ check (below) after any ranking change.
 
 ---
 
+## The uni source, rebuilt — 2026-08-08
+
+Found the same way as the floor-rule bug: by running the ranker over the real
+backup at future dates and reading the sentences.
+
+**One old miss silenced the whole subject.** `uniSource` sorted assessments by
+distance from today and took the first — which, once anything is overdue, is the
+*most overdue* item, forever. Replayed forward on his real semester it was still
+leading with a 103-day-old SPREADSHEETS hand-in in November, while 33 others,
+one of them due the next day, were never mentioned. It answered "what is nearest
+in time" when the question is "what should I do".
+
+Now three candidates instead of one, because they are three different questions:
+
+| id | Question | Score |
+|---|---|---|
+| `uni.overdue` | What has already been missed? One card for the whole backlog — naming them individually would crowd out everything else on a bad semester. | 95 |
+| `uni.next` | What is next? Measures **future items only**, so it can never be describing something already missed. | 88 → 20 by proximity |
+| `uni.crunch` | Where does the semester bunch up? | 48 / 42 |
+
+**The pile-up.** 34 open assessments over 8 subjects, and seven of them land on
+25–26 October. Jarvis showed the nearest one and nothing else, so a collision was
+invisible until it arrived — the single most useful thing his data holds, unread.
+`findCluster` looks for ≥3 assessments within 3 days of each other, up to 35 days
+out.
+
+Two things it took a second reading to get right:
+
+- **Nearest wins, not biggest.** First version picked the largest run, so it
+  warned about five colliding in 30 days while ignoring three colliding in 9.
+  Useless — the near one has to be survived to reach the far one, and by then the
+  far one is near and gets its own warning.
+- **It scored 42–48, deliberately.** Below `approaching` (50) so it never reads
+  as a deadline of its own; above the gym ceiling (40) because at 38 it ranked
+  *under* "42 days since your last session", and four colliding hand-ins are not
+  a missed workout.
+
+When the pile-up *is* the next thing due, `uni.crunch` is suppressed and
+`uni.next` carries it in its `why` instead — otherwise it is the same news twice.
+
+**The all-clear stopped claiming "bills covered".** It fires when *no* source
+produced anything, including when the Finance tab is empty, so it never had
+grounds for that. Same rule as the floor candidates, applied to the one card that
+had been exempt from it.
+
+99 tests (was 88). No app.jsx change needed — the card reads candidates
+generically, so new signals appear on their own.
+
+---
+
 ## What was built
 
 ### New — `jarvis-signals.js` (pure, browser global + `require()`-able)

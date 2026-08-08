@@ -162,57 +162,155 @@
     })];
   }
 
-  // Uni. The nearest unfinished assessment, however far away it is — a far-off
-  // one becomes the get-ahead suggestion on an otherwise empty day.
+  // Uni. Three separate questions, because they have three separate answers:
+  // what has already been missed, what is coming next, and where the semester
+  // bunches up.
+  //
+  // These used to be one candidate — the assessment nearest to today, sorted by
+  // day distance. Sorting that way puts the MOST overdue item first, so from the
+  // first missed hand-in onwards Jarvis locked onto it and never moved. Reading
+  // the real semester back showed it still leading with a 103-day-old assessment
+  // in November while thirty-three others, one of them due the next day, went
+  // unmentioned. An old miss is not allowed to hide a live deadline.
+
+  var CLUSTER_SPAN = 3;    // days: assessments this close together are one pile-up
+  var CLUSTER_MIN = 3;     // how many it takes before it is worth a warning
+  var CLUSTER_HORIZON = 35; // how far ahead to look for one
+
+  var uniCta = { label: 'Uni', page: 'Uni' };
+  function assessName(a) {
+    return trim((a.subject ? a.subject + ' ' : '') + (a.name || 'assessment'));
+  }
+
+  // The first run of CLUSTER_MIN or more assessments falling within CLUSTER_SPAN
+  // days of each other.
+  //
+  // Nearest wins, not biggest. His real semester has three colliding 9 days out
+  // and five colliding 30 days out; warning about the five first is no use,
+  // because the three have to be survived to reach them — and by then the far
+  // pile-up is the near one and gets its own warning.
+  function findCluster(future) {
+    var best = null;
+    for (var i = 0; i < future.length && !best; i++) {
+      if (future[i].inDays > CLUSTER_HORIZON) break;
+      var run = [];
+      for (var j = i; j < future.length; j++) {
+        if (future[j].inDays - future[i].inDays > CLUSTER_SPAN) break;
+        run.push(future[j]);
+      }
+      if (run.length >= CLUSTER_MIN) best = run;
+    }
+    if (!best) return null;
+    var subjects = {};
+    best.forEach(function (x) { subjects[x.a.subject || x.a.name || '?'] = true; });
+    return {
+      items: best,
+      count: best.length,
+      subjects: Object.keys(subjects).length,
+      inDays: best[0].inDays,
+      span: best[best.length - 1].inDays - best[0].inDays + 1
+    };
+  }
+
+  function clusterSentence(c) {
+    return c.count + ' assessments across ' + c.subjects + ' ' +
+      plural(c.subjects, 'subject', 'subjects') + ' land within ' +
+      c.span + ' ' + plural(c.span, 'day', 'days');
+  }
+
   function uniSource(ctx) {
-    var upcoming = arr(ctx.data.uni && ctx.data.uni.assessments)
+    var all = arr(ctx.data.uni && ctx.data.uni.assessments)
       .filter(function (a) { return a && !a.done && a.date; })
       .map(function (a) { return { a: a, inDays: daysApart(a.date, ctx.today) }; })
       .sort(function (x, y) { return x.inDays - y.inDays; });
-    if (!upcoming.length) return [];
+    if (!all.length) return [];
 
-    var next = upcoming[0];
-    var d = next.inDays;
-    var name = trim((next.a.subject ? next.a.subject + ' ' : '') + (next.a.name || 'assessment'));
-    var facts = { inDays: d, name: name, date: next.a.date, total: upcoming.length };
-    var base = { id: 'uni.assessments', domain: 'uni', cta: { label: 'Uni', page: 'Uni' }, view: 'uni', facts: facts };
+    var overdue = all.filter(function (x) { return x.inDays < 0; });
+    var future = all.filter(function (x) { return x.inDays >= 0; });
+    var out = [];
 
-    if (d < 0) {
-      return [candidate(Object.assign({}, base, {
-        score: 95,
-        headline: name + ' was due ' + Math.abs(d) + ' ' + plural(Math.abs(d), 'day', 'days') + ' ago',
-        why: 'Overdue assessments do not get cheaper. Deal with this before anything else on the list.'
-      }))];
+    // What has already been missed. One candidate for the whole backlog: naming
+    // them individually would crowd out everything else on a bad semester.
+    if (overdue.length) {
+      var worstDays = Math.abs(overdue[0].inDays);
+      var worstName = assessName(overdue[0].a);
+      out.push(candidate({
+        id: 'uni.overdue', domain: 'uni', score: 95,
+        headline: overdue.length === 1
+          ? worstName + ' was due ' + worstDays + ' ' + plural(worstDays, 'day', 'days') + ' ago'
+          : overdue.length + ' assessments are overdue, the oldest by ' + worstDays + ' days',
+        why: (overdue.length === 1 ? '' : 'Longest outstanding is ' + worstName + '. ') +
+             'Overdue assessments do not get cheaper. Whatever can still be salvaged ' +
+             'is worth more than anything else on this list.',
+        cta: uniCta, view: 'uni',
+        facts: { overdue: overdue.length, worstOverdueDays: worstDays, name: worstName, date: overdue[0].a.date }
+      }));
     }
-    if (d === 0) {
-      return [candidate(Object.assign({}, base, {
-        score: 88, headline: name + ' is due today',
-        why: 'Today is the last day for it, so it outranks everything else you had planned.'
-      }))];
+
+    // The pile-up. Worth its own candidate only when it is not simply the next
+    // thing due — otherwise it is the same news twice, so uni.next carries it.
+    var cluster = findCluster(future);
+    var clusterIsNext = !!(cluster && future.length && cluster.items[0] === future[0]);
+    if (cluster && !clusterIsNext) {
+      out.push(candidate({
+        id: 'uni.crunch', domain: 'uni',
+        // An early warning, never an emergency. Below `approaching`, so it can
+        // never read as a deadline of its own — but above the gym ceiling of 40,
+        // because on real data it ranked under "42 days since your last session"
+        // and four colliding hand-ins are not a missed workout.
+        score: cluster.inDays <= 14 ? 48 : 42,
+        headline: cluster.count + ' assessments due in the same ' + cluster.span + '-day stretch',
+        why: cluster.subjects + ' different ' + plural(cluster.subjects, 'subject', 'subjects') +
+             ', starting in ' + cluster.inDays + ' ' + plural(cluster.inDays, 'day', 'days') +
+             '. That week cannot absorb them all, so the room has to come from this one.',
+        cta: uniCta, view: 'uni',
+        facts: {
+          count: cluster.count, subjects: cluster.subjects,
+          inDays: cluster.inDays, span: cluster.span, date: cluster.items[0].a.date
+        }
+      }));
     }
-    if (d <= 3) {
-      return [candidate(Object.assign({}, base, {
-        score: 85, headline: name + ' is due in ' + d + ' ' + plural(d, 'day', 'days'),
-        why: 'Close enough that starting today leaves room for it to go wrong.'
-      }))];
+
+    // What is coming next. Measures only future work, so it can never be
+    // describing something already missed.
+    if (future.length) {
+      var d = future[0].inDays;
+      var name = assessName(future[0].a);
+      var company = clusterIsNext ? ' ' + clusterSentence(cluster) + ', this one first.' : '';
+      var base = {
+        id: 'uni.next', domain: 'uni', cta: uniCta, view: 'uni',
+        facts: { inDays: d, name: name, date: future[0].a.date, total: future.length }
+      };
+      if (d === 0) {
+        out.push(candidate(Object.assign({}, base, {
+          score: 88, headline: name + ' is due today',
+          why: 'Today is the last day for it, so it outranks everything else you had planned.' + company
+        })));
+      } else if (d <= 3) {
+        out.push(candidate(Object.assign({}, base, {
+          score: 85, headline: name + ' is due in ' + d + ' ' + plural(d, 'day', 'days'),
+          why: 'Close enough that starting today leaves room for it to go wrong.' + company
+        })));
+      } else if (d <= 7) {
+        out.push(candidate(Object.assign({}, base, {
+          score: 60, headline: name + ' is due in ' + d + ' days',
+          why: 'Inside the week. A first pass now means the deadline is not a scramble.' + company
+        })));
+      } else if (d <= 14) {
+        out.push(candidate(Object.assign({}, base, {
+          score: 40, headline: name + ' is ' + d + ' days out',
+          why: 'Far enough not to panic, close enough that it is the obvious thing to chip at.' + company
+        })));
+      } else {
+        out.push(candidate(Object.assign({}, base, {
+          score: 20, floorOnly: true,
+          headline: 'Good day to get ahead on ' + name,
+          why: 'It is ' + d + ' days out and nothing is pressing, so this is the best use of the time.'
+        })));
+      }
     }
-    if (d <= 7) {
-      return [candidate(Object.assign({}, base, {
-        score: 60, headline: name + ' is due in ' + d + ' days',
-        why: 'Inside the week. A first pass now means the deadline is not a scramble.'
-      }))];
-    }
-    if (d <= 14) {
-      return [candidate(Object.assign({}, base, {
-        score: 40, headline: name + ' is ' + d + ' days out',
-        why: 'Far enough not to panic, close enough that it is the obvious thing to chip at.'
-      }))];
-    }
-    return [candidate(Object.assign({}, base, {
-      score: 20, floorOnly: true,
-      headline: 'Good day to get ahead on ' + name,
-      why: 'It is ' + d + ' days out and nothing is pressing, so this is the best use of the time.'
-    }))];
+
+    return out;
   }
 
   // Tasks. Severity comes from task-grouping.js, so this agrees with the Tasks
@@ -334,8 +432,12 @@
     return candidate({
       id: 'allClear', domain: 'allClear', score: 5,
       headline: 'Nothing pressing today',
-      why: 'No deadlines close, nothing overdue, bills covered. Genuinely a free day — ' +
-           'spend it on whatever you actually feel like.',
+      // This fires when NO source produced anything — including when the Finance
+      // tab is empty — so it cannot claim bills are covered. It only knows that
+      // nothing raised its hand. Same rule as the floor candidates: a candidate's
+      // text may only describe its own facts.
+      why: 'Nothing overdue, no deadline close, nothing asking for attention. ' +
+           'Genuinely a free day — spend it on whatever you actually feel like.',
       cta: null, view: 'none', facts: { today: ctx.today }
     });
   }

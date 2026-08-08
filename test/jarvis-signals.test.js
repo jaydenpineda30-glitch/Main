@@ -254,7 +254,7 @@ test('gym idleness is a decaying signal, never an emergency', () => {
 test('an assessment already overdue scores above one merely due soon', () => {
   const late = JS.rank(ctx({ data: { uni: { assessments: [assess({ date: '2026-08-01' })] } } }));
   const soon = JS.rank(ctx({ data: { uni: { assessments: [assess({ date: '2026-08-09' })] } } }));
-  assert.ok(byId(late, 'uni.assessments').score > byId(soon, 'uni.assessments').score);
+  assert.ok(byId(late, 'uni.overdue').score > byId(soon, 'uni.next').score);
 });
 
 // ── Absent-tolerance ─────────────────────────────────────────────────────────
@@ -336,13 +336,13 @@ test('day counts are stable across a daylight-saving transition', () => {
     today: '2026-10-02',
     data: { uni: { assessments: [assess({ date: '2026-10-06' })] } }
   }));
-  const u = byId(out, 'uni.assessments');
+  const u = byId(out, 'uni.next');
   assert.strictEqual(u.facts.inDays, 4, 'expected exactly 4 days across the DST boundary');
 });
 
 test('an assessment due today reads as due today, not overdue', () => {
   const out = JS.rank(ctx({ data: { uni: { assessments: [assess({ date: TODAY })] } } }));
-  const u = byId(out, 'uni.assessments');
+  const u = byId(out, 'uni.next');
   assert.strictEqual(u.facts.inDays, 0);
   assert.ok(/today/i.test(u.headline), 'got: ' + u.headline);
 });
@@ -414,4 +414,164 @@ test('top returns the leader plus the runners-up, capped', () => {
   assert.strictEqual(JS.top(out, 2).length, 2);
   assert.strictEqual(JS.top(out, 99).length, out.length);
   assert.strictEqual(JS.top([], 3).length, 0);
+});
+
+// ── Uni: an old miss must not mask a live deadline ───────────────────────────
+// Found by reading real output. `uniSource` sorted by "days from today" and took
+// the first, which is the MOST overdue item — so from the first missed hand-in
+// onwards Jarvis locked onto it permanently. On his real semester data it was
+// still leading with a 103-day-old assessment in November while 33 others,
+// including one due the next day, went unmentioned.
+
+test('an overdue assessment and the next upcoming one are separate candidates', () => {
+  const out = JS.rank(ctx({
+    data: { uni: { assessments: [
+      assess({ id: 'old', name: 'AT1', date: '2026-07-01' }),   // 37 days overdue
+      assess({ id: 'soon', name: 'AT2', date: '2026-08-08' })   // due tomorrow
+    ] } }
+  }));
+  assert.ok(byId(out, 'uni.overdue'), 'expected an overdue-assessment candidate');
+  assert.ok(byId(out, 'uni.next'), 'expected the next upcoming assessment to survive alongside it');
+});
+
+test('the upcoming-assessment candidate never describes an overdue one', () => {
+  const out = JS.rank(ctx({
+    data: { uni: { assessments: [
+      assess({ id: 'old', name: 'AT1', date: '2026-07-01' }),
+      assess({ id: 'soon', name: 'AT2', date: '2026-08-08' })
+    ] } }
+  }));
+  const next = byId(out, 'uni.next');
+  assert.strictEqual(next.facts.inDays, 1, 'uni.next must measure the future item, not the old miss');
+  assert.ok(!/ago/.test(next.headline), 'uni.next said: ' + next.headline);
+});
+
+test('the overdue candidate counts every missed assessment, not just the worst', () => {
+  const out = JS.rank(ctx({
+    data: { uni: { assessments: [
+      assess({ id: 'a', name: 'AT1', date: '2026-07-01' }),
+      assess({ id: 'b', name: 'AT2', date: '2026-07-20' }),
+      assess({ id: 'c', name: 'AT3', date: '2026-09-01' })
+    ] } }
+  }));
+  assert.strictEqual(byId(out, 'uni.overdue').facts.overdue, 2);
+});
+
+// ── Uni: the semester pile-up ────────────────────────────────────────────────
+// His real data has seven assessments across six subjects landing on 25–26 Oct.
+// Jarvis showed the nearest one only, so the collision was invisible until it
+// arrived. This is the one thing his data holds that no other card can see.
+
+test('a cluster of assessments in a few days is surfaced before it arrives', () => {
+  const out = JS.rank(ctx({
+    data: { uni: { assessments: [
+      assess({ id: 'n', subject: 'Ethics', date: '2026-08-12' }),   // the nearest
+      assess({ id: 'c1', subject: 'Tax', date: '2026-09-05' }),
+      assess({ id: 'c2', subject: 'Budget', date: '2026-09-05' }),
+      assess({ id: 'c3', subject: 'AIS', date: '2026-09-06' })
+    ] } }
+  }));
+  const crunch = byId(out, 'uni.crunch');
+  assert.ok(crunch, 'expected a pile-up candidate; got ' + ids(out).join(', '));
+  assert.strictEqual(crunch.facts.count, 3);
+  assert.strictEqual(crunch.facts.subjects, 3);
+});
+
+test('the pile-up warning never outranks a live deadline', () => {
+  const out = JS.rank(ctx({
+    data: { uni: { assessments: [
+      assess({ id: 'n', subject: 'Ethics', date: '2026-08-08' }),
+      assess({ id: 'c1', subject: 'Tax', date: '2026-09-05' }),
+      assess({ id: 'c2', subject: 'Budget', date: '2026-09-05' }),
+      assess({ id: 'c3', subject: 'AIS', date: '2026-09-06' })
+    ] } }
+  }));
+  assert.ok(byId(out, 'uni.crunch').score < byId(out, 'uni.next').score,
+    'a pile-up three weeks out must not outrank something due tomorrow');
+});
+
+test('three assessments spread across a fortnight are not a pile-up', () => {
+  const out = JS.rank(ctx({
+    data: { uni: { assessments: [
+      assess({ id: 'c1', subject: 'Tax', date: '2026-09-01' }),
+      assess({ id: 'c2', subject: 'Budget', date: '2026-09-08' }),
+      assess({ id: 'c3', subject: 'AIS', date: '2026-09-15' })
+    ] } }
+  }));
+  assert.strictEqual(byId(out, 'uni.crunch'), undefined);
+});
+
+test('the pile-up is not repeated when it is already the nearest thing', () => {
+  // Nothing between now and the cluster: uni.next is one of the clustered items,
+  // so a separate warning about it would be the same news twice.
+  const out = JS.rank(ctx({
+    data: { uni: { assessments: [
+      assess({ id: 'c1', subject: 'Tax', date: '2026-08-10' }),
+      assess({ id: 'c2', subject: 'Budget', date: '2026-08-10' }),
+      assess({ id: 'c3', subject: 'AIS', date: '2026-08-11' })
+    ] } }
+  }));
+  assert.strictEqual(byId(out, 'uni.crunch'), undefined,
+    'the nearest assessment already carries this; the why should mention it instead');
+  assert.ok(/3 /.test(byId(out, 'uni.next').why), 'uni.next should name the company it keeps');
+});
+
+// ── The all-clear must not claim things it never checked ─────────────────────
+
+test('the all-clear does not assert anything about money', () => {
+  // It fires when no source produced a candidate — including when the Finance
+  // tab is empty — so it cannot know whether bills are covered.
+  const out = JS.rank(ctx());
+  assert.ok(!/bill/i.test(out[0].why), 'all-clear said: ' + out[0].why);
+});
+
+test('the nearest pile-up wins, not the biggest one further out', () => {
+  // Real data has three assessments 8 days out and five 29 days out. Warning
+  // about the far one first is useless: the near one has to be survived to
+  // reach it, and by then the far one is the near one.
+  const out = JS.rank(ctx({
+    data: { uni: { assessments: [
+      assess({ id: 'lead', subject: 'Spreadsheets', date: '2026-08-08' }),
+      assess({ id: 'n1', subject: 'Tax', date: '2026-08-16' }),
+      assess({ id: 'n2', subject: 'WIA', date: '2026-08-16' }),
+      assess({ id: 'n3', subject: 'FinStmts', date: '2026-08-17' }),
+      assess({ id: 'f1', subject: 'AIS', date: '2026-09-06' }),
+      assess({ id: 'f2', subject: 'Budget', date: '2026-09-06' }),
+      assess({ id: 'f3', subject: 'Ethics', date: '2026-09-06' }),
+      assess({ id: 'f4', subject: 'FinMgmt', date: '2026-09-07' })
+    ] } }
+  }));
+  const crunch = byId(out, 'uni.crunch');
+  assert.strictEqual(crunch.facts.inDays, 9, 'expected the pile-up 9 days out, not the one 30 days out');
+  assert.strictEqual(crunch.facts.count, 3);
+});
+
+test('a pile-up of assessments outranks a gym nudge', () => {
+  // It ranked below "42 days since your last session" on real data. Missing a
+  // workout and colliding four hand-ins are not the same order of problem.
+  const out = JS.rank(ctx({
+    data: {
+      uni: { assessments: [
+        assess({ id: 'lead', subject: 'Spreadsheets', date: '2026-08-08' }),
+        assess({ id: 'c1', subject: 'Tax', date: '2026-09-01' }),
+        assess({ id: 'c2', subject: 'WIA', date: '2026-09-01' }),
+        assess({ id: 'c3', subject: 'AIS', date: '2026-09-02' })
+      ] },
+      gym: { workouts: [{ date: '2026-06-26' }] }
+    }
+  }));
+  assert.ok(byId(out, 'uni.crunch').score > byId(out, 'gym.idle').score);
+});
+
+test('a pile-up still never reads as a deadline of its own', () => {
+  const out = JS.rank(ctx({
+    data: { uni: { assessments: [
+      assess({ id: 'lead', subject: 'Spreadsheets', date: '2026-08-08' }),
+      assess({ id: 'c1', subject: 'Tax', date: '2026-08-18' }),
+      assess({ id: 'c2', subject: 'WIA', date: '2026-08-18' }),
+      assess({ id: 'c3', subject: 'AIS', date: '2026-08-19' })
+    ] } }
+  }));
+  assert.ok(byId(out, 'uni.crunch').score < JS.BANDS.approaching,
+    'a pile-up is an early warning, not a date');
 });
