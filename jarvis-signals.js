@@ -419,6 +419,64 @@
     })];
   }
 
+  // Work diary. 22 written shift notes that nothing in Athena reads — the biggest
+  // piece of dead data in the app. The honest signal inside it is narrower than
+  // "review your diary": some shifts have text in `draftNotes` and nothing in
+  // `notes`, which means he typed a write-up, navigated away, and the Work tab's
+  // autosave (app.jsx:2134) parked it as a draft rather than a saved note.
+  //
+  // Two entries further down his real log read "dont remember". That is what the
+  // gap costs, and it is why this is worth a nudge at all.
+  //
+  // Deliberately says NOTHING about hours or pay. Whether an unsaved shift counts
+  // toward them runs through `isWorkEventCounted` and `progressiveSince`
+  // (2026-06-27 in his data), so of his four drafts two count and two do not. A
+  // claim about his money that holds half the time is precisely what the money
+  // signal was rebuilt to stop doing. If that claim is ever wanted, app.jsx must
+  // work it out and hand it in, the same way `money` is.
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+
+  // "2026-06-20" -> "20 June". Reads like a date he would say out loud, and the
+  // Work tab is where he goes to find it.
+  function niceDate(iso) {
+    var p = String(iso || '').split('-');
+    if (p.length !== 3) return String(iso || '');
+    var m = MONTHS[Number(p[1]) - 1];
+    return m ? Number(p[2]) + ' ' + m : String(iso);
+  }
+
+  function workSource(ctx) {
+    var logs = ctx.data.work && ctx.data.work.shiftLogs;
+    // An object keyed by gcal event id or date — not an array. Real documents
+    // contain nulls and half-written entries, so everything is checked.
+    if (!logs || typeof logs !== 'object' || Array.isArray(logs)) return [];
+    var drafts = Object.keys(logs)
+      .map(function (k) { return logs[k]; })
+      .filter(function (e) {
+        return e && typeof e === 'object' &&
+          String(e.draftNotes == null ? '' : e.draftNotes).trim() &&
+          !String(e.notes == null ? '' : e.notes).trim();
+      })
+      .sort(function (a, b) { return String(a.date || '').localeCompare(String(b.date || '')); });
+    if (!drafts.length) return [];
+
+    var n = drafts.length;
+    var oldest = drafts[0].date || null;
+    return [candidate({
+      id: 'work.unsavedNotes', domain: 'work',
+      // Decaying: the text does not disappear, but what he remembers about the
+      // shift does. Low, because nothing breaks if today is not the day.
+      score: 33,
+      headline: n + ' shift ' + plural(n, 'note', 'notes') + ' never got saved',
+      why: 'Typed into the shift diary and left as ' + plural(n, 'a draft', 'drafts') +
+           ' when the row closed' + (oldest ? ', the oldest on ' + niceDate(oldest) : '') +
+           '. The text comes back when you reopen the shift.',
+      cta: { label: 'Work', page: 'Work' }, view: 'work',
+      facts: { drafts: n, oldest: oldest }
+    })];
+  }
+
   // What today already contains. Context rather than an instruction, so it sits
   // low and mostly serves to explain why there is less room than you think.
   function calendarSource(ctx) {
@@ -454,7 +512,8 @@
     return out;
   }
 
-  var SOURCES = [financeSource, uniSource, tasksSource, gymSource, calendarSource, getAheadSource];
+  var SOURCES = [financeSource, uniSource, tasksSource, gymSource, workSource,
+    calendarSource, getAheadSource];
 
   function allClear(ctx) {
     return candidate({

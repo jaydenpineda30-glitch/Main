@@ -47,6 +47,19 @@ const CONTEXTS = [
     }
   },
   {
+    // Added after this file's first version let `view: 'work'` through
+    // unwhitelisted: the sweep can only judge views it actually triggers, so
+    // every source needs a context here. Adding a source means adding a context.
+    label: 'shift diary with unsaved drafts',
+    ctx: {
+      data: { work: { shiftLogs: {
+        a: { date: '2026-06-20', time: '16:00–22:00', draftNotes: 'onboarding process', notes: '' },
+        b: { date: '2026-07-08', time: '02:00–03:00', draftNotes: 'MidTown cellar bar', notes: '' }
+      } } },
+      gcalEvents: [], today: TODAY
+    }
+  },
+  {
     label: 'calm day, healthy money',
     ctx: {
       data: {

@@ -123,5 +123,5 @@ test('the known views are exactly the ones the ranker can ask for', () => {
   // test in jarvis-contract.test.js should be the thing that told you to change
   // it. See the comment on VIEWS in jarvis-view.js.
   assert.deepStrictEqual(JV.VIEWS.slice().sort(),
-    ['gym', 'money', 'tasks', 'uni', 'week']);
+    ['gym', 'money', 'tasks', 'uni', 'week', 'work']);
 });

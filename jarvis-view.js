@@ -37,7 +37,7 @@
   // The first draft of this list read ['next-step', 'task-list', 'money', 'week']
   // — two of which named nothing that existed anywhere, while `uni`, `tasks` and
   // `gym`, which the ranker emits constantly, were absent.
-  var VIEWS = ['money', 'uni', 'tasks', 'gym', 'week'];
+  var VIEWS = ['money', 'uni', 'tasks', 'gym', 'week', 'work'];
 
   // Real pages in Athena's nav. A cta pointing anywhere else is a dead button.
   var PAGES = ['Home', 'Personal', 'Uni', 'Work', 'Finance', 'Gym', 'Journal', 'Projects'];

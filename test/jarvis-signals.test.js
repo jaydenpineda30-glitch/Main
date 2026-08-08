@@ -669,3 +669,99 @@ test('a single overdue task describes only itself', () => {
   assert.ok(out[0].domain === 'uni', 'setup: the task should be a runner-up here');
   assert.ok(!POSITIONAL.test(t.why), 'got: ' + t.why);
 });
+
+// ── Work diary: notes typed and never saved ──────────────────────────────────
+// 22 written shift notes and nothing in Athena reads them — the biggest piece of
+// dead data in the app, per Jayden's own notes. The honest signal inside it is
+// narrower than "review your diary": four shifts have text in `draftNotes` and
+// nothing in `notes`, meaning he typed a write-up, navigated away, and the
+// autosave parked it as a draft. Two of those entries elsewhere in the log read
+// "dont remember", which is what the gap costs.
+//
+// What this signal must NOT say: anything about hours or pay. Whether an
+// unsaved shift counts toward them depends on `progressiveSince` (2026-06-27 in
+// his real data), so of his four drafts two count and two do not. A claim about
+// his money that is true half the time is the exact failure the money signal was
+// rebuilt to avoid.
+
+const shiftLog = (over) => Object.assign(
+  { date: '2026-07-01', time: '16:00–22:00', notes: '', draftNotes: '' }, over);
+
+test('shift notes left as drafts are surfaced', () => {
+  const out = JS.rank(ctx({
+    data: { work: { shiftLogs: {
+      a: shiftLog({ date: '2026-06-20', draftNotes: 'Configured the whole onboarding process' }),
+      b: shiftLog({ date: '2026-07-08', draftNotes: 'Working on MidTown cellar bar' }),
+      c: shiftLog({ date: '2026-07-31', notes: 'a real saved note' })
+    } } }
+  }));
+  const w = byId(out, 'work.unsavedNotes');
+  assert.ok(w, 'expected an unsaved-notes candidate; got ' + ids(out).join(', '));
+  assert.strictEqual(w.facts.drafts, 2, 'the saved note must not be counted as a draft');
+});
+
+test('the unsaved-notes candidate says nothing about hours or pay', () => {
+  const out = JS.rank(ctx({
+    data: { work: { shiftLogs: {
+      a: shiftLog({ date: '2026-06-20', draftNotes: 'did a thing' }),
+      b: shiftLog({ date: '2026-07-08', draftNotes: 'did another thing' })
+    } } }
+  }));
+  const w = byId(out, 'work.unsavedNotes');
+  assert.ok(!/hour|pay|\$|paid|worked|counted/i.test(w.headline + ' ' + w.why),
+    'must not claim anything about money or worked-state: ' + w.why);
+});
+
+test('the unsaved-notes candidate names the oldest draft so it is findable', () => {
+  const out = JS.rank(ctx({
+    data: { work: { shiftLogs: {
+      a: shiftLog({ date: '2026-07-17', draftNotes: '2 tickets' }),
+      b: shiftLog({ date: '2026-06-20', draftNotes: 'onboarding process' })
+    } } }
+  }));
+  const w = byId(out, 'work.unsavedNotes');
+  assert.strictEqual(w.facts.oldest, '2026-06-20');
+  assert.ok(/20 June|2026-06-20/.test(w.why), 'the why should point at it: ' + w.why);
+});
+
+test('a shift diary with everything saved produces no candidate', () => {
+  const out = JS.rank(ctx({
+    data: { work: { shiftLogs: {
+      a: shiftLog({ notes: 'saved' }),
+      b: shiftLog({ notes: 'also saved' })
+    } } }
+  }));
+  assert.strictEqual(byId(out, 'work.unsavedNotes'), undefined);
+});
+
+test('whitespace-only drafts do not count as written notes', () => {
+  const out = JS.rank(ctx({
+    data: { work: { shiftLogs: { a: shiftLog({ draftNotes: '   \n  ' }) } } }
+  }));
+  assert.strictEqual(byId(out, 'work.unsavedNotes'), undefined);
+});
+
+test('unsaved notes never outrank a real deadline', () => {
+  const out = JS.rank(ctx({
+    data: {
+      work: { shiftLogs: {
+        a: shiftLog({ date: '2026-06-20', draftNotes: 'x' }),
+        b: shiftLog({ date: '2026-06-26', draftNotes: 'y' }),
+        c: shiftLog({ date: '2026-07-08', draftNotes: 'z' })
+      } },
+      uni: { assessments: [assess({ date: '2026-08-09' })] }
+    }
+  }));
+  assert.ok(byId(out, 'work.unsavedNotes').score < byId(out, 'uni.next').score);
+  assert.ok(byId(out, 'work.unsavedNotes').score < JS.BANDS.approaching,
+    'four unsaved drafts are not an emergency');
+});
+
+test('a shiftLogs object shaped wrongly does not break the strip', () => {
+  // It is an object keyed by gcal id or date, not an array — and real documents
+  // contain nulls and half-written entries.
+  [[], null, 'nope', 42, { a: null, b: 'text', c: { draftNotes: 5 } }].forEach((shiftLogs) => {
+    const out = JS.rank(ctx({ data: { work: { shiftLogs: shiftLogs } } }));
+    assert.ok(out.length > 0, 'rank went empty for shiftLogs=' + JSON.stringify(shiftLogs));
+  });
+});
