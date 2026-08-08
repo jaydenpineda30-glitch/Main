@@ -238,3 +238,10 @@ test('no temperature is sent', async () => {
   assert.strictEqual(f.calls[0].init.body.indexOf('temperature'), -1,
     'temperature must not be sent: ' + f.calls[0].init.body);
 });
+
+test('the default timeout allows for how slow this model actually is', () => {
+  // Measured live: 7.8s for a real grounded question, 3.6-5.0s for a one-word
+  // smoke test, because the model thinks first. A 12s default left no headroom
+  // and would have turned an ordinary slow day into a silent fallback.
+  assert.ok(SVC.TIMEOUT_MS >= 20000, 'too tight for observed latency: ' + SVC.TIMEOUT_MS);
+});

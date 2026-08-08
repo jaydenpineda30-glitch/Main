@@ -44,8 +44,18 @@
   var ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions';
   var MODEL = 'gemini-3.5-flash';
 
-  // A card that arrives after he has moved on is worse than no card.
-  var TIMEOUT_MS = 12000;
+  // Measured against the live API on 2026-08-08, not guessed: a real grounded
+  // question took 7.8s, and a one-word smoke test still took 3.6–5.0s because
+  // this model thinks before answering (73 thought tokens to produce the word
+  // "ok"). 12s left almost no headroom.
+  //
+  // Thinking does not appear to be controllable here. `thinking_level`,
+  // `thinking_config`, `thinking` and `reasoning_effort` are all rejected as
+  // unknown parameters. `generation_config` is accepted, but a 200 does not
+  // prove a nested `thinking_level` was honoured — the token difference was
+  // within run-to-run noise — so it is deliberately not sent. Shipping a
+  // parameter that cannot be shown to work is cargo cult.
+  var TIMEOUT_MS = 25000;
   // Enough for the ranked list and the question; short enough to stay cheap and
   // fast on a free tier.
   var PROMPT_MAX = 6000;

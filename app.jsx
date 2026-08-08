@@ -2776,8 +2776,32 @@ const JARVIS_BAND_COLOUR={
   failing:T.danger, deadline:T.warn, approaching:T.warn,
   decaying:T.accent, getAhead:T.accent, allClear:T.success
 };
-function JarvisCard({candidates,onOpen,cardStyle,mob}){
+function JarvisCard({candidates,onOpen,cardStyle,mob,geminiKey}){
   const [open,setOpen]=React.useState(false);
+  // Stage 2: ask him something. With no key JarvisService.ask resolves null and
+  // the box never appears, so the card is exactly what it was before — the
+  // ranked rules, correct without any network at all.
+  const [q,setQ]=React.useState("");
+  const [asking,setAsking]=React.useState(false);
+  const [answer,setAnswer]=React.useState(null);   // {say, show, cta} | {error:true}
+  const canAsk=!!(geminiKey&&String(geminiKey).trim()&&window.JarvisService);
+
+  function submitQuestion(){
+    const question=q.trim();
+    if(!question||asking||!canAsk)return;
+    setAsking(true);setAnswer(null);
+    window.JarvisService.ask({
+      question:question,
+      candidates:candidates||[],
+      key:geminiKey,
+      today:todayStr()
+    }).then(function(res){
+      setAsking(false);
+      // null covers every failure — no key, offline, quota, a refusal, a shape
+      // nobody expected. One quiet line, and the ranked card above still stands.
+      setAnswer(res||{error:true});
+    }).catch(function(){setAsking(false);setAnswer({error:true});});
+  }
   const list=candidates||[];
   // rank() guarantees at least one candidate, so this is belt-and-braces for a
   // caller that hands us nothing at all rather than an expected state.
@@ -2862,6 +2886,32 @@ function JarvisCard({candidates,onOpen,cardStyle,mob}){
               </div>
             );
           })}
+        </div>}
+      </div>}
+
+      {canAsk&&<div style={{marginTop:14,borderTop:"0.5px solid rgba(255,255,255,0.08)",paddingTop:12}}>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <input value={q} onChange={function(e){setQ(e.target.value);}}
+            onKeyDown={function(e){if(e.key==="Enter"){e.preventDefault();submitQuestion();}}}
+            placeholder={asking?"Thinking…":"Ask Jarvis…"} disabled={asking}
+            style={{flex:1,minWidth:0,background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.10)",
+                    borderRadius:999,padding:"7px 14px",fontSize:12.5,color:T.text,outline:"none",fontFamily:"inherit"}}/>
+          <button onClick={submitQuestion} disabled={asking||!q.trim()}
+            style={{...btnGlass,padding:"6px 14px",fontSize:12,opacity:(asking||!q.trim())?0.45:1,
+                    cursor:(asking||!q.trim())?"default":"pointer"}}>Ask</button>
+        </div>
+
+        {answer&&<div className="jarvis-lead" style={{marginTop:10,paddingLeft:10,
+            borderLeft:"1.5px solid "+accent+"55"}}>
+          {answer.error
+            ? <div style={{fontSize:12,color:T.text3,lineHeight:1.45}}>
+                Could not reach the model just now. The card above still stands — it does not need one.
+              </div>
+            : <div>
+                <div style={{fontSize:13,color:T.text2,lineHeight:1.5}}>{answer.say}</div>
+                {answer.cta&&<button onClick={function(){onOpen&&onOpen(answer.cta.page);}}
+                  style={{...btnGlass,marginTop:9,padding:"5px 12px",fontSize:11}}>{answer.cta.label}</button>}
+              </div>}
         </div>}
       </div>}
     </div>
@@ -4700,6 +4750,7 @@ function App(){
           <ErrorBoundary name="Jarvis">
             <JarvisCard candidates={jarvisCandidates} mob={mob}
               onOpen={function(p){setPage(p);}}
+              geminiKey={geminiKey}
               cardStyle={card({padding:"16px 20px",marginBottom:mob?12:GRID_GAP})}/>
           </ErrorBoundary>
           <div className="card-rim" style={card({padding:"16px 20px",marginBottom:mob?12:GRID_GAP})}>

@@ -93,6 +93,14 @@
 <script src="week-utils.js"></script>
 <!-- jarvis-signals reads TaskGrouping, so it must load after it -->
 <script src="jarvis-signals.js"></script>
+<!-- The trust boundaries. jarvis-view decides what a model is allowed to put on
+     screen; jarvis-intent decides what it is allowed to change. jarvis-service
+     is the only one that touches the network, and it reads both, so it loads
+     last. None of them is required for the Jarvis card to work — with no API key
+     the card falls back to the ranked rules, which is the whole point. -->
+<script src="jarvis-view.js"></script>
+<script src="jarvis-intent.js"></script>
+<script src="jarvis-service.js"></script>
 </head>
 <body>
 <div id="root"></div>

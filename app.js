@@ -10994,11 +10994,52 @@ function JarvisCard(_ref8) {
   var candidates = _ref8.candidates,
     onOpen = _ref8.onOpen,
     cardStyle = _ref8.cardStyle,
-    mob = _ref8.mob;
+    mob = _ref8.mob,
+    geminiKey = _ref8.geminiKey;
   var _React$useState3 = React.useState(false),
     _React$useState4 = _slicedToArray(_React$useState3, 2),
     open = _React$useState4[0],
     setOpen = _React$useState4[1];
+  // Stage 2: ask him something. With no key JarvisService.ask resolves null and
+  // the box never appears, so the card is exactly what it was before — the
+  // ranked rules, correct without any network at all.
+  var _React$useState5 = React.useState(""),
+    _React$useState6 = _slicedToArray(_React$useState5, 2),
+    q = _React$useState6[0],
+    setQ = _React$useState6[1];
+  var _React$useState7 = React.useState(false),
+    _React$useState8 = _slicedToArray(_React$useState7, 2),
+    asking = _React$useState8[0],
+    setAsking = _React$useState8[1];
+  var _React$useState9 = React.useState(null),
+    _React$useState10 = _slicedToArray(_React$useState9, 2),
+    answer = _React$useState10[0],
+    setAnswer = _React$useState10[1]; // {say, show, cta} | {error:true}
+  var canAsk = !!(geminiKey && String(geminiKey).trim() && window.JarvisService);
+  function submitQuestion() {
+    var question = q.trim();
+    if (!question || asking || !canAsk) return;
+    setAsking(true);
+    setAnswer(null);
+    window.JarvisService.ask({
+      question: question,
+      candidates: candidates || [],
+      key: geminiKey,
+      today: todayStr()
+    }).then(function (res) {
+      setAsking(false);
+      // null covers every failure — no key, offline, quota, a refusal, a shape
+      // nobody expected. One quiet line, and the ranked card above still stands.
+      setAnswer(res || {
+        error: true
+      });
+    })["catch"](function () {
+      setAsking(false);
+      setAnswer({
+        error: true
+      });
+    });
+  }
   var list = candidates || [];
   // rank() guarantees at least one candidate, so this is belt-and-braces for a
   // caller that hands us nothing at all rather than an expected state.
@@ -11237,7 +11278,81 @@ function JarvisCard(_ref8) {
         flexShrink: 0
       })
     }, c.cta.label));
-  }))));
+  }))), canAsk && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 14,
+      borderTop: "0.5px solid rgba(255,255,255,0.08)",
+      paddingTop: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    value: q,
+    onChange: function onChange(e) {
+      setQ(e.target.value);
+    },
+    onKeyDown: function onKeyDown(e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        submitQuestion();
+      }
+    },
+    placeholder: asking ? "Thinking…" : "Ask Jarvis…",
+    disabled: asking,
+    style: {
+      flex: 1,
+      minWidth: 0,
+      background: "rgba(255,255,255,0.04)",
+      border: "0.5px solid rgba(255,255,255,0.10)",
+      borderRadius: 999,
+      padding: "7px 14px",
+      fontSize: 12.5,
+      color: T.text,
+      outline: "none",
+      fontFamily: "inherit"
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: submitQuestion,
+    disabled: asking || !q.trim(),
+    style: _objectSpread(_objectSpread({}, btnGlass), {}, {
+      padding: "6px 14px",
+      fontSize: 12,
+      opacity: asking || !q.trim() ? 0.45 : 1,
+      cursor: asking || !q.trim() ? "default" : "pointer"
+    })
+  }, "Ask")), answer && /*#__PURE__*/React.createElement("div", {
+    className: "jarvis-lead",
+    style: {
+      marginTop: 10,
+      paddingLeft: 10,
+      borderLeft: "1.5px solid " + accent + "55"
+    }
+  }, answer.error ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: T.text3,
+      lineHeight: 1.45
+    }
+  }, "Could not reach the model just now. The card above still stands \u2014 it does not need one.") : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: T.text2,
+      lineHeight: 1.5
+    }
+  }, answer.say), answer.cta && /*#__PURE__*/React.createElement("button", {
+    onClick: function onClick() {
+      onOpen && onOpen(answer.cta.page);
+    },
+    style: _objectSpread(_objectSpread({}, btnGlass), {}, {
+      marginTop: 9,
+      padding: "5px 12px",
+      fontSize: 11
+    })
+  }, answer.cta.label)))));
 }
 function UpcomingClassesCard(_ref9) {
   var events = _ref9.events,
@@ -16700,6 +16815,7 @@ function App() {
     onOpen: function onOpen(p) {
       setPage(p);
     },
+    geminiKey: geminiKey,
     cardStyle: card({
       padding: "16px 20px",
       marginBottom: mob ? 12 : GRID_GAP
