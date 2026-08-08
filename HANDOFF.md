@@ -1,4 +1,16 @@
-# Dashboard Handoff — May 16 2026 (operational facts updated 2026-06-24)
+# Dashboard Handoff — May 16 2026 (operational facts updated 2026-08-09)
+
+> **Current state, 2026-08-09.** Jarvis (stages 1–4) is built, tested and
+> verified against real data on `worktree-jarvis-signals` — **not merged, not
+> live.** See the Jarvis section below. Merging is a fast-forward with no
+> conflicts, and GitHub Pages publishes straight from `main`, so **merging is
+> what makes it live** — there is no separate deploy gate.
+>
+> **Known and unactioned:** `settings.githubPAT` is copied in plain text into
+> every exported backup in the OneDrive-synced vault. Deferred by Jayden until
+> Jarvis is finished. Rotating the token matters more than moving it, because old
+> exports cannot be un-copied — and any AI key added later lands in the same
+> `settings` object, so fix the storage before adding keys.
 
 > **Current state (2026-06-24):** the redesign is merged to `main`, and the app is
 > now **precompiled** — JSX lives in `app.jsx`, compiled to `app.js` by `build.js`.
@@ -40,8 +52,12 @@ catches this in CI, but only after the fact.
 | `app.jsx` | **The app** — React, UI, Firebase logic (edit this; compiled to `app.js`) |
 | `app.js` | Generated bundle (do not hand-edit); `dashboard.html` is now just the shell that loads it |
 | `build.js` | Compiles `app.jsx` → `app.js` |
-| `gemini-service.js` | Quick Capture classification via Gemini 2.5 Flash |
-| `ollama-service.js` | AI routing for check-ins + reflection analysis (Gemini 2.5 Flash, no Ollama fallback needed) |
+| `jarvis-signals.js` | **Jarvis's ranking rules** — decides what matters next across uni, tasks, money, gym and work. Pure, tested, no network. Works with no API key. |
+| `jarvis-view.js` | Trust boundary: what a model is allowed to put **on screen** |
+| `jarvis-intent.js` | Trust boundary: what a model is allowed to **change**, plus reconciling a proposal against real data before you confirm |
+| `jarvis-service.js` | The only Jarvis file that touches the network (Gemini 3.5 Flash) |
+| `gemini-service.js` | Quick Capture classification. ⚠️ On the request shape Google retired 8 June 2026 — see Gemini Setup |
+| `ollama-service.js` | Reflection analysis. ⚠️ Same stale request shape. The check-in half is dead code — the Daily Check-in was removed |
 | `gcal-sync.js` | Google Calendar read-only sync |
 | `export-to-obsidian.js` | Automated Obsidian export via Firebase Admin SDK |
 | `firebase-rules.txt` | Firestore security rules — paste into Firebase Console if rules need updating |
@@ -62,13 +78,35 @@ catches this in CI, but only after the fact.
 
 ## Gemini Setup
 
-- **Model:** `gemini-2.5-flash` via `v1beta` endpoint
 - **API key:** Stored in `localStorage.__gemini_key__` + Firestore `settings.geminiKey`
-- **Project:** New Google Cloud project with billing enabled (billing required for quota to activate — free tier applies)
-- **Key location in dashboard:** Settings → paste into Gemini API Key field
+- **Key location in dashboard:** Logs → Settings → Gemini API Key field
 - **Key is trimmed** on all read paths to prevent whitespace issues
 
-> Note: `gemini-1.5-flash` is deprecated on both v1 and v1beta. `gemini-2.0-flash` and `gemini-2.0-flash-lite` return limit:0 for new accounts. `gemini-2.5-flash` is the correct current model.
+### Two different call shapes now live in this repo
+
+| | Model | Request shape | Auth |
+|---|---|---|---|
+| `jarvis-service.js` | `gemini-3.5-flash` | `/v1beta/interactions`, `response_format` + schema | `x-goog-api-key` header |
+| `gemini-service.js`, `ollama-service.js`, `boardroom-service.js` | `gemini-2.5-flash` | `:generateContent`, `generationConfig.responseMimeType` | key in the query string |
+
+> ⚠️ **The second row is stale.** Google restructured this API in May 2026 —
+> `steps` replaced `outputs`, `response_mime_type` was folded into a polymorphic
+> `response_format`, and **the legacy schema was removed on 8 June 2026**. Those
+> three services were deliberately not migrated: the Daily Check-in is gone,
+> Boardroom is being retired, and captures are moving to Obsidian. If Quick
+> Capture or reflection analysis is ever wanted again, they need the shape in
+> row one, not a key.
+>
+> Checked against the live API on 2026-08-08, not assumed. `gemini-3.5-flash`
+> works; the key belongs in a header, not the URL, because URLs reach browser
+> history, referrers and server logs.
+
+### Latency, measured
+
+A real grounded question takes **~8 seconds**; even a one-word reply takes 3–5s,
+because this model thinks before answering. The timeout is 25s. Thinking does
+not appear to be controllable — `thinking_level`, `thinking_config`, `thinking`
+and `reasoning_effort` are all rejected as unknown parameters.
 
 ---
 
@@ -133,6 +171,73 @@ Three places updated in `dashboard.html`:
 
 ---
 
+## Jarvis (added 2026-08-07 to 2026-08-09)
+
+The card at the top of the home page that answers "what should I do next". It is
+the only thing in Athena that compares **across** areas — money against uni
+against tasks — and picks. That comparison is the whole product.
+
+**The rule everything rests on: ranking is plain rules; the model only phrases.**
+Jarvis is fully correct with no API key. Nothing about priority is decided by an
+LLM, so it can be read, argued with and unit-tested.
+
+| Stage | What it does | State |
+|---|---|---|
+| 1 — He speaks | Ranked card, always says something | ✅ |
+| 2 — You ask | "Ask Jarvis…" box, grounded answers | ✅ needs a Gemini key |
+| 3 — He acts | Proposes a change, you confirm, then it writes | ✅ |
+| 4 — Front door | Clicking a card takes you to the exact row | ✅ Boardroom removal **deferred** |
+
+### The rules that keep it honest
+
+These were each learned by a bug, and breaking them reintroduces one:
+
+1. **A candidate's text may only describe its own facts.** It cannot say "the
+   paragraph above" or "everything else can wait" — it does not know where it
+   will rank. `floorOnly` marks candidates that only make sense on a calm day.
+2. **Never recompute Jayden's money.** `app.jsx` works it out and hands it in.
+   One calculation means the Finance tab and Jarvis cannot disagree.
+3. **A confirm dialog describes reality, not the model's claim.**
+   `JarvisIntent.resolve()` checks ids against real tasks first, so it can never
+   say "Move 3 tasks" and move one.
+4. **Silence is a failure state.** `rank()` never returns an empty list.
+5. **Say what you cannot do.** Jarvis cannot delete anything. It must say so
+   rather than claiming the item does not exist.
+
+### Verifying it
+
+```bash
+npm test          # 191 tests
+```
+
+Tests are necessary and not sufficient. **Every real bug this project found came
+from running the ranker over a real backup and reading the sentences**, or from
+using it in the browser — not from the suite. Do both:
+
+```bash
+node -e "
+const fs=require('fs'), JS=require('./jarvis-signals.js');
+const raw=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));
+const data=raw.dashData||raw.data||raw;
+JS.rank({data,gcalEvents:[],today:process.argv[2]}).forEach((c,i)=>
+  console.log((i?'   ':'>> ')+'['+c.score+' '+c.band+'] '+c.headline+'\n        '+c.why));
+" "<a backup from Dashboard/Backups>" 2026-08-09
+```
+
+Try a busy day, a calm one, and a date months ahead. A far-future date replays
+the semester forward and is how the worst bug was found.
+
+### What is deliberately NOT built
+
+- **Deleting anything.** Athena has no undo, so `task.delete` is off the
+  whitelist on purpose. Do not add it casually.
+- **Research.** Jarvis has no retrieval. Asked to research an assessment it
+  would produce fluent, unsourced, plausible text about real accounting work.
+  Task breakdown is safe; research is not, until a real search tool exists.
+- **Boardroom removal.** Deferred by Jayden on 2026-08-09.
+
+---
+
 ## How to Pick Up Next Session
 
 1. Live site: `https://jaydenpineda30-glitch.github.io/Main/dashboard.html`
@@ -168,6 +273,16 @@ Two AI coaches that both reply to every message, available via a 🧠 floating a
 Both run via **Groq** (model: `gpt-oss-120b`). As of 2026-06-24 the Boardroom uses a
 deliberation loop, intent detection (direction vs how-to), and a Project Context panel;
 the persona/API list below predates that — see `boardroom-service.js` for the current API.
+
+> ⚠️ **Boardroom does not currently work** (checked 2026-08-09). It calls Groq with
+> `localStorage.__groq_key__`, and there is no such key in Jayden's settings — the
+> only key stored there is `githubPAT`. So every use fails. Its Gemini fallback path
+> is on the request shape retired 8 June 2026 as well.
+>
+> The Jarvis spec had it removed at stage 4; **Jayden deferred that on 2026-08-09**,
+> so it stays. Keeping the tab is not the same as it working. Reviving it means
+> either a Groq key or porting it onto `jarvis-service.js`'s call shape — separate
+> work from Jarvis either way.
 
 ### Files
 
