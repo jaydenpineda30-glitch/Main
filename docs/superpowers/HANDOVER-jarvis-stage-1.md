@@ -3,8 +3,9 @@
 **Written:** 2026-08-07, end of session
 **Branch:** `worktree-jarvis-signals`, commit `eb21ca3`
 **Worktree:** `C:\Users\Jayde\my-project\.claude\worktrees\jarvis-signals`
-**State:** stage 1 built and committed. The two deliberately-failing tests have
-since been fixed — **68 tests, all passing**. See "The floor rule, as built".
+**State:** stage 1 built, committed and pushed. **102 tests, all passing.**
+Stage 2 has its foundation (`jarvis-view.js`) only — nothing user-visible yet.
+Read "The uni source, rebuilt" for the most recent changes.
 
 ---
 
@@ -41,7 +42,7 @@ To work on it: `cd C:\Users\Jayde\my-project\.claude\worktrees\jarvis-signals`.
 ## The floor rule, as built
 
 ```
-npm test        # 68 tests, all passing
+npm test        # 102 tests, all passing
 ```
 
 ### The bug this fixed
@@ -70,8 +71,8 @@ Two tests in `test/jarvis-signals.test.js` pin this down, and both now pass:
 1. **`floorOnly: true`** marks candidates that only make sense when nothing real
    is happening:
    - `getAhead.task` in `getAheadSource`
-   - the `> 14 days` branch of `uniSource` ("Good day to get ahead on X")
-   - the "Bills covered with $X spare" branch of `financeSource`
+   - the `> 14 days` branch of `uni.next` ("Good day to get ahead on X")
+   - the healthy-disposable branch of `financeSource` ("$X spare this month")
 2. **`rank()`**, after sorting, drops every `floorOnly` candidate if any
    non-`floorOnly` candidate scores `>= BANDS.decaying` (30). Otherwise it keeps
    them, so a calm day still gets a suggestion instead of silence. The all-clear
@@ -207,14 +208,20 @@ variables, and its `HOME_CARDS` entry. Roughly 160 lines; `app.js` went 713 KB �
 
 ---
 
-## Not done in stage 1
+## The money signal — DONE 2026-08-07
 
-**The money signal is not wired.** `financeSource` is written and tested, but
-`app.jsx` passes no `money` into `rank()`, so it stays quiet. There are **two**
-blockers, and the second is the real one — an earlier draft of this note listed
-only the first and made the job look like twenty minutes.
+> **Status: wired and verified.** `app.jsx:3367` passes `money: jarvisMoney(data,
+> dedupedEvents)` into `rank()`. Verified on screen against the Finance tab:
+> $1,251 income, −$227 expenses, +$1,024 net, −$202 disposable, all unchanged
+> after the lift. The blocker write-ups below are kept because they explain *why*
+> the money maths is shaped the way it is — read them before touching it, but
+> nothing here is outstanding work.
 
-**Blocker 1 — the `getPeriodRange` lift. Small.** It sits inside `WorkSection`
+Both blockers are resolved, and the second turned out to be the real one — an
+earlier draft of this note listed only the first and made the job look like
+twenty minutes.
+
+**Blocker 1 — RESOLVED. The `getPeriodRange` lift. Small.** It sat inside `WorkSection`
 at `app.jsx:2082–2092`, with one call site at 2093. It closes over exactly one
 value, `payCycleDay` (line 2081), and that is not component state:
 
@@ -256,41 +263,24 @@ Jarvis is gross because the Finance tab is gross, and the two agree, which was
 the higher priority. If Jayden later wants net, change it in `financeSummary`
 and both move together. `estimateTax` already exists inside `WorkSection`.
 
-The original framing of this blocker, kept because it explains the data model:
-`financeSource` gates on `billsTotal > 0`, and no such field exists anywhere in
-the data model. What exists is raw material, in `data.finance` (line ~155):
+**The `money` contract, as actually built.** `app.jsx` computes every figure and
+hands it in; `jarvis-signals.js` never recomputes any of it. `jarvisMoney()`
+(app.jsx:1076) reads straight off `financeSummary` and passes:
 
 ```js
-monthlyBudget: 0,
-recurringTemplates: [],
-monthlyRecurringOverrides: {},
-expenses: [],
+money: { income, bills, oneOffs, savings, disposable }
 ```
 
-Deciding what counts as "bills this cycle" — recurring templates alone or plus
-one-off expenses, how `monthlyRecurringOverrides` applies, and how a **monthly**
-budget maps onto a **pay-cycle** window that deliberately does not align to
-calendar months — is Jayden's call, not an implementation detail. Ask before
-building. Getting it wrong produces a confident, wrong number about his money,
-which is worse than the current silence.
+`financeSource` treats absent `money` — or `income <= 0` — as "not configured"
+and stays silent, which is why stage 1 works before the Finance tab is set up.
 
-The projected side is already done: `projectedEquiv` (line 2130) sums
-`shiftPay(ev.time).totalEquiv` across the period's scheduled shifts, and
-`projectedPay` (2131) applies the hourly rate.
-
-The July branch did exactly this lift — "lifted from WorkSection to top-level
-`getPayPeriodRange` (verbatim; Work tab delegates — verified identical figures)".
-Do the same: lift verbatim, have `WorkSection` delegate, then **check the Work
-tab's figures are unchanged before trusting it**. It is real money maths.
-
-Then pass in from `app.jsx`:
-
-```js
-money: { billsTotal, projected, shifts }
-```
-
-`financeSource` treats absent `money` as "not configured" and stays silent, which
-is why stage 1 works without it.
+> ⚠️ Earlier drafts of this handover described a `billsTotal` field and told the
+> next session to build one. **It was built, then deleted the same session.** It
+> recomputed bills a second time and ignored `monthlyRecurringOverrides`, so it
+> would have drifted from the Finance tab in any month a bill was skipped or
+> adjusted — and bills coverage turned out to be the wrong question anyway. If
+> you find `billsTotal` referenced anywhere, it is stale documentation, not a
+> missing feature.
 
 ---
 
