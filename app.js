@@ -10995,7 +10995,9 @@ function JarvisCard(_ref8) {
     onOpen = _ref8.onOpen,
     cardStyle = _ref8.cardStyle,
     mob = _ref8.mob,
-    geminiKey = _ref8.geminiKey;
+    geminiKey = _ref8.geminiKey,
+    data = _ref8.data,
+    onRunProposal = _ref8.onRunProposal;
   var _React$useState3 = React.useState(false),
     _React$useState4 = _slicedToArray(_React$useState3, 2),
     open = _React$useState4[0],
@@ -11016,6 +11018,17 @@ function JarvisCard(_ref8) {
     answer = _React$useState10[0],
     setAnswer = _React$useState10[1]; // {say, show, cta} | {error:true}
   var canAsk = !!(geminiKey && String(geminiKey).trim() && window.JarvisService);
+  // Reconciled against the live dashboard every render, not once at reply time:
+  // a task completed in another tab between the answer and the click should make
+  // the button disappear, not write to something that has since changed.
+  var resolved = React.useMemo(function () {
+    if (!answer || !answer.proposal || !window.JarvisIntent) return null;
+    try {
+      return window.JarvisIntent.resolve(answer.proposal, data);
+    } catch (_) {
+      return null;
+    }
+  }, [answer, data]);
   function submitQuestion() {
     var question = q.trim();
     if (!question || asking || !canAsk) return;
@@ -11343,7 +11356,77 @@ function JarvisCard(_ref8) {
       color: T.text2,
       lineHeight: 1.5
     }
-  }, answer.say), answer.cta && /*#__PURE__*/React.createElement("button", {
+  }, answer.say), resolved && resolved.ok && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      padding: "9px 11px",
+      borderRadius: 9,
+      background: "rgba(255,255,255,0.04)",
+      border: "0.5px solid rgba(255,255,255,0.10)"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: T.text,
+      lineHeight: 1.45
+    }
+  }, resolved.summary), resolved.truncated && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: T.warn,
+      marginTop: 4
+    }
+  }, "Trimmed to the first ", window.JarvisIntent.BULK_CAP, "."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 7,
+      marginTop: 9
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: function onClick() {
+      var ok = onRunProposal && onRunProposal(resolved);
+      setAnswer(Object.assign({}, answer, {
+        done: ok ? "done" : "failed"
+      }));
+    },
+    style: _objectSpread(_objectSpread({}, btnGlass), {}, {
+      padding: "5px 13px",
+      fontSize: 11
+    })
+  }, "Do it"), /*#__PURE__*/React.createElement("button", {
+    onClick: function onClick() {
+      setAnswer(Object.assign({}, answer, {
+        proposal: null,
+        done: "cancelled"
+      }));
+    },
+    style: {
+      background: "none",
+      border: "none",
+      color: T.text3,
+      fontSize: 11,
+      cursor: "pointer",
+      padding: "5px 4px"
+    }
+  }, "No"))), answer.done === "done" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: T.text3,
+      marginTop: 8
+    }
+  }, "Done."), answer.done === "cancelled" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: T.text3,
+      marginTop: 8
+    }
+  }, "Left alone."), answer.done === "failed" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: T.warn,
+      marginTop: 8
+    }
+  }, "That did not go through. Nothing changed."), answer.cta && !answer.done && /*#__PURE__*/React.createElement("button", {
     onClick: function onClick() {
       onOpen && onOpen(answer.cta.page);
     },
@@ -13422,6 +13505,134 @@ function App() {
         })
       });
     });
+  }
+
+  // ── Jarvis stage 3: executing a confirmed proposal ────────────────────────
+  // Only ever called from the confirm button. Everything upstream of this is
+  // inert: jarvis-intent validates the shape, resolve() checks the ids against
+  // real tasks, and the dialog states what will change. This is the last gate,
+  // and it is deliberately a literal switch rather than a lookup — there is no
+  // arrangement of model output that reaches a branch not written out below.
+  //
+  // Writes go through the same setData path as every other mutation, so
+  // Firestore sync, debouncing and isLikelySeedState protection all apply
+  // unchanged. Nothing here invents its own persistence.
+  function runJarvisProposal(resolved) {
+    if (!resolved || !resolved.ok) return false;
+    var a = resolved.args || {};
+    var ids = Array.isArray(a.ids) ? a.ids : [];
+    var has = function has(t) {
+      return ids.indexOf(t.id) !== -1;
+    };
+    switch (resolved.intent) {
+      case "task.add":
+        setData(function (p) {
+          var ts = p.personal && p.personal.tasks || [];
+          return _objectSpread(_objectSpread({}, p), {}, {
+            personal: _objectSpread(_objectSpread({}, p.personal), {}, {
+              tasks: ts.concat([{
+                id: Date.now(),
+                name: a.name,
+                cat: a.cat || "Errands",
+                priority: a.priority || "normal",
+                due: a.due || null,
+                done: false,
+                addedAt: todayStr(),
+                editedAt: null,
+                state: "todo",
+                updates: []
+              }])
+            })
+          });
+        });
+        return true;
+      case "task.complete":
+        setData(function (p) {
+          var ts = p.personal && p.personal.tasks || [];
+          return _objectSpread(_objectSpread({}, p), {}, {
+            personal: _objectSpread(_objectSpread({}, p.personal), {}, {
+              tasks: ts.map(function (t) {
+                return has(t) ? _objectSpread(_objectSpread({}, t), {}, {
+                  done: true,
+                  completedAt: todayStr(),
+                  completedTime: null
+                }) : t;
+              })
+            })
+          });
+        });
+        return true;
+      case "task.reschedule":
+        setData(function (p) {
+          var ts = p.personal && p.personal.tasks || [];
+          return _objectSpread(_objectSpread({}, p), {}, {
+            personal: _objectSpread(_objectSpread({}, p.personal), {}, {
+              tasks: ts.map(function (t) {
+                return has(t) ? _objectSpread(_objectSpread({}, t), {}, {
+                  due: a.due || null,
+                  editedAt: todayStr()
+                }) : t;
+              })
+            })
+          });
+        });
+        return true;
+      case "task.setState":
+        setData(function (p) {
+          var ts = p.personal && p.personal.tasks || [];
+          return _objectSpread(_objectSpread({}, p), {}, {
+            personal: _objectSpread(_objectSpread({}, p.personal), {}, {
+              tasks: ts.map(function (t) {
+                return has(t) ? _objectSpread(_objectSpread({}, t), {}, {
+                  state: a.state,
+                  editedAt: todayStr()
+                }) : t;
+              })
+            })
+          });
+        });
+        return true;
+      case "project.create":
+        // `data.projects` is a plain ARRAY — see updateProjects and the Projects
+        // page, which pass `data.projects||[]` straight through. The first draft
+        // here wrote {...p.projects, items:[...]}, which would have spread the
+        // array into an object and destroyed every existing project. Checked
+        // against a real backup before this ever ran.
+        setData(function (p) {
+          var prjs = Array.isArray(p.projects) ? p.projects : [];
+          return _objectSpread(_objectSpread({}, p), {}, {
+            projects: prjs.concat([{
+              id: nid("prj"),
+              title: a.title,
+              emoji: "📋",
+              createdAt: todayStr(),
+              archived: false,
+              stages: (a.stages || []).map(function (s) {
+                return {
+                  id: nid("st"),
+                  title: s.title,
+                  subtitle: s.subtitle || "",
+                  steps: (s.steps || []).map(function (st) {
+                    return {
+                      id: nid("sp"),
+                      title: st.title,
+                      desc: st.desc || "",
+                      done: false,
+                      meta: {}
+                    };
+                  })
+                };
+              })
+            }])
+          });
+        });
+        return true;
+      default:
+        // Unreachable via the whitelist, and logged rather than ignored so that
+        // a gap between the whitelist and this switch is noisy instead of silent.
+        if (window.ErrorHandler) ErrorHandler.warn("unknown intent: " + resolved.intent, "jarvis");
+        return false;
+    }
   }
   // Writing an update is a real interaction with the task, so it refreshes
   // editedAt — that is what clears the "untouched Nd" badge.
@@ -16816,6 +17027,12 @@ function App() {
       setPage(p);
     },
     geminiKey: geminiKey,
+    data: data,
+    onRunProposal: function onRunProposal(r) {
+      var ok = runJarvisProposal(r);
+      showToast(ok ? "Done" : "Could not apply that", ok ? "success" : "error");
+      return ok;
+    },
     cardStyle: card({
       padding: "16px 20px",
       marginBottom: mob ? 12 : GRID_GAP

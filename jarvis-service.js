@@ -37,9 +37,12 @@
 (function (root) {
   'use strict';
 
-  var JV = (typeof module !== 'undefined' && module.exports && typeof require === 'function')
-    ? require('./jarvis-view.js')
-    : root.JarvisView;
+  var isNode = (typeof module !== 'undefined' && module.exports && typeof require === 'function');
+  // Two boundaries, read independently from the same reply. jarvis-view decides
+  // what may be SHOWN; jarvis-intent decides what may be CHANGED. Neither
+  // vouches for the other, so a reply can pass one and be rejected by the other.
+  var JV = isNode ? require('./jarvis-view.js') : root.JarvisView;
+  var JI = isNode ? require('./jarvis-intent.js') : root.JarvisIntent;
 
   var ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions';
   var MODEL = 'gemini-3.5-flash';
@@ -85,6 +88,15 @@
             page: { type: 'string', enum: pages.slice() }
           },
           required: ['label', 'page']
+        },
+        intent: {
+          type: 'object',
+          description: 'Only when he asked for a change. It is a proposal — he confirms before anything happens.',
+          properties: {
+            name: { type: 'string', enum: ((JI && JI.INTENTS) || []).slice() },
+            args: { type: 'object', description: 'Ids must come from the facts given, never invented.' }
+          },
+          required: ['name']
         }
       },
       required: ['say']
@@ -132,7 +144,11 @@
       'never a pep talk, never an apology.\n' +
       '- "show.view": one of ' + views.join(', ') + ' — or leave it out.\n' +
       '- "show.ids": only ids that appear in the facts above.\n' +
-      '- "cta.page": one of ' + pages.join(', ') + ' — or leave it out.\n';
+      '- "cta.page": one of ' + pages.join(', ') + ' — or leave it out.\n' +
+      '- Only if he asked you to CHANGE something, add "intent". It is a ' +
+      'proposal: he is shown what it would do and confirms it himself, so ' +
+      'nothing ever happens automatically. Ids must come from the facts above. ' +
+      'If he did not ask for a change, leave it out entirely.\n';
 
     // Trimmed at the end, where the least important candidates sit, so the
     // question and the rules always survive.
@@ -174,10 +190,24 @@
     return '';
   }
 
-  /** Raw model text -> a validated view spec, or null. */
-  function parse(text) {
+  /**
+   * Raw model text -> what may be shown, plus what it proposes changing.
+   *
+   * Both boundaries read the same text and neither can speak for the other: a
+   * reply may produce a perfectly good sentence and a proposal that is thrown
+   * away, or the reverse. `proposal` is inert — it still has to be reconciled
+   * against real data and confirmed before anything is written.
+   */
+  function parse(text, opts) {
     if (!JV || typeof JV.parseViewSpec !== 'function') return null;
-    return JV.parseViewSpec(text);
+    var spec = JV.parseViewSpec(text);
+    if (!spec) return null;
+    var proposal = null;
+    if (JI && typeof JI.parseIntent === 'function') {
+      try { proposal = JI.parseIntent(text, opts || {}); } catch (e) { proposal = null; }
+    }
+    spec.proposal = proposal;
+    return spec;
   }
 
   function warn(msg) {
@@ -237,7 +267,7 @@
       if (!json) return null;
       var text = extractText(json);
       if (!text) { warn('unrecognised response shape'); return null; }
-      return parse(text);
+      return parse(text, { categories: opts.categories });
     }).catch(function (e) {
       warn('model call error: ' + (e && e.message));
       return null;

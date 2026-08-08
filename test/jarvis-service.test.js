@@ -245,3 +245,57 @@ test('the default timeout allows for how slow this model actually is', () => {
   // and would have turned an ordinary slow day into a silent fallback.
   assert.ok(SVC.TIMEOUT_MS >= 20000, 'too tight for observed latency: ' + SVC.TIMEOUT_MS);
 });
+
+// ── Proposals ────────────────────────────────────────────────────────────────
+// A reply may also propose a change. The two trust boundaries read the same raw
+// text independently: jarvis-view decides what may be SHOWN, jarvis-intent
+// decides what may be CHANGED. Neither is allowed to vouch for the other.
+
+const withIntent = JSON.stringify({
+  say: 'Those three can move to Saturday.',
+  intent: { name: 'task.reschedule', args: { ids: [1722308451234], due: '2026-08-15' } }
+});
+
+test('a reply carrying an intent produces a proposal alongside the sentence', async () => {
+  const out = await ask({ fetchImpl: fakeFetch(withIntent) });
+  assert.strictEqual(out.say, 'Those three can move to Saturday.');
+  assert.ok(out.proposal, 'no proposal parsed');
+  assert.strictEqual(out.proposal.intent, 'task.reschedule');
+  assert.deepStrictEqual(out.proposal.args.ids, [1722308451234]);
+});
+
+test('an ordinary reply carries no proposal', async () => {
+  const out = await ask({ fetchImpl: fakeFetch('{"say":"Start the spreadsheet."}') });
+  assert.strictEqual(out.proposal, null);
+});
+
+test('an unrecognised intent is dropped but the sentence survives', async () => {
+  const out = await ask({ fetchImpl: fakeFetch(JSON.stringify({
+    say: 'Cleared it for you.', intent: { name: 'data.wipe', args: {} }
+  })) });
+  assert.strictEqual(out.say, 'Cleared it for you.');
+  assert.strictEqual(out.proposal, null, 'data.wipe must never reach a caller');
+});
+
+test('a proposal never arrives already executed or executable', async () => {
+  const out = await ask({ fetchImpl: fakeFetch(withIntent) });
+  Object.keys(out.proposal).forEach((k) => {
+    assert.notStrictEqual(typeof out.proposal[k], 'function', k + ' is callable');
+  });
+});
+
+test('the schema offers the model the intent shape, restricted to the whitelist', async () => {
+  const f = fakeFetch('{"say":"ok"}');
+  await ask({ fetchImpl: f });
+  const body = JSON.parse(f.calls[0].init.body);
+  const intent = body.response_format.schema.properties.intent;
+  assert.ok(intent, 'the schema never mentions intents');
+  assert.deepStrictEqual(intent.properties.name.enum.slice().sort(),
+    require('../jarvis-intent.js').INTENTS.slice().sort());
+});
+
+test('the prompt tells it to propose rather than assume', () => {
+  const prompt = SVC.buildPrompt({ question: 'move those to saturday', candidates: CANDIDATES, today: TODAY });
+  assert.ok(/propose|confirm|will be asked|never happens automatically/i.test(prompt),
+    'the model must know a change is a proposal, not an action');
+});

@@ -2776,7 +2776,7 @@ const JARVIS_BAND_COLOUR={
   failing:T.danger, deadline:T.warn, approaching:T.warn,
   decaying:T.accent, getAhead:T.accent, allClear:T.success
 };
-function JarvisCard({candidates,onOpen,cardStyle,mob,geminiKey}){
+function JarvisCard({candidates,onOpen,cardStyle,mob,geminiKey,data,onRunProposal}){
   const [open,setOpen]=React.useState(false);
   // Stage 2: ask him something. With no key JarvisService.ask resolves null and
   // the box never appears, so the card is exactly what it was before — the
@@ -2785,6 +2785,13 @@ function JarvisCard({candidates,onOpen,cardStyle,mob,geminiKey}){
   const [asking,setAsking]=React.useState(false);
   const [answer,setAnswer]=React.useState(null);   // {say, show, cta} | {error:true}
   const canAsk=!!(geminiKey&&String(geminiKey).trim()&&window.JarvisService);
+  // Reconciled against the live dashboard every render, not once at reply time:
+  // a task completed in another tab between the answer and the click should make
+  // the button disappear, not write to something that has since changed.
+  const resolved=React.useMemo(function(){
+    if(!answer||!answer.proposal||!window.JarvisIntent)return null;
+    try{return window.JarvisIntent.resolve(answer.proposal,data);}catch(_){return null;}
+  },[answer,data]);
 
   function submitQuestion(){
     const question=q.trim();
@@ -2909,7 +2916,32 @@ function JarvisCard({candidates,onOpen,cardStyle,mob,geminiKey}){
               </div>
             : <div>
                 <div style={{fontSize:13,color:T.text2,lineHeight:1.5}}>{answer.say}</div>
-                {answer.cta&&<button onClick={function(){onOpen&&onOpen(answer.cta.page);}}
+                {/* A proposed change. Nothing is written until this is confirmed,
+                    and the wording comes from resolve() — the real tasks, not
+                    what the model claimed. If nothing survived reconciling,
+                    resolved.ok is false and no button is offered at all. */}
+                {resolved&&resolved.ok&&<div style={{marginTop:10,padding:"9px 11px",borderRadius:9,
+                    background:"rgba(255,255,255,0.04)",border:"0.5px solid rgba(255,255,255,0.10)"}}>
+                  <div style={{fontSize:12,color:T.text,lineHeight:1.45}}>{resolved.summary}</div>
+                  {resolved.truncated&&<div style={{fontSize:10.5,color:T.warn,marginTop:4}}>
+                    Trimmed to the first {window.JarvisIntent.BULK_CAP}.
+                  </div>}
+                  <div style={{display:"flex",gap:7,marginTop:9}}>
+                    <button onClick={function(){
+                        const ok=onRunProposal&&onRunProposal(resolved);
+                        setAnswer(Object.assign({},answer,{done:ok?"done":"failed"}));
+                      }}
+                      style={{...btnGlass,padding:"5px 13px",fontSize:11}}>Do it</button>
+                    <button onClick={function(){setAnswer(Object.assign({},answer,{proposal:null,done:"cancelled"}));}}
+                      style={{background:"none",border:"none",color:T.text3,fontSize:11,cursor:"pointer",padding:"5px 4px"}}>
+                      No
+                    </button>
+                  </div>
+                </div>}
+                {answer.done==="done"&&<div style={{fontSize:11.5,color:T.text3,marginTop:8}}>Done.</div>}
+                {answer.done==="cancelled"&&<div style={{fontSize:11.5,color:T.text3,marginTop:8}}>Left alone.</div>}
+                {answer.done==="failed"&&<div style={{fontSize:11.5,color:T.warn,marginTop:8}}>That did not go through. Nothing changed.</div>}
+                {answer.cta&&!answer.done&&<button onClick={function(){onOpen&&onOpen(answer.cta.page);}}
                   style={{...btnGlass,marginTop:9,padding:"5px 12px",fontSize:11}}>{answer.cta.label}</button>}
               </div>}
         </div>}
@@ -3850,6 +3882,77 @@ function App(){
         if((t.state||"todo")===state)return t;
         return{...t,state:state,editedAt:todayStr()};})}};});
   }
+
+  // ── Jarvis stage 3: executing a confirmed proposal ────────────────────────
+  // Only ever called from the confirm button. Everything upstream of this is
+  // inert: jarvis-intent validates the shape, resolve() checks the ids against
+  // real tasks, and the dialog states what will change. This is the last gate,
+  // and it is deliberately a literal switch rather than a lookup — there is no
+  // arrangement of model output that reaches a branch not written out below.
+  //
+  // Writes go through the same setData path as every other mutation, so
+  // Firestore sync, debouncing and isLikelySeedState protection all apply
+  // unchanged. Nothing here invents its own persistence.
+  function runJarvisProposal(resolved){
+    if(!resolved||!resolved.ok)return false;
+    const a=resolved.args||{};
+    const ids=Array.isArray(a.ids)?a.ids:[];
+    const has=function(t){return ids.indexOf(t.id)!==-1;};
+    switch(resolved.intent){
+      case "task.add":
+        setData(function(p){
+          const ts=(p.personal&&p.personal.tasks)||[];
+          return{...p,personal:{...p.personal,tasks:ts.concat([{
+            id:Date.now(),name:a.name,cat:a.cat||"Errands",priority:a.priority||"normal",
+            due:a.due||null,done:false,addedAt:todayStr(),editedAt:null,state:"todo",updates:[]
+          }])}};
+        });
+        return true;
+      case "task.complete":
+        setData(function(p){
+          const ts=(p.personal&&p.personal.tasks)||[];
+          return{...p,personal:{...p.personal,tasks:ts.map(function(t){
+            return has(t)?{...t,done:true,completedAt:todayStr(),completedTime:null}:t;})}};
+        });
+        return true;
+      case "task.reschedule":
+        setData(function(p){
+          const ts=(p.personal&&p.personal.tasks)||[];
+          return{...p,personal:{...p.personal,tasks:ts.map(function(t){
+            return has(t)?{...t,due:a.due||null,editedAt:todayStr()}:t;})}};
+        });
+        return true;
+      case "task.setState":
+        setData(function(p){
+          const ts=(p.personal&&p.personal.tasks)||[];
+          return{...p,personal:{...p.personal,tasks:ts.map(function(t){
+            return has(t)?{...t,state:a.state,editedAt:todayStr()}:t;})}};
+        });
+        return true;
+      case "project.create":
+        // `data.projects` is a plain ARRAY — see updateProjects and the Projects
+        // page, which pass `data.projects||[]` straight through. The first draft
+        // here wrote {...p.projects, items:[...]}, which would have spread the
+        // array into an object and destroyed every existing project. Checked
+        // against a real backup before this ever ran.
+        setData(function(p){
+          const prjs=Array.isArray(p.projects)?p.projects:[];
+          return{...p,projects:prjs.concat([{
+            id:nid("prj"),title:a.title,emoji:"📋",createdAt:todayStr(),archived:false,
+            stages:(a.stages||[]).map(function(s){
+              return{id:nid("st"),title:s.title,subtitle:s.subtitle||"",
+                steps:(s.steps||[]).map(function(st){
+                  return{id:nid("sp"),title:st.title,desc:st.desc||"",done:false,meta:{}};})};})
+          }])};
+        });
+        return true;
+      default:
+        // Unreachable via the whitelist, and logged rather than ignored so that
+        // a gap between the whitelist and this switch is noisy instead of silent.
+        if(window.ErrorHandler)ErrorHandler.warn("unknown intent: "+resolved.intent,"jarvis");
+        return false;
+    }
+  }
   // Writing an update is a real interaction with the task, so it refreshes
   // editedAt — that is what clears the "untouched Nd" badge.
   function addTaskUpdate(id,text){
@@ -4750,7 +4853,12 @@ function App(){
           <ErrorBoundary name="Jarvis">
             <JarvisCard candidates={jarvisCandidates} mob={mob}
               onOpen={function(p){setPage(p);}}
-              geminiKey={geminiKey}
+              geminiKey={geminiKey} data={data}
+              onRunProposal={function(r){
+                const ok=runJarvisProposal(r);
+                showToast(ok?"Done":"Could not apply that",ok?"success":"error");
+                return ok;
+              }}
               cardStyle={card({padding:"16px 20px",marginBottom:mob?12:GRID_GAP})}/>
           </ErrorBoundary>
           <div className="card-rim" style={card({padding:"16px 20px",marginBottom:mob?12:GRID_GAP})}>

@@ -232,14 +232,21 @@
     var obj = extractJson(raw);
     if (!obj || typeof obj !== 'object') return null;
 
-    var name = str(get(obj, 'intent'));
+    // Two shapes, because models produce both and neither is wrong:
+    //   {"intent":"task.add","args":{...}}            — flat
+    //   {"intent":{"name":"task.add","args":{...}}}   — nested, alongside `say`
+    // The nested form is what the response schema asks for; the flat form is
+    // what a model falls back to when it is not following one.
+    var rawIntent = get(obj, 'intent');
+    var nested = rawIntent && typeof rawIntent === 'object' && !Array.isArray(rawIntent);
+    var name = str(nested ? get(rawIntent, 'name') : rawIntent);
     // hasOwnProperty rather than a bare lookup: 'constructor' and 'toString' are
     // on every object, and neither is an intent.
     if (INTENTS.indexOf(name) === -1 || !Object.prototype.hasOwnProperty.call(BUILDERS, name)) {
       return null;
     }
 
-    var args = get(obj, 'args');
+    var args = nested ? get(rawIntent, 'args') : get(obj, 'args');
     if (!args || typeof args !== 'object') args = {};
     var built = BUILDERS[name](args, o);
     if (!built) return null;
