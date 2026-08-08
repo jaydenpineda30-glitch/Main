@@ -619,3 +619,53 @@ test('a distant pile-up still gets no card of its own', () => {
   }));
   assert.strictEqual(byId(out, 'uni.crunch'), undefined);
 });
+
+// ── No candidate may describe its position in the list ───────────────────────
+// Caught on the live page, 2026-08-08. The single-overdue-task candidate read
+// "Clearing it today stops it turning into the paragraph above" while sitting as
+// a runner-up under an assessment — there was no paragraph above it. Same family
+// as the floor-rule bug: text written assuming the candidate would be the lead.
+//
+// The floor rule handles candidates that need the list to be QUIET. This handles
+// candidates that need something specific to be ABOVE or BELOW them, which no
+// candidate can know. `floorOnly` cannot express it, so it must not be said.
+
+const POSITIONAL = /paragraph above|on this list|anything else|everything else|outranks|above it|below it/i;
+
+test('no candidate refers to its position in the list', () => {
+  // Deliberately busy: overdue assessments, overdue tasks, a shortfall, a
+  // pile-up and a gym gap, so every source that can fire does.
+  const out = JS.rank(ctx({
+    data: {
+      uni: { assessments: [
+        assess({ id: 'o1', subject: 'Spreadsheets', date: '2026-07-20' }),
+        assess({ id: 'n1', subject: 'FinStmts', date: '2026-08-07' }),
+        assess({ id: 'c1', subject: 'Tax', date: '2026-08-16' }),
+        assess({ id: 'c2', subject: 'WIA', date: '2026-08-16' }),
+        assess({ id: 'c3', subject: 'AIS', date: '2026-08-17' })
+      ] },
+      personal: { tasks: [task({ id: 1, due: '2026-08-04', name: 'Chapter review questions' })] },
+      gym: { workouts: [{ date: '2026-06-26' }] }
+    },
+    money: AUGUST
+  }));
+  assert.ok(out.length >= 4, 'expected a crowded list, got ' + out.length);
+  out.forEach((c) => {
+    const text = c.headline + ' ' + c.why;
+    const hit = text.match(POSITIONAL);
+    assert.ok(!hit, c.id + ' claims a position (" ' + hit + ' ") in: ' + text);
+  });
+});
+
+test('a single overdue task describes only itself', () => {
+  // The exact case from the live page: one overdue task, ranked below a uni item.
+  const out = JS.rank(ctx({
+    data: {
+      personal: { tasks: [task({ id: 1, due: '2026-08-04', name: 'Chapter review questions' })] },
+      uni: { assessments: [assess({ id: 'n', subject: 'SPREADSHEETS', date: '2026-08-08' })] }
+    }
+  }));
+  const t = byId(out, 'tasks.attention');
+  assert.ok(out[0].domain === 'uni', 'setup: the task should be a runner-up here');
+  assert.ok(!POSITIONAL.test(t.why), 'got: ' + t.why);
+});

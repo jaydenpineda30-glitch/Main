@@ -140,8 +140,10 @@
       return [candidate({
         id: 'finance.disposable', domain: 'finance', score: 92,
         headline: '$' + money(Math.abs(disposable)) + ' short this month',
+        // Scores 92, which sits under uni.overdue's 95 — so it can be a runner-up
+        // and must not tell the lead to wait.
         why: '$' + money(income) + ' coming in against ' + breakdown +
-             '. Everything else on this list can wait behind it.',
+             '. Money that does not add up does not wait to be dealt with.',
         cta: { label: 'Finance', page: 'Finance' }, view: 'money', facts: facts
       })];
     }
@@ -247,9 +249,11 @@
         headline: overdue.length === 1
           ? worstName + ' was due ' + worstDays + ' ' + plural(worstDays, 'day', 'days') + ' ago'
           : overdue.length + ' assessments are overdue, the oldest by ' + worstDays + ' days',
+        // 95 is the highest score any source produces, so this is almost always
+        // the lead — but "almost always" is not a fact it is allowed to state.
         why: (overdue.length === 1 ? '' : 'Longest outstanding is ' + worstName + '. ') +
-             'Overdue assessments do not get cheaper. Whatever can still be salvaged ' +
-             'is worth more than anything else on this list.',
+             'Overdue assessments do not get cheaper. Whatever can still be ' +
+             'salvaged is worth salvaging today.',
         cta: uniCta, view: 'uni',
         facts: { overdue: overdue.length, worstOverdueDays: worstDays, name: worstName, date: overdue[0].a.date }
       }));
@@ -302,7 +306,7 @@
       if (d === 0) {
         out.push(candidate(Object.assign({}, base, {
           score: 88, headline: name + ' is due today',
-          why: 'Today is the last day for it, so it outranks everything else you had planned.' + company
+          why: 'Today is the last day for it. There is no version of this that waits until tomorrow.' + company
         })));
       } else if (d <= 3) {
         out.push(candidate(Object.assign({}, base, {
@@ -362,7 +366,10 @@
       return [candidate(Object.assign({}, base, {
         score: 72,
         headline: '"' + name(overdue[0]) + '" is ' + worst + ' ' + plural(worst, 'day', 'days') + ' overdue',
-        why: 'Still small. Clearing it today stops it turning into the paragraph above.'
+        // Describes only this task's own trajectory. It cannot say "the paragraph
+        // above", because as a runner-up there is no such paragraph.
+        why: 'Still small at ' + worst + ' ' + plural(worst, 'day', 'days') +
+             '. Clearing it today is the difference between one late task and a backlog.'
       }))];
     }
     if (dueSoon.length) {
